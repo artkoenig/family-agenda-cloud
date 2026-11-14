@@ -1,0 +1,12 @@
+family-agenda.cloud {
+	encode zstd gzip
+
+	# Until launch: remove these two directives to open the landing page.
+	header X-Robots-Tag "noindex, nofollow"
+	basic_auth {
+		{$LANDING_BASIC_AUTH_USER} {$LANDING_BASIC_AUTH_HASH}
+	}
+
+	root * /srv/site
+	file_server
+}
