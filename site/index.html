@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Family Agenda Cloud: die ganze Familienwoche auf einer Seite</title>
+  <meta name="description" content="Family Agenda liest Stundenplan, Kalender und Schul-Mails und zeigt der ganzen Familie eine einfache Übersicht. Wir betreiben es für euch in Deutschland: nichts installieren, 2 Wochen testen.">
+  <meta name="theme-color" content="#faf6f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)">
+  <link rel="alternate" hreflang="de" href="./">
+  <link rel="alternate" hreflang="en" href="en/">
+  <script>
+    // First visit with a browser that is not German: go to the English page. A language picked by hand wins from then on.
+    try { if (!localStorage.getItem("lp-lang") && !/^de\b/i.test(navigator.language)) location.replace("en/"); } catch {}
+  </script>
+  <link rel="icon" href="app-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="design.css">
+  <link rel="stylesheet" href="landing.css">
+</head>
+<body class="fam-page lp">
+  <svg width="0" height="0" class="fam-visually-hidden" aria-hidden="true">
+    <defs>
+      <g id="i-timetable"><path d="M3 9.5 12 5l9 4.5-9 4.5-9-4.5Z"/><path d="M7 12v4.2c1.4 1.2 3.1 1.8 5 1.8s3.600-.6 5-1.800V12M21 9.500V15"/></g>
+      <g id="i-calendar"><rect x="3.500" y="5" width="17" height="15" rx="2.500"/><path d="M3.500 10h17M8 3v4M16 3v4"/></g>
+      <g id="i-mail"><rect x="3" y="5" width="18" height="14" rx="2.500"/><path d="m4 7 8 6 8-6"/></g>
+      <g id="i-server"><rect x="3.500" y="4" width="17" height="7" rx="2"/><rect x="3.500" y="13" width="17" height="7" rx="2"/><path d="M7.500 7.500h.1M7.500 16.500h.1"/></g>
+      <g id="i-eye"><path d="M2.500 12S6 5.500 12 5.500 21.500 12 21.500 12 18 18.500 12 18.500 2.500 12 2.500 12Z"/><circle cx="12" cy="12" r="2.800"/></g>
+      <g id="i-spark"><path d="M12 3.500 13.800 10l6.700 2-6.700 2L12 20.500 10.200 14l-6.700-2 6.700-2L12 3.500Z"/></g>
+      <g id="i-key"><circle cx="7.500" cy="15.500" r="3.500"/><path d="m10 13 9-9M15.500 7.500l2.500 2.500"/></g>
+      <g id="i-hands"><circle cx="9" cy="8" r="3.200"/><path d="M3 19.500c.6-3.400 3-5.200 6-5.200s5.400 1.800 6 5.200M16 5.200a3.200 3.200 0 0 1 0 5.800M18 14.800c1.600.8 2.600 2.400 3 4.700"/></g>
+    </defs>
+  </svg>
+
+  <header class="lp-nav">
+    <div class="lp-nav__inner">
+      <a class="lp-brand" href="#top"><img src="app-icon.svg" alt="" width="28" height="28"><span class="lp-brand__name">Family Agenda</span></a>
+      <nav class="lp-nav__links" aria-label="Seite">
+        <a class="lp-nav__link lp-nav__lang" href="en/" lang="en" hreflang="en" data-lang="en" aria-label="English" title="English">EN</a>
+        <a class="lp-nav__link" href="#tariff">Tarif</a>
+        <a class="lp-nav__link" href="https://app.family-agenda.cloud">Anmelden</a>
+        <a class="fam-button fam-button--primary fam-button--pill" href="/register">2 Wochen testen</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="lp-hero">
+      <img class="lp-hero__icon" src="app-icon.svg" alt="" width="88" height="88">
+      <h1 class="lp-hero__title">Liebling, ich habe <span class="lp-accent">den Mental Load geschrumpft.</span></h1>
+      <p class="lp-hero__lead">Wir sind auch Eltern. Irgendwann hatten wir genug davon, uns vor dem Frühstück durch Stundenplan-App, Kalender und Schul-Mails zu wühlen. Family Agenda liest das alles für dich und bringt die ganze Woche auf eine einzige Seite. Und wir betreiben es für dich: Du brauchst keinen Server, nur ein paar Minuten.</p>
+      <div class="lp-hero__actions">
+        <a class="fam-button fam-button--primary" href="/register">2 Wochen testen</a>
+        <a class="fam-button fam-button--secondary" href="#how">So funktioniert's</a>
+      </div>
+      <ul class="lp-hero__facts">
+        <li><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Von Eltern gemacht</li>
+        <li><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>In Deutschland gehostet</li>
+        <li><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Jederzeit kündbar</li>
+      </ul>
+      <a class="lp-hero__cue" href="#how">So sah unser Morgen aus <span aria-hidden="true">↓</span></a>
+    </section>
+
+    <section class="lp-story" id="how" aria-label="So funktioniert es">
+      <div class="lp-story__stage">
+        <div class="lp-stage" data-step="4" aria-hidden="true">
+          <div class="lp-stage__inner">
+
+            <!-- Steps 1 to 3: what the Sources say -->
+            <p class="lp-caption lp-caption--sources">Quellen <span class="fam-chip fam-chip--small fam-chip--ok">Alle OK</span></p>
+            <div class="lp-src lp-src--a">
+              <span class="lp-src__icon"><svg viewBox="0 0 24 24"><use href="#i-timetable"/></svg></span>
+              <span class="lp-src__text"><span class="lp-src__label">Stundenplan</span><span class="lp-src__snippet">Deutsch: Vertretung</span></span>
+              <span class="fam-status fam-status--ok lp-src__ok">OK</span>
+            </div>
+            <div class="lp-src lp-src--b">
+              <span class="lp-src__icon"><svg viewBox="0 0 24 24"><use href="#i-calendar"/></svg></span>
+              <span class="lp-src__text"><span class="lp-src__label">Vereinskalender</span><span class="lp-src__snippet">Fußballtraining, 16:30</span></span>
+              <span class="fam-status fam-status--ok lp-src__ok">OK</span>
+            </div>
+            <div class="lp-src lp-src--c">
+              <span class="lp-src__icon"><svg viewBox="0 0 24 24"><use href="#i-mail"/></svg></span>
+              <span class="lp-src__text"><span class="lp-src__label">Schul-Mail <span class="lp-src__pdf">PDF</span></span><span class="lp-src__snippet">Klassenkasse: 12 € bis Di.</span></span>
+              <span class="fam-status fam-status--ok lp-src__ok">OK</span>
+            </div>
+            <div class="lp-src lp-src--d">
+              <span class="lp-src__icon"><svg viewBox="0 0 24 24"><use href="#i-mail"/></svg></span>
+              <span class="lp-src__text"><span class="lp-src__label">Mail Elternvertretung</span><span class="lp-src__snippet">Freitag Schwimmsachen!!</span></span>
+              <span class="fam-status fam-status--ok lp-src__ok">OK</span>
+            </div>
+
+            <p class="lp-reader"><svg viewBox="0 0 24 24"><use href="#i-spark"/></svg>Einmal gelesen von einem KI-Modell in Deutschland</p>
+            <ul class="lp-items">
+              <li class="fam-item"><span class="fam-item__lead"><span class="fam-chip fam-chip--small">Stunde</span></span><span class="fam-item__text"><span class="fam-item__title">Deutsch: Vertretung</span><span class="fam-item__meta">Heute, 08:50</span></span><span class="fam-avatar fam-avatar--m5 lp-av">M</span></li>
+              <li class="fam-item"><span class="fam-item__lead"><span class="fam-chip fam-chip--small">Termin</span></span><span class="fam-item__text"><span class="fam-item__title">Fußballtraining</span><span class="fam-item__meta">16:30 · Sportplatz Nord</span></span><span class="fam-avatar fam-avatar--m5 lp-av">M</span></li>
+              <li class="fam-item"><span class="fam-item__lead"><span class="fam-chip fam-chip--small">Aufgabe</span></span><span class="fam-item__text"><span class="fam-item__title">Klassenkasse zahlen</span><span class="fam-item__meta">12 € · bis Dienstag</span></span><span class="fam-avatars"><span class="fam-avatar fam-avatar--m5 lp-av">M</span><span class="fam-avatar fam-avatar--m3 lp-av">L</span></span></li>
+              <li class="fam-item"><span class="fam-item__lead"><span class="fam-chip fam-chip--small">Termin</span></span><span class="fam-item__text"><span class="fam-item__title">Schwimmen</span><span class="fam-item__meta">Freitag · Schwimmsachen</span></span><span class="fam-avatar fam-avatar--m3 lp-av">L</span></li>
+            </ul>
+
+            <!-- Step 6: where it runs -->
+            <svg class="lp-house" viewBox="0 0 360 460"><path d="M40 448h280a28 28 0 0 0 28-28V160a56 56 0 0 0-56-56h-6a72 72 0 0 0-132-30a60 60 0 0 0-86 36a56 56 0 0 0-56 50v260a28 28 0 0 0 28 28Z"/></svg>
+            <p class="lp-caption lp-caption--home">Family Agenda Cloud</p>
+            <div class="lp-homecard lp-homecard--signin"><svg viewBox="0 0 24 24"><use href="#i-key"/></svg><b>Kein Passwort</b><span>Code per Mail</span></div>
+            <div class="lp-homecard lp-homecard--server"><svg viewBox="0 0 24 24"><use href="#i-server"/></svg><b>Unser Server</b><span class="fam-status fam-status--ok">In Deutschland</span></div>
+            <div class="lp-homecard lp-homecard--model"><svg viewBox="0 0 24 24"><use href="#i-spark"/></svg><b>KI-Modell</b><span>Auch in Deutschland</span></div>
+
+            <!-- Steps 4 to 6: the Agenda -->
+            <div class="lp-phone">
+              <div class="lp-phone__bar">
+                <span class="lp-phone__clock">07:15 <span>Fr. 13. Nov.</span></span>
+                <span class="lp-phone__filter">
+                  <span class="lp-pill lp-pill--all"><span class="fam-avatar fam-avatar--all lp-av"></span><span class="lp-pill__name">Alle</span></span>
+                  <span class="lp-pill lp-pill--mia"><span class="lp-pill__name">Mia</span><span class="fam-avatar fam-avatar--m5 lp-av">M</span></span>
+                  <span class="lp-pill lp-pill--leo"><span class="fam-avatar fam-avatar--m3 lp-av">L</span></span>
+                </span>
+              </div>
+              <div class="lp-phone__body">
+                <p class="fam-tasks__title">Zu erledigen <span class="fam-tasks__count">1</span></p>
+                <div class="fam-item"><span class="fam-item__lead"><span class="lp-tick"></span></span><span class="fam-item__text"><span class="fam-item__title">Klassenkasse: 12 €</span><span class="fam-item__meta">Bis Di. · Schul-Mail</span></span><span class="fam-avatars"><span class="fam-avatar fam-avatar--m5 lp-av">M</span><span class="fam-avatar fam-avatar--m3 lp-av">L</span></span></div>
+                <p class="fam-day fam-day--today"><span class="fam-day__header">Heute <span class="fam-day__date">Fr. 13. Nov.</span></span></p>
+                <div class="fam-item"><span class="fam-item__lead">08:00</span><span class="fam-item__text"><span class="fam-item__title">Schule bis 13:05</span><span class="fam-item__meta">⚠ Deutsch: Vertretung</span></span><span class="fam-avatar fam-avatar--m5 lp-av">M</span></div>
+                <div class="fam-item lp-row--leo"><span class="fam-item__lead">14:00</span><span class="fam-item__text"><span class="fam-item__title">Schwimmen</span><span class="fam-item__meta">Mit Schwimmsachen</span></span><span class="fam-avatar fam-avatar--m3 lp-av">L</span></div>
+                <div class="fam-item"><span class="fam-item__lead">16:30</span><span class="fam-item__text"><span class="fam-item__title">Fußballtraining</span><span class="fam-item__meta">Sportplatz Nord</span></span><span class="fam-avatar fam-avatar--m5 lp-av">M</span></div>
+                <p class="fam-day"><span class="fam-day__header">Morgen <span class="fam-day__date">Sa. 14. Nov.</span></span></p>
+                <div class="fam-item lp-row--leo"><span class="fam-item__lead">09:30</span><span class="fam-item__text"><span class="fam-item__title">Zahnarzt</span></span><span class="fam-avatar fam-avatar--m3 lp-av">L</span></div>
+                <div class="fam-item"><span class="fam-item__lead">15:00</span><span class="fam-item__text"><span class="fam-item__title">Omas Geburtstag</span></span><span class="fam-avatars"><span class="fam-avatar fam-avatar--m5 lp-av">M</span><span class="fam-avatar fam-avatar--m3 lp-av">L</span></span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <ol class="lp-steps">
+        <li class="lp-step" data-step="1">
+          <p class="lp-step__eyebrow">Kommt dir bekannt vor?</p>
+          <h2 class="lp-step__title">Es ist 7:15. Ist heute Schwimmen?</h2>
+          <p>Der Stundenplan steckt in der einen App, das Fußballtraining in einem Kalender. Die Klassenkasse versteckt sich in einem PDF von der Schule, und die Erinnerung an die Schwimmsachen irgendwo zwischen 84 ungelesenen Mails. Bei uns musste immer einer von uns alles im Kopf behalten.</p>
+        </li>
+        <li class="lp-step" data-step="2">
+          <p class="lp-step__eyebrow">Einmal einrichten</p>
+          <h2 class="lp-step__title">Es liest mit, damit du es nicht musst.</h2>
+          <p>Verbinde einmal den Stundenplan, eure Kalender und das Postfach, in dem die Schul-Mails landen. Ab dann behält Family Agenda sie im Blick, Tag und Nacht. Es liest immer nur: Es schreibt nichts, antwortet nicht und löscht nichts.</p>
+        </li>
+        <li class="lp-step" data-step="3">
+          <p class="lp-step__eyebrow">Der schlaue Teil</p>
+          <h2 class="lp-step__title">Es findet, was wirklich zählt.</h2>
+          <p>Lange Rundmails, eingescannte Elternbriefe, drei Termine in einem Absatz: Ein KI-Modell liest sie für dich und zieht heraus, was eure Familie wissen muss. Was ansteht, was zu erledigen ist und wen es betrifft.</p>
+        </li>
+        <li class="lp-step" data-step="4">
+          <p class="lp-step__eyebrow">Das Aufatmen</p>
+          <h2 class="lp-step__title">Und da ist sie: die ganze Woche an einem Ort.</h2>
+          <p>Oben steht, was zu erledigen ist, darunter folgen die Tage. Alle sehen auf einen Blick, wo sie sein müssen und was mit muss. Kein Durchklicken durch fünf Apps vor dem Frühstück mehr, und kein „Das hat mir keiner gesagt!“</p>
+        </li>
+        <li class="lp-step" data-step="5">
+          <p class="lp-step__eyebrow">Für alle</p>
+          <h2 class="lp-step__title">Jeder bekommt seine eigene Agenda.</h2>
+          <p>Eine für jedes Kind, eine für jeden Elternteil, eine für die ganze Familie. Ein Tipp, und Mia sieht nur Mias Tag. Auf dem Handy unterwegs genauso wie auf dem Tablet in der Küche.</p>
+        </li>
+        <li class="lp-step" data-step="6">
+          <p class="lp-step__eyebrow">Ohne Bastelei</p>
+          <h2 class="lp-step__title">Wir kümmern uns um den Rest.</h2>
+          <p>Kein Server im Schrank, kein Docker, keine Updates. Du meldest dich mit einem Code per Mail oder mit Google an, ganz ohne Passwort, und richtest eure Familie in ein paar Minuten ein. Betrieb, Backups und das KI-Modell laufen bei uns in Deutschland. <a href="#data">Was das für eure Daten heißt.</a></p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="lp-section" id="sources">
+      <p class="lp-step__eyebrow">Funktioniert mit</p>
+      <h2 class="lp-section__title">Es liest dort mit, wo Schule und Verein euch ohnehin schreiben.</h2>
+      <ul class="fam-type-cards">
+        <li><div class="fam-type-card"><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-timetable"/></svg><span class="fam-type-card__name">Stundenplan</span><span class="fam-type-card__description">Stunden, Vertretungen, Raumwechsel und Ausfälle aus WebUntis.</span></div></li>
+        <li><div class="fam-type-card"><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-calendar"/></svg><span class="fam-type-card__name">Kalender</span><span class="fam-type-card__description">Der Verein, die Schule, die Ferien, euer gemeinsamer Familienkalender.</span></div></li>
+        <li><div class="fam-type-card"><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-mail"/></svg><span class="fam-type-card__name">Schul-Mails</span><span class="fam-type-card__description">Rundbriefe und Elternbriefe, sogar das eingescannte PDF, das niemand öffnet.</span></div></li>
+      </ul>
+    </section>
+
+    <section class="lp-section" id="data">
+      <p class="lp-step__eyebrow">Eure Daten</p>
+      <h2 class="lp-section__title">Ehrlich gesagt: Wir betreiben es, also tragen wir Verantwortung.</h2>
+      <ul class="lp-principles">
+        <li><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-server"/></svg><h3>In Deutschland gehostet</h3><p>Die Daten eurer Familie liegen in einer eigenen Datenbank auf Servern in Deutschland. Keine Werbung, kein Tracking, kein Verkauf von irgendwas.</p></li>
+        <li><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-spark"/></svg><h3>KI ohne KI-Konzern</h3><p>Eure Mails liest ein offenes KI-Modell, das bei unserem Hoster in Deutschland läuft. Nichts geht an einen KI-Konzern, und mit euren Inhalten wird kein Modell trainiert.</p></li>
+        <li><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-hands"/></svg><h3>Was wir sehen können</h3><p>Wir sagen es offen: Als Betreiber haben wir technisch Zugriff auf eure Daten. Wir nutzen ihn nur, um den Dienst zu betreiben und dir zu helfen, wenn etwas hakt. Wer das nicht möchte, betreibt Family Agenda selbst.</p></li>
+        <li><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-eye"/></svg><h3>Es liest nur, und ihr könnt gehen</h3><p>Family Agenda markiert keine Mail als gelesen und fasst euren Kalender nicht an. Ein Backup eurer Daten kannst du jederzeit herunterladen.</p></li>
+      </ul>
+    </section>
+
+    <section class="lp-section" id="tariff">
+      <p class="lp-step__eyebrow">Tarif</p>
+      <h2 class="lp-section__title">Ein Tarif für die ganze Familie.</h2>
+      <div class="lp-ways">
+        <article class="lp-way lp-way--hosted">
+          <p class="lp-way__kicker"><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-spark"/></svg>Alles drin</p>
+          <h3 class="lp-way__title">Family Agenda Cloud</h3>
+          <!-- Placeholder: the price is set after the usage measurements. -->
+          <p class="lp-plan__price">Preis folgt <small>monatlich oder jährlich</small></p>
+          <ul class="lp-way__list">
+            <li>Die ganze Familie, jede und jeder mit eigener Agenda</li>
+            <li>Stundenplan, Kalender und Schul-Mails als Quellen</li>
+            <li>Betrieb, Updates und Backups machen wir</li>
+            <li>Online kündbar, ohne Anruf und ohne Brief</li>
+          </ul>
+          <a class="fam-button fam-button--primary" href="/register">2 Wochen testen</a>
+          <p class="lp-way__fine">2 Wochen kostenlos. Danach wird der Test automatisch zum kostenpflichtigen Abo, wenn du nicht vorher kündigst.</p>
+        </article>
+        <article class="lp-way">
+          <p class="lp-way__kicker"><svg class="lp-icon" viewBox="0 0 24 24"><use href="#i-calendar"/></svg>Keine Überraschungen</p>
+          <h3 class="lp-way__title">So läuft der Test</h3>
+          <ol class="lp-timeline">
+            <li><b>Heute</b><span><strong>Bestellen und loslegen</strong>Du hinterlegst bei der Bestellung eine Zahlungsart. Abgebucht wird noch nichts.</span></li>
+            <li><b>2 Wochen</b><span><strong>In Ruhe ausprobieren</strong>Mit allem, was dazugehört. Kündigst du in dieser Zeit, zahlst du nichts.</span></li>
+            <li><b>Tag 15</b><span><strong>Der Test wird zum Abo</strong>Automatisch und erst jetzt mit der ersten Abbuchung. Kündigen kannst du auch danach jederzeit.</span></li>
+          </ol>
+        </article>
+      </div>
+      <div class="lp-selfhost">
+        <p><b>Lieber selbst betreiben?</b> Family Agenda ist Open Source und läuft kostenlos auch bei dir zuhause, zum Beispiel auf einem Raspberry Pi oder einem NAS.</p>
+        <a class="fam-button fam-button--secondary" href="https://github.com/artkoenig/family-agenda">Zur Open-Source-Version</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-footer">
+    <span>Mit Liebe (und zu wenig Schlaf) von Eltern gemacht.</span>
+    <nav class="lp-footer__links" aria-label="Rechtliches">
+      <a href="/impressum">Impressum</a>
+      <a href="/datenschutz">Datenschutz</a>
+      <a href="/agb">AGB</a>
+      <a href="/widerruf">Widerruf</a>
+      <a href="/kuendigen">Verträge hier kündigen</a>
+      <a href="en/" lang="en" hreflang="en" data-lang="en">English</a>
+    </nav>
+  </footer>
+
+  <script>
+    (() => {
+      // Remembers a language picked by hand, so the first-visit choice by browser language does not override it.
+      for (const link of document.querySelectorAll("[data-lang]")) {
+        link.addEventListener("click", () => { try { localStorage.setItem("lp-lang", link.dataset.lang); } catch {} });
+      }
+      const stage = document.querySelector(".lp-stage");
+      const steps = [...document.querySelectorAll(".lp-step")];
+      const narrow = matchMedia("(max-width: 859px)");
+      document.documentElement.dataset.scripted = "";
+
+      // The stage is drawn 360 px wide and scaled to the room it has.
+      new ResizeObserver(() => stage.style.setProperty("--k", String(stage.clientWidth / 360))).observe(stage);
+
+      // The step whose text last crossed the reading line is the one the stage shows.
+      let queued = false;
+      const update = () => {
+        queued = false;
+        const line = innerHeight * (narrow.matches ? 0.86 : 0.62);
+        let current = steps[0];
+        for (const step of steps) if (step.getBoundingClientRect().top < line) current = step;
+        stage.dataset.step = current.dataset.step;
+        for (const step of steps) step.classList.toggle("is-current", step === current);
+      };
+      const queue = () => { if (!queued) { queued = true; requestAnimationFrame(update); } };
+      addEventListener("scroll", queue, { passive: true });
+      addEventListener("resize", queue);
+      update();
+    })();
+  </script>
+</body>
+</html>
