@@ -87,6 +87,14 @@ Check:
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.config/ionos/ai-model-hub.token)" https://openai.inference.de-txl.ionos.com/v1/models
 ```
 
-## 7. Next
+## 7. Host and first deploy
 
-`bootstrap.sh` (Docker, `unattended-upgrades`, SSH keys only), then `deploy.sh`. Not part of this runbook yet.
+1. `scripts/bootstrap.sh`: Docker, `unattended-upgrades` with a reboot at 04:00, SSH with keys only,
+   `/opt/family-agenda`. Safe to run again.
+2. Create `/opt/family-agenda/.env` on the Cube (root only, mode 600) with the keys of `cube/.env.example` and the
+   values from the password manager.
+3. `scripts/deploy.sh`: copies `cube/` and `site/` to the Cube, pulls the images, brings the services up and reloads
+   Caddy. This is also the way to redeploy.
+4. `scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind Basic Auth.
+
+The scripts reach the Cube as `root@family-agenda.cloud`; `CUBE_HOST` overrides it.
