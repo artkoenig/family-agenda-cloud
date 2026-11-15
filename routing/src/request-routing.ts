@@ -50,8 +50,8 @@ export async function routeRequest<E extends Pick<DirectoryEntry, "status" | "co
   const inPath = familyIdInPath(target);
   if (!inPath || namesOperations(inPath.path)) return NOT_FOUND;
   const { readiness, entry } = readinessOf(await find(inPath.familyId), coreVersion);
-  if (readiness === "unprepared") return BEING_UPDATED;
-  if (readiness !== "prepared") return NOT_FOUND;
+  if (readiness === "awaiting-rollout") return BEING_UPDATED;
+  if (readiness !== "served") return NOT_FOUND;
   return { to: "family", ...inPath, entry };
 }
 

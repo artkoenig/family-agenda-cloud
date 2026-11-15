@@ -5,7 +5,8 @@ import type { Config } from "./config";
 import { TRIGGERED_TIMEOUT_MS, type Core, type SourcesPolled } from "./core";
 import type { Directory, DirectoryEntry, RetryDelays } from "./directory";
 import { sealedContext, unwrappedFamily } from "./family-context";
-import { readinessOf, waitsForRetry } from "./family-readiness";
+import { waitsForRetry } from "./due-work";
+import { readinessOf } from "./family-readiness";
 import { describe, reasonOf, type Log } from "./log";
 
 /** What the Scheduler logs once it is under way. */
@@ -196,13 +197,13 @@ function giving(
   const { config, directory, core, log, clock, schedules, unprepared } = dependencies;
   return async (name: string, familyId: string): Promise<void> => {
     const { readiness, entry } = readinessOf(await directory.find(familyId), config.coreVersion);
-    if (readiness === "gone" || readiness === "inactive") {
+    if (readiness === "gone" || readiness === "withheld") {
       log.info("The Family is not active; nothing is triggered", { familyId, occasion: name, status: entry?.status ?? "unknown" });
       if (readiness === "gone") await schedules.remove(familyId);
       return;
     }
     // A core never opens a database it cannot read: the Family waits for a rollout to prepare it.
-    if (readiness === "unprepared") {
+    if (readiness === "awaiting-rollout") {
       const noted = `${familyId} ${entry.coreVersion}`;
       if (!unprepared.has(noted)) {
         unprepared.add(noted);
