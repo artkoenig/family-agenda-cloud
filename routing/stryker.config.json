@@ -20,6 +20,8 @@
     "html"
   ],
   "tempDirName": ".stryker-tmp",
+  "incremental": true,
+  "incrementalFile": "reports/stryker-incremental.json",
   "thresholds": {
     "high": 95,
     "low": 75,

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Mondays: a full mutation run, see the mutation job.
+    - cron: "17 3 * * 1"
 
 # The checks of the public repo (artkoenig/family-agenda), for the Routing module in routing/.
 # The static, crap and mutation jobs together are `pnpm check`; all jobs run in parallel.
@@ -65,4 +68,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
-      - run: pnpm mutation
+      # Stryker runs incrementally: it reuses the result of every mutant whose code and covering tests are
+      # unchanged since the last run, and tests only the rest. A pull request reads the results main saved
+      # last; each run saves its own. The weekly run tests every mutant afresh (--force), because Stryker
+      # does not see changes outside src/ and test/, such as new dependencies.
+      - name: Restore the last mutation results
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: routing/reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.run_id }}
+          restore-keys: stryker-incremental-
+      - run: pnpm mutation ${{ github.event_name == 'schedule' && '--force' || '' }}
+      - name: Save the mutation results
+        if: always() && hashFiles('routing/reports/stryker-incremental.json') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: routing/reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.run_id }}
