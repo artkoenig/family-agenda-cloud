@@ -12,6 +12,7 @@ const minimal = {
   CONTEXT_KEY: contextKey.toString("base64"),
   CORE_URLS: "http://core-1:3000",
   BLOB_ROOT: "/srv/blobs",
+  CORE_VERSION: "0.3.1",
 };
 
 const without = (name: keyof typeof minimal) => {
@@ -28,6 +29,7 @@ describe("readConfig", () => {
       operatorKey,
       contextKey,
       coreUrls: ["http://core-1:3000"],
+      coreVersion: "0.3.1",
       familyDatabaseHost: "db.internal",
       familyDatabasePort: 6543,
       blobRoot: "/srv/blobs",
@@ -115,6 +117,19 @@ describe("readConfig", () => {
   it("refuses CORE_URLS that name no core", () => {
     expect(() => readConfig({ ...minimal, CORE_URLS: " , ," })).toThrow(new ConfigError("CORE_URLS must name at least one core"));
   });
+
+  it.each(["0.0.0", "10.20.30"])("takes CORE_VERSION %s, an exact release", (version) => {
+    expect(readConfig({ ...minimal, CORE_VERSION: version }).coreVersion).toBe(version);
+  });
+
+  it.each(["latest", "main", "0.3", "v0.3.1", "0.3.1-rc.1", " 0.3.1", "0.3.1 ", "0.3.1.4", "a.b.c"])(
+    "refuses CORE_VERSION %j, which is no exact release",
+    (version) => {
+      expect(() => readConfig({ ...minimal, CORE_VERSION: version })).toThrow(
+        new ConfigError("CORE_VERSION must be an exact release such as 0.3.1, the core image's tag"),
+      );
+    },
+  );
 
   it.each(["65536", "-1", "80a", "123456", "", " 80"])("refuses PORT %j", (port) => {
     expect(() => readConfig({ ...minimal, PORT: port })).toThrow(new ConfigError("PORT must be a port number, 0 to 65535"));

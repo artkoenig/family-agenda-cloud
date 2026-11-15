@@ -15,6 +15,7 @@ const config: Config = readConfig({
   CONTEXT_KEY: contextKey.toString("base64"),
   CORE_URLS: "http://core-1:3000",
   BLOB_ROOT: "/srv/blobs",
+  CORE_VERSION: "0.3.1",
   FAMILY_DATABASE_HOST: "families.internal",
   FAMILY_DATABASE_PORT: "6432",
   PUBLIC_URL: "https://agenda.example",
