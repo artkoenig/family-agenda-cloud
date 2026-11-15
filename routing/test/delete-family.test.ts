@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { familyDatabaseNames } from "../src/family-databases";
 import { setUpRouting, type TestRouting } from "./support/routing";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
@@ -34,7 +35,7 @@ async function createFamily() {
 const deleteFamily = (familyId: string, confirmation = familyId, env: Record<string, string | undefined> = {}) =>
   run(["delete", "--family-id", familyId, "--confirm", confirmation], env);
 
-const name = (familyId: string) => `family_${familyId.replaceAll("-", "")}`;
+const name = (familyId: string) => familyDatabaseNames(familyId).databaseName;
 
 async function blobsOf(familyId: string): Promise<string[]> {
   try {
@@ -47,7 +48,8 @@ async function blobsOf(familyId: string): Promise<string[]> {
 /** What an Operator and Postgres can see of a Family. */
 async function stateOf(familyId: string) {
   const [entry] = await routing.directory(
-    `SELECT status, database_name, database_role, blob_location, wrapped_family_key, wrapped_database_password
+    `SELECT status, database_name, database_role, blob_location, wrapped_family_key, wrapped_database_password,
+            deleted_at IS NOT NULL AS deletion_finished
      FROM family WHERE family_id = $1`,
     [familyId],
   );
@@ -56,7 +58,7 @@ async function stateOf(familyId: string) {
     databases: (await routing.server("SELECT datname FROM pg_database WHERE datname = $1", [name(familyId)])).length,
     roles: (await routing.server("SELECT rolname FROM pg_roles WHERE rolname = $1", [name(familyId)])).length,
     blobs: await blobsOf(familyId),
-    blobLocationExists: (await readdir(blobRoot)).includes(familyId),
+    blobLocationExists: (await readdir(blobRoot).catch((): string[] => [])).includes(familyId),
   };
 }
 
@@ -68,6 +70,7 @@ const deletedState = (familyId: string) => ({
     blob_location: join(blobRoot, familyId),
     wrapped_family_key: null,
     wrapped_database_password: null,
+    deletion_finished: true,
   },
   databases: 0,
   roles: 0,
@@ -81,7 +84,7 @@ describe("Deleting a Family", () => {
 
     const result = await deleteFamily(familyId);
 
-    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: `The Family ${familyId} is deleted\n` });
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
   });
 
@@ -166,7 +169,7 @@ describe("Deleting a Family is refused, and changes nothing,", () => {
   it("without a Family id", async () => {
     const familyId = await createFamily();
 
-    await expectUnchanged(familyId, () => run(["delete", "--confirm", familyId]), "--family-id needs a Family id", 2);
+    await expectUnchanged(familyId, () => run(["delete", "--confirm", familyId]), "--family-id needs the Family id", 2);
   });
 
   it("for a Family whose blob location is not below the blob root", async () => {
@@ -175,6 +178,26 @@ describe("Deleting a Family is refused, and changes nothing,", () => {
 
     await expectUnchanged(familyId, () => deleteFamily(familyId, familyId, { BLOB_ROOT: elsewhere }), "blob location is not");
     await rm(elsewhere, { recursive: true });
+  });
+
+  it("for a Family whose database or role in the Directory is not the one its Family id gives", async () => {
+    const familyId = await createFamily();
+    await routing.directory("UPDATE family SET database_name = 'postgres', database_role = 'postgres' WHERE family_id = $1", [familyId]);
+
+    const result = await deleteFamily(familyId);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`database and role are not ${name(familyId)}; nothing was deleted`);
+    expect(await stateOf(familyId)).toMatchObject({ entry: { status: "active", database_name: "postgres" }, databases: 1, roles: 1, blobs: ["attachments", join("attachments", "flyer.pdf")] });
+    expect(await routing.server("SELECT 1 FROM pg_database WHERE datname = 'postgres'")).toHaveLength(1);
+  });
+
+  it("for text that is not a Family id, which it does not log", async () => {
+    const result = await run(["delete", "--family-id", "family-1", "--confirm", "family-1"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("is not a Family id; nothing was deleted");
+    expect(result.stderr).not.toContain('"familyId"');
   });
 
   it("for a Family id that is not in the Directory", async () => {
@@ -197,8 +220,10 @@ describe("Running delete again", () => {
     const failed = await deleteFamily(familyId);
     expect(failed.exitCode, failed.stderr).toBe(1);
     expect(failed.stderr).toMatch(failure);
-    expect(failed.stderr).toContain("run delete again");
+    expect(failed.stderr).toContain("did not finish; run delete again to finish it");
     expect(failed.stderr).toContain(`"familyId":"${familyId}"`);
+    expect(failed.stdout).toBe("");
+    expect(await stateOf(familyId)).toMatchObject({ entry: { deletion_finished: false } });
     await mendIt(familyId);
     const again = await deleteFamily(familyId);
     expect(again, again.stderr).toMatchObject({ exitCode: 0 });
@@ -246,13 +271,31 @@ describe("Running delete again", () => {
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
   });
 
-  it("after it ended well changes nothing", async () => {
+  it("after it ended well changes nothing and says the Family was deleted already", async () => {
     const familyId = await createFamily();
     expect(await deleteFamily(familyId)).toMatchObject({ exitCode: 0 });
+    const [{ deleted_at: deletedAt }] = (await routing.directory("SELECT deleted_at FROM family WHERE family_id = $1", [familyId])) as [
+      { deleted_at: Date },
+    ];
 
     const again = await deleteFamily(familyId);
 
-    expect(again, again.stderr).toMatchObject({ exitCode: 0 });
+    expect(again, again.stderr).toMatchObject({ exitCode: 0, stdout: `The Family ${familyId} is deleted\n` });
+    expect(again.stderr).toContain(`"message":"The Family was deleted already","familyId":"${familyId}","deletedAt":"${deletedAt.toISOString()}"`);
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+    expect(await routing.directory("SELECT deleted_at FROM family WHERE family_id = $1", [familyId])).toEqual([{ deleted_at: deletedAt }]);
+  });
+
+  it("after a failure part-way leaves the Family marked deleted but not finished, until it is run again", async () => {
+    const familyId = await createFamily();
+    await routing.server(`ALTER ROLE ${routing.routingRole} NOCREATEROLE`);
+    expect(await deleteFamily(familyId)).toMatchObject({ exitCode: 1 });
+
+    expect(await stateOf(familyId)).toMatchObject({
+      entry: { status: "deleted", wrapped_family_key: null, wrapped_database_password: null, deletion_finished: false },
+      databases: 0,
+      roles: 1,
+      blobLocationExists: true,
+    });
   });
 });

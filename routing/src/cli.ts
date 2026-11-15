@@ -3,11 +3,11 @@ import type { Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import pg from "pg";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
-import { coreClient } from "./core";
-import { createFamily, ProvisioningError, type CreateFamilyInput, type Provisioning } from "./create-family";
+import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
-import { directory, migrateDirectory } from "./directory";
+import { migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
+import { isFamilyId, provisioning, ProvisioningError } from "./provisioning";
 import { startRouter } from "./router";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
 
@@ -32,14 +32,12 @@ const USAGE = `Usage:
   routing delete --family-id <id> --confirm <id>
     Deletes the Family: its database and role, its blobs, its wrapped family key and database
     password. Its Directory entry stays, marked deleted. --confirm must repeat the Family id.
-    After a failure part-way, run it again to finish.
+    It says when the Family is deleted; after a failure part-way, run it again to finish.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
     Runs the Router on LISTEN_HOST:PORT until SIGTERM or SIGINT, passing each Family's requests
     on to the cores in CORE_URLS.`;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 class UsageError extends Error {}
 
@@ -50,7 +48,7 @@ const COMMANDS: Record<string, Command> = {
   migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
   create: (args, config, io, log) => create(config, parseCreate(args, config), io, log),
   "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
-  delete: (args, config, _io, log) => remove(config, parseDelete(args), log),
+  delete: (args, config, io, log) => runDelete(config, parseDelete(args), io, log),
   serve: (_args, config, io, log) => serve(config, io, log),
 };
 
@@ -95,7 +93,7 @@ function familyIdOption(value: string | undefined): { familyId: string; resume: 
 /** The Family id that --family-id names, in the lower case the Directory keeps. */
 function familyIdValue(value: string | undefined): string {
   const familyId = value?.toLowerCase();
-  if (!familyId || !UUID.test(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
+  if (!familyId || !isFamilyId(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
   return familyId;
 }
 
@@ -196,29 +194,28 @@ async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log
 
 function parseDelete(args: string[]): DeleteFamilyInput {
   const values = options(args, ["family-id", "confirm"]);
-  const familyId = familyIdValue(values["family-id"]);
+  // deleteFamily itself checks that it is a Family id.
+  const familyId = values["family-id"];
+  if (!familyId) throw new UsageError("--family-id needs the Family id of the Family to delete");
   const confirmation = values.confirm;
   if (confirmation === undefined) throw new UsageError("--confirm needs the Family id once more");
-  return { familyId, confirmation: confirmation.toLowerCase() };
+  return { familyId: familyId.toLowerCase(), confirmation: confirmation.toLowerCase() };
 }
 
-async function remove(config: Config, input: DeleteFamilyInput, log: Log): Promise<number> {
+async function runDelete(config: Config, input: DeleteFamilyInput, io: Io, log: Log): Promise<number> {
   try {
     await withDirectory(config, (client) => deleteFamily(provisioning(config, client, log), input));
+    io.stdout.write(`The Family ${input.familyId} is deleted\n`);
     return 0;
   } catch (error) {
     if (error instanceof ProvisioningError) {
-      log.error("Deleting the Family was refused", { familyId: input.familyId, error });
+      // Text that is not a Family id names no Family and is not worth logging.
+      log.error("Deleting the Family was refused", { ...(isFamilyId(input.familyId) ? { familyId: input.familyId } : {}), error });
     } else {
-      log.error("Deleting the Family failed; run delete again to finish it", { familyId: input.familyId, error });
+      log.error("Deleting the Family did not finish; run delete again to finish it", { familyId: input.familyId, error });
     }
     return 1;
   }
-}
-
-/** What Provisioning works with, on the Directory's connection. */
-function provisioning(config: Config, client: pg.Client, log: Log): Provisioning {
-  return { config, client, directory: directory(client), core: coreClient(config.coreUrls), log };
 }
 
 /** Opens the Directory, brings its schema up to date and runs `work` with it. */

@@ -1,8 +1,11 @@
 import type pg from "pg";
 import { scramVerifier } from "./secrets";
 
+/** The names of a Family's own database and of the role that owns it. */
+export type FamilyDatabaseNames = { databaseName: string; databaseRole: string };
+
 /** The names of a Family's own database and role, both drawn from its Family id. */
-export function familyDatabaseNames(familyId: string): { databaseName: string; databaseRole: string } {
+export function familyDatabaseNames(familyId: string): FamilyDatabaseNames {
   const name = `family_${familyId.replaceAll("-", "")}`;
   return { databaseName: name, databaseRole: name };
 }
@@ -10,7 +13,7 @@ export function familyDatabaseNames(familyId: string): { databaseName: string; d
 /** Whether creating the Family's role or database began: either of them exists. */
 export async function familyDatabaseLeftBehind(
   client: pg.ClientBase,
-  { databaseName, databaseRole }: { databaseName: string; databaseRole: string },
+  { databaseName, databaseRole }: FamilyDatabaseNames,
 ): Promise<boolean> {
   const { rows } = await client.query<{ found: boolean }>(
     "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1) OR EXISTS (SELECT 1 FROM pg_database WHERE datname = $2) AS found",
@@ -29,7 +32,7 @@ export async function familyDatabaseLeftBehind(
  */
 export async function ensureFamilyDatabase(
   client: pg.ClientBase,
-  { databaseName, databaseRole }: { databaseName: string; databaseRole: string },
+  { databaseName, databaseRole }: FamilyDatabaseNames,
   password: string,
 ): Promise<void> {
   const role = client.escapeIdentifier(databaseRole);
@@ -57,7 +60,7 @@ export async function ensureFamilyDatabase(
  */
 export async function dropFamilyDatabase(
   client: pg.ClientBase,
-  { databaseName, databaseRole }: { databaseName: string; databaseRole: string },
+  { databaseName, databaseRole }: FamilyDatabaseNames,
 ): Promise<void> {
   const role = client.escapeIdentifier(databaseRole);
   const { rowCount: roleExists } = await client.query("SELECT 1 FROM pg_roles WHERE rolname = $1", [databaseRole]);

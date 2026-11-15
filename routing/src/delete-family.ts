@@ -1,6 +1,7 @@
 import { rm, stat } from "node:fs/promises";
-import { ProvisioningError, type Provisioning } from "./create-family";
-import { dropFamilyDatabase } from "./family-databases";
+import type { DirectoryEntry } from "./directory";
+import { dropFamilyDatabase, familyDatabaseNames } from "./family-databases";
+import { blobLocationOf, isFamilyId, ProvisioningError, type Provisioning } from "./provisioning";
 
 export type DeleteFamilyInput = {
   familyId: string;
@@ -15,34 +16,52 @@ export type DeleteFamilyInput = {
  * The first step marks the Family deleted and destroys its wrapped family key and database
  * password, so that from then on nothing routes to it or schedules it, and what is left of its
  * data opens with no key the Routing module still has. Its entry stays, as the record that it was
- * deleted, with no secrets in it.
+ * deleted, with no secrets in it; the time deleting finished is noted only after the last step, so
+ * that a deleted Family without it was not deleted to the end. Old row versions of the Directory
+ * not yet vacuumed, its write-ahead log and its backups still hold the wrapped values until they
+ * are overwritten or expire; they open only with the Operator key.
  */
 export async function deleteFamily(provisioning: Omit<Provisioning, "core">, input: DeleteFamilyInput): Promise<void> {
   const { config, client, directory, log } = provisioning;
   const { familyId } = input;
+  if (!isFamilyId(familyId)) throw new ProvisioningError(`${familyId} is not a Family id; nothing was deleted`);
   if (input.confirmation !== familyId) {
     throw new ProvisioningError("The confirmation does not match the Family id; nothing was deleted");
   }
   const entry = await directory.find(familyId);
   if (!entry) throw new ProvisioningError(`There is no Family ${familyId}`);
-  const blobLocation = `${config.blobRoot}/${familyId}`;
-  if (entry.blobLocation !== blobLocation) {
-    throw new ProvisioningError(`The Family's blob location is not ${blobLocation}; nothing was deleted`);
+  refuseForeign(entry, blobLocationOf(config, familyId));
+  if (entry.deletedAt) {
+    log.info("The Family was deleted already", { familyId, deletedAt: entry.deletedAt.toISOString() });
+    return;
   }
   log.info(entry.status === "deleted" ? "Finishing the deletion of the Family" : "Deleting the Family", { familyId });
 
   await directory.markDeleted(familyId);
   log.info("The Family is marked deleted; its wrapped family key and database password are destroyed", { familyId });
 
-  removeSchedules();
-
   await dropFamilyDatabase(client, entry);
   log.info("The Family's database and role are dropped", { familyId });
 
-  await removeBlobs(config.blobRoot, blobLocation);
+  await removeBlobs(config.blobRoot, entry.blobLocation);
   log.info("The Family's blob location is removed", { familyId });
 
+  await directory.finishDeletion(familyId);
   log.info("The Family is deleted", { familyId });
+}
+
+/**
+ * Refuses an entry whose database, role or blob location is not the one its Family id gives: only
+ * what Provisioning made for this Family is ever dropped or removed.
+ */
+function refuseForeign(entry: DirectoryEntry, blobLocation: string): void {
+  const { databaseName, databaseRole } = familyDatabaseNames(entry.familyId);
+  if (entry.databaseName !== databaseName || entry.databaseRole !== databaseRole) {
+    throw new ProvisioningError(`The Family's database and role are not ${databaseName}; nothing was deleted`);
+  }
+  if (entry.blobLocation !== blobLocation) {
+    throw new ProvisioningError(`The Family's blob location is not ${blobLocation}; nothing was deleted`);
+  }
 }
 
 /**
@@ -53,12 +72,4 @@ async function removeBlobs(blobRoot: string, blobLocation: string): Promise<void
   const root = await stat(blobRoot).catch(() => undefined);
   if (!root?.isDirectory()) throw new Error(`The blob root ${blobRoot} is not there`);
   await rm(blobLocation, { recursive: true, force: true });
-}
-
-/**
- * Removes the Family's schedules. The Scheduler (#95) does not exist yet, so there are none; it
- * fills this seam. A deleted Family is not active, so the Scheduler skips it in any case.
- */
-function removeSchedules(): void {
-  // Nothing to remove until #95: no Family has schedules yet.
 }

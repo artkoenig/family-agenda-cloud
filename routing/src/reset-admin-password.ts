@@ -1,6 +1,6 @@
 import type { Config } from "./config";
 import type { Core } from "./core";
-import { ProvisioningError } from "./create-family";
+import { ProvisioningError } from "./provisioning";
 import type { Directory } from "./directory";
 import { sealedContext, unwrappedFamily } from "./family-context";
 import type { Log } from "./log";
