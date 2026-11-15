@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Writable } from "node:stream";
 import pg from "pg";
-import { inject } from "vitest";
+import { afterAll, inject } from "vitest";
 import { run } from "../../src/cli";
 import { readConfig } from "../../src/config";
 import { createLog } from "../../src/log";
@@ -34,32 +34,74 @@ export type TestRouting = {
 
 const key = () => randomBytes(32).toString("base64");
 
+type Server = {
+  superuserUrl: URL;
+  maintenance: string;
+  query: (database: string, sql: string, values?: unknown[]) => Promise<Record<string, unknown>[]>;
+};
+
+function serverOf(superuserUrl: URL): Server {
+  return {
+    superuserUrl,
+    maintenance: superuserUrl.pathname.slice(1) || "postgres",
+    query: async (database, sql, values) => {
+      const url = new URL(superuserUrl);
+      url.pathname = `/${database}`;
+      const client = new pg.Client({ connectionString: url.toString() });
+      await client.connect();
+      try {
+        return (await client.query<Record<string, unknown>>(sql, values)).rows;
+      } finally {
+        await client.end();
+      }
+    },
+  };
+}
+
+type Directory = { routingRole: string; directoryName: string; directoryPassword: string };
+
+/**
+ * The routing role and the Directory's database, made once per test file and worker: creating and
+ * dropping a database costs Postgres a checkpoint, and mutation testing runs each test thousands of
+ * times. Between tests, close() empties the Directory instead, and after the file's last test it is
+ * dropped. The globalSetup's teardown drops whatever a killed worker left behind; the names carry its
+ * run id, so that runs side by side keep apart.
+ */
+let shared: Promise<Directory> | undefined;
+
+function sharedDirectory(server: Server): Promise<Directory> {
+  shared ??= (async () => {
+    const suffix = `${inject("runId")}_${randomBytes(4).toString("hex")}`;
+    const directory = {
+      routingRole: `routing_${suffix}`,
+      directoryName: `directory_${suffix}`,
+      directoryPassword: randomBytes(18).toString("base64url"),
+    };
+    await server.query(server.maintenance, `CREATE ROLE ${directory.routingRole} LOGIN CREATEDB CREATEROLE PASSWORD '${directory.directoryPassword}'`);
+    await server.query(server.maintenance, `CREATE DATABASE ${directory.directoryName} OWNER ${directory.routingRole}`);
+    return directory;
+  })();
+  return shared;
+}
+
+afterAll(async () => {
+  if (!shared) return;
+  const { routingRole, directoryName } = await shared;
+  shared = undefined;
+  const server = serverOf(new URL(inject("postgresUrl")));
+  await server.query(server.maintenance, `DROP DATABASE IF EXISTS ${directoryName} WITH (FORCE)`);
+  await server.query(server.maintenance, `DROP ROLE IF EXISTS ${routingRole}`);
+});
+
 /**
  * Sets up a Routing module as the Cube would run it, on the test's Postgres server: a Directory
  * database of its own, owned by a role that may create roles and databases but is no superuser,
- * and a stand-in core.
+ * and a stand-in core. The Directory is empty at the start of every test.
  */
 export async function setUpRouting(): Promise<TestRouting> {
-  const superuserUrl = new URL(inject("postgresUrl"));
-  const suffix = randomBytes(6).toString("hex");
-  const routingRole = `routing_${suffix}`;
-  const directoryName = `directory_${suffix}`;
-  const directoryPassword = randomBytes(18).toString("base64url");
-
-  const query = async (database: string, sql: string, values?: unknown[]) => {
-    const url = new URL(superuserUrl);
-    url.pathname = `/${database}`;
-    const client = new pg.Client({ connectionString: url.toString() });
-    await client.connect();
-    try {
-      return (await client.query<Record<string, unknown>>(sql, values)).rows;
-    } finally {
-      await client.end();
-    }
-  };
-  const maintenance = superuserUrl.pathname.slice(1) || "postgres";
-  await query(maintenance, `CREATE ROLE ${routingRole} LOGIN CREATEDB CREATEROLE PASSWORD '${directoryPassword}'`);
-  await query(maintenance, `CREATE DATABASE ${directoryName} OWNER ${routingRole}`);
+  const server = serverOf(new URL(inject("postgresUrl")));
+  const { superuserUrl, maintenance, query } = server;
+  const { routingRole, directoryName, directoryPassword } = await sharedDirectory(server);
 
   const contextKey = key();
   const core = await startStandInCore(contextKey);
@@ -135,11 +177,12 @@ export async function setUpRouting(): Promise<TestRouting> {
         "SELECT datname FROM pg_database WHERE datdba IN (SELECT oid FROM pg_roles WHERE rolname = ANY($1))",
         [roles.map(({ rolname }) => rolname)],
       );
-      for (const name of [directoryName, ...databases.map(({ datname }) => String(datname))]) {
-        await query(maintenance, `DROP DATABASE IF EXISTS "${name}"`);
-      }
+      for (const { datname } of databases) await query(maintenance, `DROP DATABASE IF EXISTS "${String(datname)}"`);
       for (const { rolname } of roles) await query(maintenance, `DROP ROLE IF EXISTS "${String(rolname)}"`);
-      await query(maintenance, `DROP ROLE IF EXISTS ${routingRole}`);
+      // Empties the Directory for the next test: everything the Routing module made in it is its role's.
+      await query(directoryName, `DROP OWNED BY ${routingRole}`);
+      // A test may have changed the role, and may have failed before changing it back.
+      await query(maintenance, `ALTER ROLE ${routingRole} LOGIN CREATEDB CREATEROLE PASSWORD '${directoryPassword}'`);
     },
   };
   return routing;
