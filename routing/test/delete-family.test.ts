@@ -127,8 +127,10 @@ describe("Deleting a Family", () => {
 
     const result = await deleteFamily(familyId);
 
-    expect(result.stderr).toContain(`"familyId":"${familyId}"`);
-    expect(result.stderr).toContain("The Family is deleted");
+    const lines = result.stderr.trim().split("\n").map((line) => JSON.parse(line) as { familyId?: string; message: string });
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.every((line) => line.familyId === familyId && line.message !== "")).toBe(true);
+    expect(lines.at(-1)?.message).toBe("The Family is deleted");
     for (const secret of [...secrets, String(entry!.wrapped_family_key), String(entry!.wrapped_database_password), routing.env.OPERATOR_KEY!]) {
       expect(routing.log().slice(logBefore)).not.toContain(secret);
     }
