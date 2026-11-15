@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
@@ -68,7 +69,7 @@ type Command = (args: string[], config: Config, io: Io, log: Log) => Promise<num
 /** The Operator's commands by name; each answers the exit code. */
 const COMMANDS: Record<string, Command> = {
   migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
-  create: (args, config, io, log) => create(config, parseCreate(args, config.defaultTimeZone), io, log),
+  create: (args, config, io, log) => create(config, parseCreate(args, config.defaultTimeZone, randomUUID), io, log),
   "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
   delete: (args, config, io, log) => runFamilyCommand(config, deletion(parseDelete(args)), io, log),
   suspend: (args, config, io, log) => runFamilyCommand(config, suspension(parseFamilyId(args)), io, log),

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import type { CreateFamilyInput } from "./create-family";
 import type { DeleteFamilyInput } from "./delete-family";
@@ -7,25 +6,28 @@ import type { ResetAdminPasswordInput } from "./reset-admin-password";
 
 /**
  * The Operator's arguments to each command, checked and read into what the command works with.
- * No I/O.
+ * No I/O: a new Family id is drawn by the caller's `drawFamilyId`.
  */
 
 /** Arguments the command does not take; the Operator is shown the usage. */
 export class UsageError extends Error {}
 
-/** What `create` is asked for; `defaultTimeZone` is the configured one for a new Family. */
-export function parseCreate(args: string[], defaultTimeZone: string): CreateFamilyInput {
+/**
+ * What `create` is asked for; `defaultTimeZone` is the configured one for a new Family, and
+ * `drawFamilyId` draws the Family id of a new Family, for none named.
+ */
+export function parseCreate(args: string[], defaultTimeZone: string, drawFamilyId: () => string): CreateFamilyInput {
   const values = options(args, ["admin-email", "time-zone", "family-id"]);
   const adminEmail = adminEmailOption(values["admin-email"], "the first Admin");
   const timeZone = values["time-zone"];
   const effectiveTimeZone = timeZone ?? defaultTimeZone;
   if (!isTimeZone(effectiveTimeZone)) throw new UsageError(`Unknown time zone ${effectiveTimeZone}`);
-  return { adminEmail, ...familyIdOption(values["family-id"]), ...(timeZone === undefined ? {} : { timeZone }) };
+  return { adminEmail, ...familyIdOption(values["family-id"], drawFamilyId), ...(timeZone === undefined ? {} : { timeZone }) };
 }
 
 /** The Family to finish that --family-id names, or a newly drawn Family id. */
-function familyIdOption(value: string | undefined): { familyId: string; resume: boolean } {
-  if (value === undefined) return { familyId: randomUUID(), resume: false };
+function familyIdOption(value: string | undefined, drawFamilyId: () => string): { familyId: string; resume: boolean } {
+  if (value === undefined) return { familyId: drawFamilyId(), resume: false };
   return { familyId: familyIdValue(value), resume: true };
 }
 

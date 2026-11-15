@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseCreate, parseDelete, parseFamilyId, parseReset, UsageError } from "../../src/cli-arguments";
-import { isFamilyId } from "../../src/family-id";
 
 const familyId = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const defaultTimeZone = "Europe/Berlin";
+const drawnFamilyId = "6b1f0c2e-3a4d-4e5f-8a9b-0c1d2e3f4a5b";
+const draw = () => drawnFamilyId;
 
 /** The message of the UsageError that parsing throws. */
 function usageError(parse: () => unknown): string {
@@ -18,33 +19,35 @@ function usageError(parse: () => unknown): string {
 
 describe("parseCreate", () => {
   it("draws a new Family id, leaving the time zone to the default", () => {
-    const input = parseCreate(["--admin-email", "ada@example.org"], defaultTimeZone);
-    expect(input).toStrictEqual({ adminEmail: "ada@example.org", familyId: input.familyId, resume: false });
-    expect(isFamilyId(input.familyId)).toBe(true);
+    expect(parseCreate(["--admin-email", "ada@example.org"], defaultTimeZone, draw)).toStrictEqual({
+      adminEmail: "ada@example.org",
+      familyId: drawnFamilyId,
+      resume: false,
+    });
   });
 
-  it("draws another Family id each time", () => {
-    const args = ["--admin-email", "ada@example.org"];
-    expect(parseCreate(args, defaultTimeZone).familyId).not.toBe(parseCreate(args, defaultTimeZone).familyId);
+  it("draws no Family id for the Family that --family-id names", () => {
+    const args = ["--admin-email", "ada@example.org", "--family-id", familyId];
+    expect(parseCreate(args, defaultTimeZone, () => expect.unreachable("a Family id drawn")).familyId).toBe(familyId);
   });
 
   it("finishes the Family that --family-id names, in lower case, in the time zone named", () => {
     const args = ["--admin-email", "ada@example.org", "--time-zone", "America/New_York", "--family-id", familyId.toUpperCase()];
-    expect(parseCreate(args, defaultTimeZone)).toEqual({ adminEmail: "ada@example.org", timeZone: "America/New_York", familyId, resume: true });
+    expect(parseCreate(args, defaultTimeZone, draw)).toEqual({ adminEmail: "ada@example.org", timeZone: "America/New_York", familyId, resume: true });
   });
 
   it.each(["ada@mail.example.org", "a.da+agenda@example.co.uk"])("takes %s as the first Admin's email address", (adminEmail) => {
-    expect(parseCreate(["--admin-email", adminEmail], defaultTimeZone).adminEmail).toBe(adminEmail);
+    expect(parseCreate(["--admin-email", adminEmail], defaultTimeZone, draw).adminEmail).toBe(adminEmail);
   });
 
   it("refuses an unknown time zone", () => {
-    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "--time-zone", "Mars/Olympus"], defaultTimeZone))).toBe(
+    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "--time-zone", "Mars/Olympus"], defaultTimeZone, draw))).toBe(
       "Unknown time zone Mars/Olympus",
     );
   });
 
   it("refuses an unknown default time zone when none is named", () => {
-    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org"], "Nowhere/Else"))).toBe("Unknown time zone Nowhere/Else");
+    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org"], "Nowhere/Else", draw))).toBe("Unknown time zone Nowhere/Else");
   });
 
   it.each([
@@ -60,25 +63,25 @@ describe("parseCreate", () => {
     ["one with a space before @", ["--admin-email", "a da@example.org"]],
     ["one with a trailing dot", ["--admin-email", "ada@example.org."]],
   ])("refuses %s as the first Admin's email address", (_case, args) => {
-    expect(usageError(() => parseCreate(args, defaultTimeZone))).toBe("--admin-email needs the email address of the first Admin");
+    expect(usageError(() => parseCreate(args, defaultTimeZone, draw))).toBe("--admin-email needs the email address of the first Admin");
   });
 
   it("checks the email address before the time zone", () => {
-    expect(usageError(() => parseCreate(["--time-zone", "Mars/Olympus"], defaultTimeZone))).toMatch(/^--admin-email/);
+    expect(usageError(() => parseCreate(["--time-zone", "Mars/Olympus"], defaultTimeZone, draw))).toMatch(/^--admin-email/);
   });
 
   it.each([["not-a-uuid"], [""], [`${familyId}0`]])("refuses %j as a --family-id", (value) => {
-    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "--family-id", value], defaultTimeZone))).toBe(
+    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "--family-id", value], defaultTimeZone, draw))).toBe(
       "--family-id needs a Family id, a UUID",
     );
   });
 
   it("refuses an option it does not know, with parseArgs' message", () => {
-    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "--force"], defaultTimeZone))).toMatch(/--force/);
+    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "--force"], defaultTimeZone, draw))).toMatch(/--force/);
   });
 
   it("refuses an argument that is not an option", () => {
-    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "extra"], defaultTimeZone))).toMatch(/extra/);
+    expect(usageError(() => parseCreate(["--admin-email", "ada@example.org", "extra"], defaultTimeZone, draw))).toMatch(/extra/);
   });
 });
 
