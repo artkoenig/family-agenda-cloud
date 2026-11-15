@@ -49,11 +49,3 @@ export async function withFamilyLock<T>(client: Pick<pg.ClientBase, "query">, fa
     await client.query("SELECT pg_advisory_unlock($1, hashtext($2))", [FAMILY_LOCK, familyId]);
   }
 }
-
-const FAMILY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/** Whether the text is a Family id: a UUID, in lower case. */
-export const isFamilyId = (text: string): boolean => FAMILY_ID.test(text);
-
-/** The directory, as the cores see it, that holds the Family's blobs. */
-export const blobLocationOf = (config: Config, familyId: string): string => `${config.blobRoot}/${familyId}`;

@@ -2,7 +2,8 @@ import type { Config } from "./config";
 import type { Directory, DirectoryEntry } from "./directory";
 import { familyUrl, sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { ensureFamilyDatabase, familyDatabaseLeftBehind, familyDatabaseNames } from "./family-databases";
-import { blobLocationOf, ProvisioningError, type Provisioning } from "./provisioning";
+import { blobLocationOf } from "./family-id";
+import { ProvisioningError, type Provisioning } from "./provisioning";
 import type { FamilySchedules } from "./scheduler";
 import { drawDatabasePassword, drawFamilyKey, wrapperFor } from "./secrets";
 

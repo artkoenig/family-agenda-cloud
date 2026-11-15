@@ -6,13 +6,11 @@ import { directoryConnection, type Config } from "./config";
 import { CONTEXT_HEADER } from "./core";
 import { directory as openDirectory, type Directory } from "./directory";
 import { sealedContext, unwrappedFamily, type Family } from "./family-context";
+import { familyIdInPath } from "./family-id";
 import { reasonOf, type Log } from "./log";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
-
-/** A Family id as the first segment of a path, and the rest; a Family id is written in lower case. */
-const FAMILY_PATH = /^\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[/?]|$)(.*)$/s;
 
 /** The headers of one connection, which a proxy does not pass on (RFC 9110, section 7.6.1). */
 const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
@@ -87,8 +85,8 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
     passOn(setup, incoming, outgoing, { path: target, routerHeaders: {} });
     return;
   }
-  const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
-  const family = await routable(setup, familyId, rest);
+  const { familyId = "", path = "/" } = familyIdInPath(target) ?? {};
+  const family = await routable(setup, familyId, path);
   if (!family) {
     // The same answer whether the Family is unknown, suspended or deleted, which tells nobody which
     // Families exist, and for a path to the core's triggered operations (/operations/*), which no
@@ -106,7 +104,6 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
   outgoing.on("close", () => {
     setup.log.info("Served a request", { familyId, method: incoming.method, status: outgoing.statusCode });
   });
-  const path = rest.startsWith("/") ? rest : `/${rest}`;
   passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(setup.config, family) } });
 }
 
