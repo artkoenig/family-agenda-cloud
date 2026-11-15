@@ -19,7 +19,8 @@
     "src/failover.ts",
     "src/proxy-headers.ts",
     "src/request-routing.ts",
-    "src/cli-arguments.ts"
+    "src/cli-arguments.ts",
+    "src/cli-reports.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

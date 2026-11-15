@@ -3,6 +3,7 @@ import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
 import { parseCreate, parseDelete, parseFamilyId, parseReset, UsageError } from "./cli-arguments";
+import { familyLine, rollOutReport } from "./cli-reports";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { coreClient } from "./core";
@@ -230,37 +231,15 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
 }
 
 async function rollOutCommand(config: Config, io: Io, log: Log): Promise<number> {
-  const { coreVersion, prepared, failed, newer } = await withDirectory(config, (client) => rollOut(provisioning(config, client, log)));
-  io.stdout.write(`Prepared ${familiesCounted(prepared.length)} for core version ${coreVersion}\n`);
-  if (failed.length > 0) io.stdout.write(`Failed for ${familiesCounted(failed.length)}; run roll-out again to retry:\n`);
-  for (const { familyId, error } of failed) io.stdout.write(`${familyId}\t${error}\n`);
-  if (newer.length > 0) io.stdout.write(`Refused ${familiesCounted(newer.length)}; going back to an older core version needs a restore:\n`);
-  for (const { familyId, coreVersion: newerVersion } of newer) {
-    io.stdout.write(`${familyId}\tprepared for a newer core version ${newerVersion}\n`);
-  }
-  return failed.length + newer.length === 0 ? 0 : 1;
+  const { text, exitCode } = rollOutReport(await withDirectory(config, (client) => rollOut(provisioning(config, client, log))));
+  io.stdout.write(text);
+  return exitCode;
 }
-
-const familiesCounted = (count: number) => `${count} ${count === 1 ? "Family" : "Families"}`;
 
 /** One line per Family: its Family id, its status, and when its due work last ran and how it ended. */
 async function families(config: Config, io: Io): Promise<number> {
   const overview = await withDirectory(config, (client) => directory(client).overview());
-  for (const { familyId, status, dueWork, preparationFailure } of overview) {
-    const columns = [familyId, status];
-    if (!dueWork) columns.push("due work never ran");
-    else if (dueWork.outcome === "succeeded") {
-      columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `succeeded: ${dueWork.sources.ran} Sources polled, ${dueWork.sources.failed} failed`);
-    } else {
-      columns.push(
-        `due work ran ${dueWork.ranAt.toISOString()}`,
-        `failed: ${dueWork.error}`,
-        `${dueWork.failures} ${dueWork.failures === 1 ? "failure" : "failures"} in a row, next try ${dueWork.retryAt.toISOString()}`,
-      );
-    }
-    if (preparationFailure) columns.push(`preparing for ${preparationFailure.coreVersion} failed: ${preparationFailure.error}`);
-    io.stdout.write(`${columns.join("\t")}\n`);
-  }
+  for (const family of overview) io.stdout.write(`${familyLine(family)}\n`);
   return 0;
 }
 
