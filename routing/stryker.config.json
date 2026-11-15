@@ -15,7 +15,8 @@
     "src/log.ts",
     "src/family-context.ts",
     "src/family-id.ts",
-    "src/family-readiness.ts"
+    "src/family-readiness.ts",
+    "src/failover.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

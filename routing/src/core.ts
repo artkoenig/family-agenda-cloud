@@ -1,3 +1,4 @@
+import { notRunReason, takingTurns } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 
 /** The timers a call to the core is given up by; the system's unless a test moves time by hand. */
@@ -58,18 +59,6 @@ export class CoreError extends Error {}
  */
 type CallOptions = { body?: unknown; accept?: number[]; timeoutMs?: number; failover?: boolean };
 
-/**
- * The errors of a connection that was never made: the call did not arrive at the core. A
- * connection that broke after the call was sent is not among them, as the core may have run it.
- */
-const NOT_CONNECTED = new Set(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
-
-/**
- * What a core answers when it did not run the operation, because it is starting or because a proxy
- * in front of it has no core to pass the call to.
- */
-const NOT_RUN = new Set([502, 503, 504]);
-
 /** A call that provably did not run on the core it was made to, so another core may take it. */
 class NotRun extends CoreError {
   constructor(
@@ -92,12 +81,7 @@ class NotRun extends CoreError {
 export function coreClient(coreUrls: string[], log: Log, timers: Timers = systemTimers): Core {
   const [first] = coreUrls;
   if (!first) throw new CoreError("No core configured in CORE_URLS");
-  let next = 0;
-  const inTurn = () => {
-    const start = next;
-    next = (next + 1) % coreUrls.length;
-    return [...coreUrls.slice(start), ...coreUrls.slice(0, start)];
-  };
+  const inTurn = takingTurns(coreUrls);
   /**
    * Calls the operation and answers its status with its JSON body ({} for none). A status other
    * than 2xx fails the call unless `accept` names it; so does no answer within `timeoutMs`, and,
@@ -173,12 +157,13 @@ async function callCore(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: timeout.signal,
     }).catch((error: unknown) => {
-      const code = reasonOf((error as { cause?: unknown }).cause ?? error);
-      throw NOT_CONNECTED.has(code) ? new NotRun(noAnswer(error).message, code) : noAnswer(error);
+      const notRun = notRunReason({ code: reasonOf((error as { cause?: unknown }).cause ?? error) });
+      throw notRun ? new NotRun(noAnswer(error).message, notRun) : noAnswer(error);
     });
     if (!response.ok && !accept.includes(response.status)) {
       const message = `The core answered ${operation} with ${response.status}`;
-      throw NOT_RUN.has(response.status) ? new NotRun(message, String(response.status)) : new CoreError(message);
+      const notRun = notRunReason({ status: response.status });
+      throw notRun ? new NotRun(message, notRun) : new CoreError(message);
     }
     const text = await response.text().catch((error: unknown) => {
       throw noAnswer(error);

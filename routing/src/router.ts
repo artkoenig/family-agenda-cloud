@@ -5,6 +5,7 @@ import pg from "pg";
 import { directoryConnection, type Config } from "./config";
 import { CONTEXT_HEADER } from "./core";
 import { directory as openDirectory, type Directory } from "./directory";
+import { coresFor, isBodiless, takingTurns } from "./failover";
 import { sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { familyIdInPath } from "./family-id";
 import { reasonOf, type Log } from "./log";
@@ -48,7 +49,7 @@ export async function startRouter(config: Config, log: Log): Promise<Router> {
   directoryPool.on("error", (error) => {
     log.error("A connection to the Directory failed", { reason: reasonOf(error) });
   });
-  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, cores: inTurn(config.coreUrls) };
+  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, cores: { inTurn: takingTurns(config.coreUrls.map((url) => new URL(url))) } };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -63,18 +64,6 @@ export async function startRouter(config: Config, log: Log): Promise<Router> {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => { resolve(); }));
       await directoryPool.end();
-    },
-  };
-}
-
-function inTurn(coreUrls: string[]): Cores {
-  const urls = coreUrls.map((url) => new URL(url));
-  let next = 0;
-  return {
-    inTurn() {
-      const start = next;
-      next = (next + 1) % urls.length;
-      return [...urls.slice(start), ...urls.slice(0, start)];
     },
   };
 }
@@ -157,7 +146,7 @@ function isFamilyIndependent(method: string | undefined, target: string): boolea
  */
 function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse, coreRequest: CoreRequest): void {
   const { config, log, cores } = setup;
-  const bodiless = incoming.method === "GET" || incoming.method === "HEAD";
+  const bodiless = isBodiless(incoming.method);
   const familyField = coreRequest.familyId === undefined ? {} : { familyId: coreRequest.familyId };
   const headers = { ...passedOn(incoming.headers), ...forwarded(config, incoming), ...coreRequest.routerHeaders };
   const attempt = ([core, ...others]: URL[]): void => {
@@ -180,7 +169,7 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
     toCore.on("error", (error) => {
       if (answered) return;
       log.error("A core did not answer", { ...familyField, core: core.host, reason: reasonOf(error) });
-      attempt(bodiless ? others : []);
+      attempt(others);
     });
     // A browser that goes away takes its request to the core with it.
     outgoing.on("close", () => {
@@ -192,7 +181,7 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
       incoming.pipe(toCore);
     }
   };
-  attempt(bodiless ? cores.inTurn() : cores.inTurn().slice(0, 1));
+  attempt(coresFor(incoming.method, cores.inTurn()));
 }
 
 function answerBadGateway(outgoing: ServerResponse): void {
