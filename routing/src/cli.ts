@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import pg from "pg";
-import { ConfigError, readConfig, type Config } from "./config";
+import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
 import { coreClient } from "./core";
 import { createFamily, ProvisioningError, type CreateFamilyInput } from "./create-family";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
+import { startRouter } from "./router";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -15,6 +16,8 @@ export type Io = {
   stdout: Writable;
   /** The log. */
   stderr: Writable;
+  /** When a long-running command such as serve stops; SIGTERM or SIGINT unless given. */
+  until?: Promise<unknown>;
 };
 
 const USAGE = `Usage:
@@ -22,7 +25,10 @@ const USAGE = `Usage:
     Creates a Family with its first Admin and prints its address. After a failure part-way,
     run it again with the --family-id it names to finish that Family.
   routing migrate
-    Brings the Directory's schema up to date (every command does this first).`;
+    Brings the Directory's schema up to date (every command does this first).
+  routing serve
+    Runs the Router on LISTEN_HOST:PORT until SIGTERM or SIGINT, passing each Family's requests
+    on to the cores in CORE_URLS.`;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -40,6 +46,11 @@ export async function run(args: string[], io: Io): Promise<number> {
     if (command === "create") {
       const config = readConfig(io.env);
       return await create(config, parseCreate(rest, config), io, log);
+    }
+    if (command === "serve") {
+      const config = readConfig(io.env);
+      await withDirectory(config, () => Promise.resolve());
+      return await serve(config, io.until ?? stopSignal(), log);
     }
     throw new UsageError(command ? `Unknown command ${command}` : "No command given");
   } catch (error) {
@@ -116,16 +127,23 @@ async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log
   }
 }
 
+async function serve(config: Config, until: Promise<unknown>, log: Log): Promise<number> {
+  const router = await startRouter(config, log);
+  log.info("The Router listens", { url: router.url });
+  await until;
+  await router.close();
+  log.info("The Router stopped");
+  return 0;
+}
+
+const stopSignal = () =>
+  new Promise<void>((resolve) => {
+    process.once("SIGTERM", resolve).once("SIGINT", resolve);
+  });
+
 /** Opens the Directory, brings its schema up to date and runs `work` with it. */
 async function withDirectory<T>(config: Config, work: (client: pg.Client) => Promise<T>): Promise<T> {
-  const url = new URL(config.directoryDatabaseUrl);
-  const client = new pg.Client({
-    host: url.hostname,
-    port: Number(url.port || "5432"),
-    user: decodeURIComponent(url.username),
-    database: decodeURIComponent(url.pathname.slice(1)),
-    password: config.directoryDatabasePassword,
-  });
+  const client = new pg.Client(directoryConnection(config));
   await client.connect();
   try {
     await migrateDirectory(client);

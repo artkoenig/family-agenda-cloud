@@ -1,5 +1,5 @@
 /** The header a core reads the sealed Context from. */
-const CONTEXT_HEADER = "X-Family-Agenda-Context";
+export const CONTEXT_HEADER = "X-Family-Agenda-Context";
 
 /** The operations a core offers to be triggered from outside, each for the Family its Context names. */
 export type Core = {

@@ -1,8 +1,8 @@
 import type pg from "pg";
 import type { Config } from "./config";
-import { sealContext, type ContextClaims } from "./context";
 import type { Core } from "./core";
 import type { Directory, DirectoryEntry } from "./directory";
+import { familyUrl, sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { ensureFamilyDatabase, familyDatabaseLeftBehind, familyDatabaseNames } from "./family-databases";
 import type { Log } from "./log";
 import { drawDatabasePassword, drawFamilyKey, wrapperFor } from "./secrets";
@@ -28,25 +28,8 @@ export type Provisioning = {
 
 export class ProvisioningError extends Error {}
 
-/**
- * The Family's public address, without a trailing slash: the core emits its addresses below it.
- * The address given to the Operator is this with a trailing slash.
- */
-export const familyUrl = (config: Config, familyId: string): string => `${config.publicUrl}/${familyId}`;
-
 /** The address the Operator sends to the Family's first Admin. */
 const familyAddress = (config: Config, familyId: string): string => `${familyUrl(config, familyId)}/`;
-
-/** Everything a Family is made of, its secrets unwrapped: held in memory only. */
-type Family = {
-  familyId: string;
-  databaseName: string;
-  databaseRole: string;
-  blobLocation: string;
-  timeZone: string;
-  familyKey: string;
-  databasePassword: string;
-};
 
 /**
  * Creates a Family, or finishes creating one after a failure part-way: every step is safe to run
@@ -129,37 +112,7 @@ function resumedFamily(config: Config, entry: DirectoryEntry, input: CreateFamil
   if (input.timeZone !== undefined && input.timeZone !== entry.timeZone) {
     throw new ProvisioningError(`The Family was begun with the time zone ${entry.timeZone}, not ${input.timeZone}`);
   }
-  if (!entry.wrappedFamilyKey || !entry.wrappedDatabasePassword) throw new ProvisioningError("The Family's entry holds no keys");
-  const wrapper = wrapperFor(config.operatorKey, entry.familyId);
-  return {
-    familyId: entry.familyId,
-    databaseName: entry.databaseName,
-    databaseRole: entry.databaseRole,
-    blobLocation: entry.blobLocation,
-    timeZone: entry.timeZone,
-    familyKey: wrapper.unwrap("family-key", entry.wrappedFamilyKey),
-    databasePassword: wrapper.unwrap("database-password", entry.wrappedDatabasePassword),
-  };
-}
-
-/** The Context a core opens the Family with, sealed for one call. */
-function sealedContext(config: Config, family: Family): Promise<string> {
-  const claims: ContextClaims = {
-    familyId: family.familyId,
-    database: {
-      host: config.familyDatabaseHost,
-      port: config.familyDatabasePort,
-      name: family.databaseName,
-      user: family.databaseRole,
-      password: family.databasePassword,
-    },
-    familyKey: family.familyKey,
-    blobLocation: family.blobLocation,
-    timeZone: family.timeZone,
-    publicUrl: familyUrl(config, family.familyId),
-    pathPrefix: `/${family.familyId}`,
-    identityProvider: config.identityProvider,
-    identityProviderSignIn: "known-admins-only",
-  };
-  return sealContext(config.contextKey, claims);
+  const { wrappedFamilyKey, wrappedDatabasePassword } = entry;
+  if (!wrappedFamilyKey || !wrappedDatabasePassword) throw new ProvisioningError("The Family's entry holds no keys");
+  return unwrappedFamily(config, { ...entry, wrappedFamilyKey, wrappedDatabasePassword });
 }

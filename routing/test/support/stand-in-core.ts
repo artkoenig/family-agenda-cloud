@@ -24,6 +24,18 @@
  * - `POST /operations/enter-admin` with JSON `{ "email": "<address>" }`: enters an Admin with that
  *   email address and no password, which closes the setup page. Needs a prepared Family (409
  *   otherwise). Answers 201 when the Admin is new and 200 when one with that address exists.
+ *
+ * ## Requests from browsers
+ *
+ * - The Router passes a Family's request on below the root, its Family id removed from the path
+ *   (`/<family id>/agendas/1` arrives as `/agendas/1`), with that Family's Context. The core emits
+ *   its addresses below the Context's `pathPrefix`.
+ * - Static files (`/static/...`) and the health check (`GET /api/health`) are the same for every
+ *   Family: they are served without a Context.
+ * - The core runs with `TRUST_PROXY=true` and takes the client from the Router's headers, as its
+ *   documentation (docs/configuration.md, `TRUST_PROXY`) says: the scheme from the first entry of
+ *   `X-Forwarded-Proto`, the host from `X-Forwarded-Host`, and the client's address from the last
+ *   entry of `X-Forwarded-For`.
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -77,9 +89,22 @@ export async function openContext(token: string, contextKey: string, at: Date = 
   return payload as unknown as Context;
 }
 
+/** The client of a request as a core with `TRUST_PROXY=true` takes it from the headers. */
+export function clientOf({ headers }: RecordedRequest): { address: string | undefined; scheme: "https" | "http"; host: string | undefined } {
+  return {
+    address: headers["x-forwarded-for"]?.split(",").at(-1)?.trim(),
+    scheme: headers["x-forwarded-proto"]?.split(",")[0]?.trim() === "https" ? "https" : "http",
+    host: headers["x-forwarded-host"] ?? headers.host,
+  };
+}
+
 export type RecordedRequest = {
   method: string;
   path: string;
+  /** The query string with its `?`, or "" when there was none. */
+  search: string;
+  /** The request's headers, names in lower case. */
+  headers: Record<string, string>;
   /** The Context as sent, sealed; null when the request carried none. */
   sealedContext: string | null;
   /** The opened Context; null when there was none or it did not open. */
@@ -88,6 +113,13 @@ export type RecordedRequest = {
 };
 
 type Operation = "prepare-family" | "enter-admin";
+
+/** An answer the stand-in gives as it is, to show that it reaches the browser unchanged. */
+export type CannedAnswer = { status: number; headers: [string, string][]; body: Uint8Array };
+
+/** What a core serves the same for every Family, without a Context. */
+const isFamilyIndependent = (method: string, path: string) =>
+  path.startsWith("/static/") || (method === "GET" && path === "/api/health");
 
 export type StandInCore = {
   url: string;
@@ -99,6 +131,8 @@ export type StandInCore = {
   isPrepared(familyId: string): boolean;
   /** The next call of the operation answers with this status, and does nothing. */
   failNext(operation: Operation, status?: number): void;
+  /** The next page, static file or health check is answered with this, whatever was asked. */
+  answerNext(answer: CannedAnswer): void;
   close(): Promise<void>;
 };
 
@@ -108,13 +142,21 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
   const prepared = new Set<string>();
   const admins = new Map<string, string[]>();
   const faults = new Map<Operation, number>();
+  let canned: CannedAnswer | undefined;
+  const cannedAnswer = () => {
+    const answer = canned;
+    canned = undefined;
+    return answer && new Response(answer.body, { status: answer.status, headers: answer.headers });
+  };
 
   const app = new Hono<{ Variables: { context: Context } }>();
   app.use(async (c, next) => {
     const sealedContext = c.req.header(CONTEXT_HEADER) ?? null;
     const context = sealedContext ? await openContext(sealedContext, contextKey).catch(() => null) : null;
     const body: unknown = c.req.header("content-type")?.startsWith("application/json") ? await c.req.json() : null;
-    requests.push({ method: c.req.method, path: c.req.path, sealedContext, context, body });
+    const search = new URL(c.req.url).search;
+    requests.push({ method: c.req.method, path: c.req.path, search, headers: c.req.header(), sealedContext, context, body });
+    if (isFamilyIndependent(c.req.method, c.req.path)) return cannedAnswer() ?? c.json({ familyIndependent: c.req.path });
     if (!context) return c.json({ error: "no valid Context" }, 401);
     c.set("context", context);
     await next();
@@ -143,6 +185,9 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     return c.json({ created: true }, 201);
   });
 
+  // Every other page of the Family: says which Family and page it served.
+  app.all("*", (c) => cannedAnswer() ?? c.json({ familyId: c.get("context").familyId, path: c.req.path }));
+
   const server = await new Promise<Server>((resolve) => {
     const started = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1", createServer }, () => {
       resolve(started as Server);
@@ -155,6 +200,9 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     admins: (familyId) => admins.get(familyId) ?? [],
     isPrepared: (familyId) => prepared.has(familyId),
     failNext: (operation, status = 500) => faults.set(operation, status),
+    answerNext: (answer) => {
+      canned = answer;
+    },
     close: () =>
       new Promise((resolve, reject) => {
         server.close((error) => {

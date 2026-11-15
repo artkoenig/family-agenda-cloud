@@ -3,6 +3,9 @@ import { Writable } from "node:stream";
 import pg from "pg";
 import { inject } from "vitest";
 import { run } from "../../src/cli";
+import { readConfig } from "../../src/config";
+import { createLog } from "../../src/log";
+import { startRouter, type Router } from "../../src/router";
 import { startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
@@ -13,7 +16,12 @@ export type TestRouting = {
   core: StandInCore;
   /** Runs the Routing module's command line with these arguments, as the Operator would. */
   run(args: string[], env?: Record<string, string | undefined>): Promise<RunResult>;
-  /** Everything the Routing module logged so far, over all runs. */
+  /**
+   * Starts the Router as `routing serve` would, on a free port of localhost, with these changes to
+   * the environment. It logs into the same log as the command line and is stopped by close().
+   */
+  startRouter(env?: Record<string, string | undefined>): Promise<Router>;
+  /** Everything the Routing module logged so far, over all runs and Routers. */
   log(): string;
   /** Runs SQL as a superuser on the Directory's database. */
   directory(sql: string, values?: unknown[]): Promise<Record<string, unknown>[]>;
@@ -69,6 +77,16 @@ export async function setUpRouting(): Promise<TestRouting> {
   };
 
   let logged = "";
+  const logSink = () =>
+    new Writable({
+      write(chunk: Buffer, _encoding, done) {
+        logged += chunk.toString();
+        done();
+      },
+    });
+  const routers: Router[] = [];
+  const withOverrides = (overrides: Record<string, string | undefined>) =>
+    Object.fromEntries(Object.entries({ ...env, ...overrides }).filter((entry): entry is [string, string] => entry[1] !== undefined));
   const routing: TestRouting = {
     env,
     core,
@@ -83,11 +101,8 @@ export async function setUpRouting(): Promise<TestRouting> {
             done();
           },
         });
-      const merged = Object.fromEntries(
-        Object.entries({ ...env, ...overrides }).filter((entry): entry is [string, string] => entry[1] !== undefined),
-      );
       const exitCode = await run(args, {
-        env: merged,
+        env: withOverrides(overrides),
         stdout: sink((text) => (stdout += text)),
         stderr: sink((text) => {
           stderr += text;
@@ -96,10 +111,16 @@ export async function setUpRouting(): Promise<TestRouting> {
       });
       return { exitCode, stdout, stderr };
     },
+    async startRouter(overrides = {}) {
+      const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()));
+      routers.push(router);
+      return router;
+    },
     log: () => logged,
     directory: (sql, values) => query(directoryName, sql, values),
     server: (sql, values) => query(maintenance, sql, values),
     async close() {
+      for (const router of routers) await router.close();
       await core.close();
       // The Families' roles, which the Routing module created and so was made a member of, and
       // the databases they own.
