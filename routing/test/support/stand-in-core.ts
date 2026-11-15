@@ -39,7 +39,8 @@
  */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { serve } from "@hono/node-server";
+import { serve, type HttpBindings } from "@hono/node-server";
+import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import { Hono } from "hono";
 import { jwtDecrypt } from "jose";
 
@@ -133,6 +134,8 @@ export type StandInCore = {
   failNext(operation: Operation, status?: number): void;
   /** The next page, static file or health check is answered with this, whatever was asked. */
   answerNext(answer: CannedAnswer): void;
+  /** The next page of a Family begins its answer and then drops the connection. */
+  dropNext(): void;
   close(): Promise<void>;
 };
 
@@ -143,6 +146,7 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
   const admins = new Map<string, string[]>();
   const faults = new Map<Operation, number>();
   let canned: CannedAnswer | undefined;
+  let dropping = false;
   const cannedAnswer = () => {
     const answer = canned;
     canned = undefined;
@@ -186,7 +190,17 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
   });
 
   // Every other page of the Family: says which Family and page it served.
-  app.all("*", (c) => cannedAnswer() ?? c.json({ familyId: c.get("context").familyId, path: c.req.path }));
+  app.all("*", (c) => {
+    if (dropping) {
+      // Begins the answer, then drops the connection, as a core that dies mid-answer does.
+      dropping = false;
+      const { outgoing } = c.env as HttpBindings;
+      outgoing.writeHead(200, { "content-type": "text/plain", "content-length": "1000" });
+      outgoing.write("the beginning of a page", () => outgoing.socket?.destroy());
+      return RESPONSE_ALREADY_SENT;
+    }
+    return cannedAnswer() ?? c.json({ familyId: c.get("context").familyId, path: c.req.path });
+  });
 
   const server = await new Promise<Server>((resolve) => {
     const started = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1", createServer }, () => {
@@ -202,6 +216,9 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     failNext: (operation, status = 500) => faults.set(operation, status),
     answerNext: (answer) => {
       canned = answer;
+    },
+    dropNext: () => {
+      dropping = true;
     },
     close: () =>
       new Promise((resolve, reject) => {

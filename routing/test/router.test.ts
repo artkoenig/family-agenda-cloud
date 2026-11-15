@@ -1,4 +1,4 @@
-import { get, type IncomingMessage } from "node:http";
+import { get, request, type IncomingMessage } from "node:http";
 import { Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/cli";
@@ -131,6 +131,80 @@ describe("the core's answer", () => {
     const [request] = arrived(since);
     expect(request).toMatchObject({ method: "POST", path: "/admin/agendas", body: { name: "Kitchen" } });
     expect(request?.headers).toMatchObject({ cookie: "session=abc", "accept-language": "de" });
+  });
+
+  it("breaks off when the core drops it mid-answer, is not asked of another core, and the Router serves on", async () => {
+    const familyId = await createFamily();
+    const other = await startStandInCore(routing.env.CONTEXT_KEY!);
+    try {
+      const throughPool = await routing.startRouter({ CORE_URLS: `${routing.core.url},${other.url}` });
+      const logBefore = routing.log().length;
+      const since = routing.core.requests.length;
+      routing.core.dropNext();
+
+      const response = await fetch(`${throughPool.url}/${familyId}/agendas/1`);
+      expect(response.status).toBe(200);
+      await expect(response.text()).rejects.toThrow();
+
+      expect(other.requests).toEqual([]);
+      expect((await fetch(`${throughPool.url}/${familyId}/agendas/2`)).status).toBe(200);
+      expect((await fetch(`${throughPool.url}/${familyId}/agendas/3`)).status).toBe(200);
+      const dropped = arrived(since)[0]!;
+      expect(dropped.path).toBe("/agendas/1");
+      // The error is logged by the Family id and what happened, never with the request it was about.
+      const logged = routing.log().slice(logBefore);
+      expect(logged).toContain(`"familyId":"${familyId}"`);
+      expect(logged).toMatch(/"level":"error"/);
+      for (const secret of [dropped.sealedContext!, dropped.context!.familyKey, dropped.context!.database.password]) {
+        expect(logged).not.toContain(secret);
+      }
+    } finally {
+      await other.close();
+    }
+  });
+});
+
+describe("the browser's headers", () => {
+  it("arrive at a core without those of the browser's connection, a Forwarded header or a Context", async () => {
+    const familyId = await createFamily();
+    const since = routing.core.requests.length;
+
+    // fetch refuses to send a Connection header.
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const toRouter = request(`${router.url}/${familyId}/admin`, {
+        headers: {
+          connection: "keep-alive, x-hop-secret",
+          "x-hop-secret": "for the Router only",
+          "keep-alive": "timeout=5",
+          forwarded: "for=198.51.100.66;proto=https",
+          "x-family-agenda-context": "forged",
+          "x-end-to-end": "kept",
+        },
+      });
+      toRouter.on("response", resolve).on("error", reject).end();
+    });
+    response.resume();
+
+    expect(response.statusCode).toBe(200);
+    const headers = arrived(since)[0]!.headers;
+    expect(headers["x-end-to-end"]).toBe("kept");
+    for (const name of ["x-hop-secret", "keep-alive", "forwarded"]) expect(headers[name], name).toBeUndefined();
+    expect(headers["x-family-agenda-context"]).not.toBe("forged");
+  });
+});
+
+describe("routing serve, when its configuration is wrong", () => {
+  it.each([
+    ["no core", { CORE_URLS: " , " }],
+    ["a port that is no number", { PORT: "eighty" }],
+    ["a port out of range", { PORT: "65536" }],
+    ["a negative port", { PORT: "-1" }],
+  ])("refuses to start with %s", async (_case, env) => {
+    const result = await routing.run(["serve"], env);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("The configuration is incomplete");
+    expect(result.stderr).not.toContain("The Router listens");
   });
 });
 

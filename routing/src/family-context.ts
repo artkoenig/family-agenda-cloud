@@ -20,8 +20,12 @@ export type Family = {
  */
 export const familyUrl = (config: Config, familyId: string): string => `${config.publicUrl}/${familyId}`;
 
-/** The Family as its Directory entry has it, its family key and database password unwrapped. */
-export function unwrappedFamily(config: Config, entry: DirectoryEntry & { wrappedFamilyKey: string; wrappedDatabasePassword: string }): Family {
+/**
+ * The Family as its Directory entry has it, its family key and database password unwrapped.
+ * Throws for an entry that holds no keys, such as that of a deleted Family.
+ */
+export function unwrappedFamily(config: Config, entry: DirectoryEntry): Family {
+  if (!entry.wrappedFamilyKey || !entry.wrappedDatabasePassword) throw new Error(`The Directory entry of the Family ${entry.familyId} holds no keys`);
   const wrapper = wrapperFor(config.operatorKey, entry.familyId);
   return {
     familyId: entry.familyId,

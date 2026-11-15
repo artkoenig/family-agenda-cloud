@@ -50,22 +50,33 @@ export function readConfig(env: Env): Config {
     directoryDatabasePassword: required(env, "DIRECTORY_DATABASE_PASSWORD"),
     operatorKey: key(env, "OPERATOR_KEY"),
     contextKey: key(env, "CONTEXT_KEY"),
-    coreUrls: required(env, "CORE_URLS")
-      .split(",")
-      .map((url) => withoutTrailingSlash(url.trim()))
-      .filter(Boolean),
+    coreUrls: coreUrls(env),
     familyDatabaseHost: env.FAMILY_DATABASE_HOST ?? directoryDatabaseUrl.hostname,
     familyDatabasePort: Number(env.FAMILY_DATABASE_PORT ?? (directoryDatabaseUrl.port || "5432")),
     blobRoot: withoutTrailingSlash(required(env, "BLOB_ROOT")),
     publicUrl: withoutTrailingSlash(env.PUBLIC_URL ?? "https://app.family-agenda.cloud"),
     defaultTimeZone: env.TIME_ZONE ?? "Europe/Berlin",
     identityProvider: identityProvider(env),
-    ...router(env),
+    ...listenSettings(env),
   };
 }
 
-function router(env: Env): Pick<Config, "listenHost" | "listenPort" | "trustProxy"> {
-  return { listenHost: env.LISTEN_HOST ?? "0.0.0.0", listenPort: Number(env.PORT ?? "8080"), trustProxy: env.TRUST_PROXY === "true" };
+/** The cores of the pool, separated by commas; at least one. */
+function coreUrls(env: Env): string[] {
+  const urls = required(env, "CORE_URLS")
+    .split(",")
+    .map((url) => withoutTrailingSlash(url.trim()))
+    .filter(Boolean);
+  if (urls.length === 0) throw new ConfigError("CORE_URLS must name at least one core");
+  return urls;
+}
+
+/** Where and how the Router listens. */
+function listenSettings(env: Env): Pick<Config, "listenHost" | "listenPort" | "trustProxy"> {
+  const port = env.PORT ?? "8080";
+  // 0 lets the system choose a free port.
+  if (!/^\d{1,5}$/.test(port) || Number(port) > 65_535) throw new ConfigError("PORT must be a port number, 0 to 65535");
+  return { listenHost: env.LISTEN_HOST ?? "0.0.0.0", listenPort: Number(port), trustProxy: env.TRUST_PROXY === "true" };
 }
 
 /** How to open the Directory's database. */

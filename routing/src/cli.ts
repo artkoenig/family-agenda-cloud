@@ -124,7 +124,7 @@ async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log
 }
 
 async function serve(config: Config, io: Io, log: Log): Promise<number> {
-  await withDirectory(config, () => Promise.resolve());
+  await migrate(config);
   const router = await startRouter(config, log);
   log.info("The Router listens", { url: router.url });
   await (io.until ?? stopSignal());
@@ -137,6 +137,17 @@ const stopSignal = () =>
   new Promise<void>((resolve) => {
     process.once("SIGTERM", resolve).once("SIGINT", resolve);
   });
+
+/** Brings the Directory's schema up to date. */
+async function migrate(config: Config): Promise<void> {
+  const client = new pg.Client(directoryConnection(config));
+  await client.connect();
+  try {
+    await migrateDirectory(client);
+  } finally {
+    await client.end();
+  }
+}
 
 /** Opens the Directory, brings its schema up to date and runs `work` with it. */
 async function withDirectory<T>(config: Config, work: (client: pg.Client) => Promise<T>): Promise<T> {

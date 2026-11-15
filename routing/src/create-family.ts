@@ -112,7 +112,5 @@ function resumedFamily(config: Config, entry: DirectoryEntry, input: CreateFamil
   if (input.timeZone !== undefined && input.timeZone !== entry.timeZone) {
     throw new ProvisioningError(`The Family was begun with the time zone ${entry.timeZone}, not ${input.timeZone}`);
   }
-  const { wrappedFamilyKey, wrappedDatabasePassword } = entry;
-  if (!wrappedFamilyKey || !wrappedDatabasePassword) throw new ProvisioningError("The Family's entry holds no keys");
-  return unwrappedFamily(config, { ...entry, wrappedFamilyKey, wrappedDatabasePassword });
+  return unwrappedFamily(config, entry);
 }
