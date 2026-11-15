@@ -1,0 +1,41 @@
+{
+  "name": "family-agenda-routing",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "routing": "node --import tsx src/main.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "depcruise": "depcruise src test",
+    "test": "vitest run",
+    "check": "pnpm lint && pnpm typecheck && pnpm depcruise && pnpm crap && pnpm mutation",
+    "mutation": "stryker run",
+    "crap": "vitest run --coverage --coverage.provider=v8 --coverage.reporter=json && crap-typescript --exclude .stryker-tmp/** --format text --threshold 8"
+  },
+  "dependencies": {
+    "jose": "6.2.17",
+    "pg": "8.23.1",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@barney-media/crap-typescript": "2.0.0",
+    "@eslint/js": "^10.0.1",
+    "@hono/node-server": "^2.1.8",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
+    "@types/node": "^26.0.0",
+    "@types/pg": "^8.15.6",
+    "@vitest/coverage-v8": "5.1.0",
+    "dependency-cruiser": "^18.7.0",
+    "eslint": "^10.13.0",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "hono": "^4.13.18",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}
