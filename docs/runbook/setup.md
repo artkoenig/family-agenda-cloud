@@ -93,8 +93,18 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    `/opt/family-agenda`. Safe to run again.
 2. Create `/opt/family-agenda/.env` on the Cube (root only, mode 600) with the keys of `cube/.env.example` and the
    values from the password manager.
-3. `scripts/deploy.sh`: copies `cube/` and `site/` to the Cube, pulls the images, brings the services up and reloads
-   Caddy. This is also the way to redeploy.
-4. `scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind Basic Auth.
+3. `scripts/deploy.sh`: copies `cube/`, `routing/` and `site/` to the Cube, pulls the images, builds the Routing
+   module's, brings the services up, reloads Caddy and runs `routing roll-out` for the `CORE_VERSION` of the `.env`.
+   This is also the way to redeploy.
+4. Once: create the Family the smoke check opens, with an address of the Operator's, and store its id in the password
+   manager:
+   `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --admin-email <address>'`.
+5. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
+   Basic Auth. It fails when that Family's address does not answer or an unknown Family id does not get 404.
+6. Check by hand that the pool survives losing a core: on the Cube, `docker compose stop core-1`; run the smoke check
+   again, which must pass; then `docker compose start core-1`.
+
+The plugins and their Egress Proxies share a network with the cores and can reach the cores' port 3000; only the
+Context key, which they do not hold, protects that interface.
 
 The scripts reach the Cube as `root@family-agenda.cloud`; `CUBE_HOST` overrides it.

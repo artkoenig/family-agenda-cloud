@@ -444,6 +444,31 @@ describe("a path that names no active Family", () => {
     expect(arrived(since)).toEqual([]);
   });
 
+  it("gets the same 404 when it names a core's triggered operations, however it is spelt, and nothing arrives at a core", async () => {
+    // Only the Routing module triggers them; through the Router a browser could reset an Admin's password.
+    const familyId = await createFamily();
+    const since = routing.core.requests.length;
+    const unknown = await answerTo(`/${crypto.randomUUID()}`);
+
+    const spellings = ["/operations", "/operations/reset-admin-password", "//operations/run-due-work", "/OPERATIONS/prepare-family"];
+    const disguised = ["/x/../operations/enter-admin", "/./operations/purge-messages", "/%6Fperations/sweep-secrets", "/%2e/operations/x", "/%zz/../operations/x"];
+    for (const path of [...spellings, ...disguised]) {
+      expect(await answerTo(`/${familyId}${path}`), path).toEqual(unknown);
+      const response = await browse(`/${familyId}${path}`, { method: "POST", body: JSON.stringify({ email: "first.admin@example.org" }) });
+      expect(response.status, path).toBe(404);
+    }
+    expect(arrived(since)).toEqual([]);
+  });
+
+  it("still reaches the core for a page whose path merely mentions operations", async () => {
+    const familyId = await createFamily();
+    const since = routing.core.requests.length;
+
+    expect((await browse(`/${familyId}/admin/operations`)).status).toBe(200);
+    expect((await browse(`/${familyId}/operationsx`)).status).toBe(200);
+    expect(arrived(since).map(({ path }) => path)).toEqual(["/admin/operations", "/operationsx"]);
+  });
+
   it("gets the same 404 for a Family still being prepared", async () => {
     routing.core.failNext("enter-admin");
     expect((await routing.run(["create", "--admin-email", "first.admin@example.org"])).exitCode).toBe(1);

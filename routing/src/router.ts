@@ -88,9 +88,11 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
     return;
   }
   const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
-  const family = await routable(setup, familyId);
+  const family = await routable(setup, familyId, rest);
   if (!family) {
-    // The same answer whether the Family is unknown, suspended or deleted: it tells nobody which Families exist.
+    // The same answer whether the Family is unknown, suspended or deleted, which tells nobody which
+    // Families exist, and for a path to the core's triggered operations (/operations/*), which no
+    // browser may reach.
     outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found\n");
     return;
   }
@@ -114,12 +116,34 @@ const NOT_PREPARED = Symbol("not prepared");
 /**
  * The Family, its secrets unwrapped, if it is active and prepared for the running core version;
  * NOT_PREPARED if it is active but not prepared for it, as after the cores moved to a new release
- * and before a rollout prepared it: a core never opens a database it cannot read.
+ * and before a rollout prepared it: a core never opens a database it cannot read. Undefined, without
+ * asking the Directory, when the path below the Family's prefix names the triggered operations.
  */
-async function routable({ config, directory }: RouterSetup, familyId: string): Promise<Family | typeof NOT_PREPARED | undefined> {
+async function routable({ config, directory }: RouterSetup, familyId: string, rest: string): Promise<Family | typeof NOT_PREPARED | undefined> {
+  if (namesOperations(rest)) return undefined;
   const entry = familyId ? await directory.find(familyId) : undefined;
   if (entry?.status !== "active") return undefined;
   return entry.coreVersion === config.coreVersion ? unwrappedFamily(config, entry) : NOT_PREPARED;
+}
+
+/**
+ * Whether the path below a Family's prefix names the core's triggered operations, as a core could
+ * read it once it decodes the path and resolves its dot segments. Only the Routing module triggers
+ * them, with a Context of its own: passed on from a browser, they would let anyone who knows a
+ * Family's address reset its Admin's password.
+ */
+function namesOperations(rest: string): boolean {
+  const [pathname = ""] = rest.split("?", 1);
+  let decoded = pathname;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    // Not decodable as a whole: checked as it is, which still resolves its dot segments.
+  }
+  // One slash for many: "//operations" would otherwise be read as a host.
+  const resolved = new URL(`/${decoded}`.replaceAll(/[/\\]+/g, "/"), "https://core.invalid").pathname;
+  const [first = ""] = resolved.split("/").filter(Boolean);
+  return first.toLowerCase() === "operations";
 }
 
 /** Static files and the health check: the same for every Family, so served without one. */

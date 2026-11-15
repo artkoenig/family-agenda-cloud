@@ -1,5 +1,113 @@
-# The Compose project of the Cube. scripts/deploy.sh copies this directory to /opt/family-agenda.
+# The Compose project of the Cube. scripts/deploy.sh copies this directory to /opt/family-agenda,
+# with routing/ beside it, and brings it up; nothing else is set up by hand but the .env.
+#
+# Who reaches whom; every network but `public` and `outbound` is internal, and only Caddy
+# publishes ports:
+#   public     Caddy and the internet (ACME, the browsers).
+#   edge       Caddy and the Router.
+#   pool       the Routing module (Router, Scheduler) and the cores: the cores' Context interface.
+#   directory  Postgres, the Routing module and the cores, which open their Family's database.
+#   outbound   the cores and the Egress Proxies, which reach the internet and the cores' allowlist.
+#   plugin-<id>         the cores and that plugin.
+#   plugin-<id>-egress  that plugin and its Egress Proxy alone.
+# The plugins and their Egress Proxies share a network with the cores, so they can reach the
+# cores' port 3000 too: only the Context key, which they do not hold, guards that interface.
 name: family-agenda
+
+# The core image of the pool: CORE_VERSION is an exact release, the one the Routing module
+# prepares the Families for, so that the cores and the Routing module change release together.
+x-core-image: &core-image ghcr.io/artkoenig/family-agenda:${CORE_VERSION:?set CORE_VERSION in .env}
+x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+
+# A core of the pool, run from the released image unmodified. It serves whichever Family the
+# Context of a request names: no DATABASE_URL and no master key of its own, so that a core that
+# does not run in Context mode fails to start instead of serving a database of its own.
+#
+# Adding a plugin (from the public core's plugins.yml) takes, in this file:
+#   1. its entry in PLUGIN_URLS below, and its plugin-<id> network in the cores' networks;
+#   2. a plugin-<id> service (<<: *plugin) and a plugin-<id>-egress service (<<: *egress-proxy);
+#   3. the networks plugin-<id> and plugin-<id>-egress at the end, both internal.
+x-core: &core
+  image: *core-image
+  restart: unless-stopped
+  environment:
+    CONTEXT_KEY: ${CONTEXT_KEY:?}
+    EGRESS_TICKET_KEY: ${EGRESS_TICKET_KEY:?}
+    # Caddy and the Router sit in front: the Router forwards the browser's scheme and address.
+    TRUST_PROXY: "true"
+    # The Context names each Family's blob location under this directory (BLOB_ROOT of the Router).
+    BLOB_DIRECTORY: /var/lib/family-agenda/blobs
+    TESSDATA_DIRECTORY: /var/lib/family-agenda/tessdata
+    PLUGIN_URLS: ics=http://plugin-ics:8080,imap=http://plugin-imap:8080,webuntis=http://plugin-webuntis:8080
+  volumes:
+    - blobs:/var/lib/family-agenda/blobs
+    - tessdata:/var/lib/family-agenda/tessdata
+  networks:
+    pool:
+    directory:
+    # The Egress Proxies ask for their allowlist at http://core:3001; any core answers.
+    outbound:
+      aliases: [core]
+    plugin-ics:
+    plugin-imap:
+    plugin-webuntis:
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+    interval: 30s
+    timeout: 5s
+    start_period: 20s
+
+# The Routing module's image, built from routing/; the Router, the Scheduler and the Operator's
+# commands (`docker compose exec router routing <command>`) run it.
+x-routing: &routing
+  build: ./routing
+  image: family-agenda-routing:local
+  restart: unless-stopped
+  environment:
+    DIRECTORY_DATABASE_URL: postgres://routing@postgres:5432/directory
+    DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
+    OPERATOR_KEY: ${OPERATOR_KEY:?}
+    CONTEXT_KEY: ${CONTEXT_KEY:?}
+    CORE_URLS: http://core-1:3000,http://core-2:3000
+    CORE_VERSION: ${CORE_VERSION:?}
+    BLOB_ROOT: /var/lib/family-agenda/blobs
+    PUBLIC_URL: https://app.family-agenda.cloud
+    TRUST_PROXY: "true"
+  volumes:
+    # Holds one blob location per Family; `routing delete` removes a Family's.
+    - blobs:/var/lib/family-agenda/blobs
+  depends_on:
+    directory-database:
+      condition: service_completed_successfully
+
+# A plugin container from the public core's plugins.yml. It reaches the internet only through its
+# Egress Proxy, which is `egress` on the plugin's own plugin-<id>-egress network.
+x-plugin: &plugin
+  restart: unless-stopped
+  mem_limit: 512m
+  cpus: 1
+  environment:
+    HTTPS_PROXY: http://egress:3128
+    HTTP_PROXY: http://egress:3128
+    https_proxy: http://egress:3128
+    http_proxy: http://egress:3128
+    NO_PROXY: localhost,127.0.0.1
+    no_proxy: localhost,127.0.0.1
+
+# A plugin's Egress Proxy, run from the core image: it checks each connection's Ticket and asks the
+# cores what that Ticket allows, at EGRESS_ALLOWLIST_URL (http://core:3001/egress/plugin-<id>).
+# This depends on Context mode (family-agenda#362): the released core answers it from its own
+# database, which a core of the pool does not have. The proxy's other mode, EGRESS_HOSTS, allows
+# fixed hosts without checking Tickets, and so not the host fields of a Source, which ics, imap
+# and webuntis need.
+x-egress-proxy: &egress-proxy
+  image: *core-image
+  restart: unless-stopped
+  command: ["node", "--import", "tsx", "src/egress-proxy-main.ts"]
+  mem_limit: 128m
+x-egress-proxy-environment: &egress-proxy-environment
+  EGRESS_TICKET_KEY: ${EGRESS_TICKET_KEY:?}
+  PORT: "3128"
 
 services:
   caddy:
@@ -8,13 +116,142 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    env_file: .env
+    # Only what the Caddyfile reads: Caddy gets none of the Routing module's secrets.
+    environment:
+      LANDING_BASIC_AUTH_USER: ${LANDING_BASIC_AUTH_USER:?}
+      LANDING_BASIC_AUTH_HASH: ${LANDING_BASIC_AUTH_HASH:?}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./site:/srv/site:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks: [public, edge]
+
+  router:
+    <<: *routing
+    command: ["routing", "serve"]
+    networks: [edge, pool, directory]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:net').connect(8080, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+
+  # Starts each Family's due work on a core.
+  scheduler:
+    <<: *routing
+    command: ["routing", "schedule"]
+    networks: [pool, directory]
+
+  core-1:
+    <<: *core
+  core-2:
+    <<: *core
+
+  postgres:
+    image: *postgres-image
+    restart: unless-stopped
+    environment:
+      # Only for the image's first start: directory-database removes the superuser's password,
+      # so that it is reachable over the local socket alone.
+      POSTGRES_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-socket:/var/run/postgresql
+    networks: [directory]
+    healthcheck:
+      # Over TCP: the image's first start runs a temporary server on the socket only.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Runs on every deploy, then exits: the Routing module's role with its current password, and the
+  # Directory's database. The Routing module migrates the Directory itself.
+  directory-database:
+    image: *postgres-image
+    restart: "no"
+    environment:
+      DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
+    volumes:
+      - postgres-socket:/var/run/postgresql
+      - ./directory-database.sql:/directory-database.sql:ro
+    network_mode: none
+    entrypoint: ["sh", "-c", 'exec psql -U postgres -d postgres -v ON_ERROR_STOP=1 -v password="$$DIRECTORY_DATABASE_PASSWORD" -f /directory-database.sql']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  plugin-ics:
+    <<: *plugin
+    image: ghcr.io/artkoenig/family-agenda-ics:0.4.0@sha256:830488f1f64b65372c49d3a65cfc7e386e45c310eed64a4dbbbfb5f3d35a724a
+    networks: [plugin-ics, plugin-ics-egress]
+  plugin-ics-egress:
+    <<: *egress-proxy
+    environment:
+      <<: *egress-proxy-environment
+      EGRESS_ALLOWLIST_URL: http://core:3001/egress/plugin-ics
+    networks:
+      outbound:
+      plugin-ics-egress:
+        aliases: [egress]
+
+  plugin-imap:
+    <<: *plugin
+    image: ghcr.io/artkoenig/family-agenda-imap:0.3.0@sha256:676319139e6130c88a21cc870483c747fe2387e75e3bd7a9e0ab4d2f86e3c1c5
+    networks: [plugin-imap, plugin-imap-egress]
+  plugin-imap-egress:
+    <<: *egress-proxy
+    environment:
+      <<: *egress-proxy-environment
+      EGRESS_ALLOWLIST_URL: http://core:3001/egress/plugin-imap
+    networks:
+      outbound:
+      plugin-imap-egress:
+        aliases: [egress]
+
+  plugin-webuntis:
+    <<: *plugin
+    image: ghcr.io/artkoenig/family-agenda-webuntis:0.3.0@sha256:1395ed919e299ed1f3851e1746ee7991f1b7e0797208b038c93024c1f3b55ab5
+    networks: [plugin-webuntis, plugin-webuntis-egress]
+  plugin-webuntis-egress:
+    <<: *egress-proxy
+    environment:
+      <<: *egress-proxy-environment
+      EGRESS_ALLOWLIST_URL: http://core:3001/egress/plugin-webuntis
+    networks:
+      outbound:
+      plugin-webuntis-egress:
+        aliases: [egress]
+
+networks:
+  public:
+  outbound:
+  edge:
+    internal: true
+  pool:
+    internal: true
+  directory:
+    internal: true
+  plugin-ics:
+    internal: true
+  plugin-ics-egress:
+    internal: true
+  plugin-imap:
+    internal: true
+  plugin-imap-egress:
+    internal: true
+  plugin-webuntis:
+    internal: true
+  plugin-webuntis-egress:
+    internal: true
 
 volumes:
   caddy_data:
   caddy_config:
+  postgres-data:
+  # Only Postgres and directory-database mount it: the superuser has no password and no network.
+  postgres-socket:
+  # Every Family's blobs, one location each, shared by the cores and the Routing module.
+  blobs:
+  tessdata:

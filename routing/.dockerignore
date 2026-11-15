@@ -1,0 +1,7 @@
+# Only what the image copies; everything else, node_modules and reports among it, stays out.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.json
+!src/

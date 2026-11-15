@@ -10,3 +10,15 @@ family-agenda.cloud {
 	root * /srv/site
 	file_server
 }
+
+# Every Family, at app.family-agenda.cloud/<Family id>/, through the Router to a core of the pool.
+# The Router answers an unknown Family 404 and takes the client's address and scheme from Caddy's
+# X-Forwarded-* headers (TRUST_PROXY).
+app.family-agenda.cloud {
+	encode zstd gzip
+
+	# Until launch.
+	header X-Robots-Tag "noindex, nofollow"
+
+	reverse_proxy router:8080
+}

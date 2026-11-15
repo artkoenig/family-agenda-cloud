@@ -9,7 +9,8 @@ on:
     - cron: "17 3 * * 1"
 
 # The checks of the public repo (artkoenig/family-agenda), for the Routing module in routing/.
-# The static, crap and mutation jobs together are `pnpm check`; all jobs run in parallel.
+# The static, crap and mutation jobs together are `pnpm check`; the cube job checks the deployment.
+# All jobs run in parallel.
 defaults:
   run:
     working-directory: routing
@@ -72,3 +73,19 @@ jobs:
         with:
           path: routing/reports/stryker-incremental.json
           key: stryker-incremental-${{ github.run_id }}
+
+  cube:
+    # The Cube's deployment: the Routing module's image builds, the compose project resolves with
+    # every key of cube/.env.example set (to placeholders), and the scripts pass ShellCheck.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build routing
+      - name: Resolve the compose project
+        run: |
+          sed -E -e 's/^([A-Z_]+)=.*/\1=placeholder/' -e 's/^CORE_VERSION=.*/CORE_VERSION=0.0.0/' cube/.env.example > "$RUNNER_TEMP/cube.env"
+          docker compose -f cube/compose.yaml --env-file "$RUNNER_TEMP/cube.env" config -q
+      - run: shellcheck -x -P SCRIPTDIR scripts/bootstrap.sh scripts/deploy.sh scripts/smoke.sh
