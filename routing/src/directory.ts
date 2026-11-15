@@ -86,7 +86,7 @@ type Row = {
   created_at: Date;
 };
 
-export function directory(client: pg.ClientBase): Directory {
+export function directory(client: Pick<pg.ClientBase, "query">): Directory {
   return {
     async find(familyId) {
       const { rows } = await client.query<Row>("SELECT * FROM family WHERE family_id = $1", [familyId]);
