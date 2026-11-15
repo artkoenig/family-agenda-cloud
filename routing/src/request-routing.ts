@@ -1,4 +1,5 @@
 import type { DirectoryEntry } from "./directory";
+import { isBodiless } from "./failover";
 import { familyIdInPath } from "./family-id";
 import { readinessOf } from "./family-readiness";
 
@@ -30,6 +31,9 @@ const TEXT = { "content-type": "text/plain; charset=utf-8" };
  */
 const NOT_FOUND: Refusal = { to: "refused", status: 404, headers: TEXT, body: "Not found\n" };
 
+/** For a request no core answered, or whose routing failed. */
+export const BAD_GATEWAY: Refusal = { to: "refused", status: 502, headers: TEXT, body: "Bad gateway\n" };
+
 /**
  * For an active Family not prepared for the running core version, as after the cores moved to a
  * new release and before a rollout prepared it: a core never opens a database it cannot read.
@@ -57,7 +61,7 @@ export async function routeRequest<E extends Pick<DirectoryEntry, "status" | "co
 
 function isFamilyIndependent(method: string | undefined, target: string): boolean {
   const [pathname = ""] = target.split("?", 1);
-  if (method !== "GET" && method !== "HEAD") return false;
+  if (!isBodiless(method)) return false;
   return pathname.startsWith("/static/") || pathname === "/api/health";
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FamilyStatus } from "../../src/directory";
-import { routeRequest } from "../../src/request-routing";
+import { BAD_GATEWAY, routeRequest } from "../../src/request-routing";
 
 const familyId = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const coreVersion = "0.3.1";
@@ -118,5 +118,11 @@ describe("routeRequest", () => {
     it("answers 404, not 503, for a suspended Family not prepared for the running core version", async () => {
       expect((await routed("GET", `/${familyId}/`, { ...active, status: "suspended", coreVersion: "0.1.0" })).route).toEqual(notFound);
     });
+  });
+});
+
+describe("BAD_GATEWAY", () => {
+  it("is the Router's answer when no core answered", () => {
+    expect(BAD_GATEWAY).toEqual({ to: "refused", status: 502, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Bad gateway\n" });
   });
 });

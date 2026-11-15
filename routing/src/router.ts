@@ -9,7 +9,7 @@ import { coresFor, isBodiless, takingTurns } from "./failover";
 import { sealedContext, unwrappedFamily } from "./family-context";
 import { reasonOf, type Log } from "./log";
 import { headersFromCore, headersToCore } from "./proxy-headers";
-import { routeRequest } from "./request-routing";
+import { BAD_GATEWAY, routeRequest } from "./request-routing";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
@@ -131,5 +131,5 @@ function answerBadGateway(outgoing: ServerResponse): void {
     outgoing.destroy();
     return;
   }
-  outgoing.writeHead(502, { "content-type": "text/plain; charset=utf-8" }).end("Bad gateway\n");
+  outgoing.writeHead(BAD_GATEWAY.status, BAD_GATEWAY.headers).end(BAD_GATEWAY.body);
 }
