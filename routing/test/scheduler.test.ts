@@ -9,6 +9,9 @@ const MINUTE = 60_000;
 let routing: TestRouting;
 beforeEach(async () => {
   routing = await setUpRouting();
+  // The Directory is shared by the file's tests: each starts without the queues and schedules of
+  // the one before.
+  expect(await routing.directory("SELECT to_regnamespace('scheduler') IS NULL AS clean")).toEqual([{ clean: true }]);
 });
 afterEach(async () => {
   await routing.close();
