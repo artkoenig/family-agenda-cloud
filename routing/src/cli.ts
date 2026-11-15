@@ -40,9 +40,11 @@ const USAGE = `Usage:
     It says when the Family is deleted; after a failure part-way, run it again to finish.
   routing schedule
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
-    once an hour and its sweep of unreferenced secrets once a day.
+    once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
+    again after a delay that doubles with each failure in a row, up to a quarter of an hour.
   routing families
-    Lists every Family with its status and when its due work last ran and how it ended.
+    Lists every Family with its status and when its due work last ran and how it ended; for
+    due work that keeps failing, how often in a row and when it is tried next.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
@@ -241,7 +243,7 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
     stop.abort();
   });
   await withDirectory(config, (client) =>
-    runScheduler({ config, client, directory: directory(client), core: coreClient(config.coreUrls, clock), log, clock, signal: stop.signal }),
+    runScheduler({ config, client, directory: directory(client), core: coreClient(config.coreUrls, log, clock), log, clock, signal: stop.signal }),
   );
   return 0;
 }
@@ -254,7 +256,13 @@ async function families(config: Config, io: Io): Promise<number> {
     if (!dueWork) columns.push("due work never ran");
     else if (dueWork.outcome === "succeeded") {
       columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `succeeded: ${dueWork.sources.ran} Sources polled, ${dueWork.sources.failed} failed`);
-    } else columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `failed: ${dueWork.error}`);
+    } else {
+      columns.push(
+        `due work ran ${dueWork.ranAt.toISOString()}`,
+        `failed: ${dueWork.error}`,
+        `${dueWork.failures} ${dueWork.failures === 1 ? "failure" : "failures"} in a row, next try ${dueWork.retryAt.toISOString()}`,
+      );
+    }
     io.stdout.write(`${columns.join("\t")}\n`);
   }
   return 0;

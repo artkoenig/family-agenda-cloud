@@ -155,6 +155,11 @@ export type StandInCore = {
   isPrepared(familyId: string): boolean;
   /** The next call of the operation answers with this status, and does nothing. */
   failNext(operation: Operation, status?: number): void;
+  /**
+   * The next call of the triggered operation is received and then its connection is dropped
+   * without an answer, as by a core that dies while at work on it.
+   */
+  dropNextCall(operation: Operation): void;
   /** The next page, static file or health check is answered with this, whatever was asked. */
   answerNext(answer: CannedAnswer): void;
   /** The next page of a Family begins its answer and then drops the connection. */
@@ -170,6 +175,10 @@ export type StandInCore = {
   holdDueWork(familyId: string): () => void;
   /** Ends every run held under way. */
   releaseAll(): void;
+  /** Stops listening, as a core that is restarted does: a call to it finds nobody there. */
+  goDown(): Promise<void>;
+  /** Listens again on the same address, with everything it knew before. */
+  comeBack(): Promise<void>;
   close(): Promise<void>;
 };
 
@@ -179,6 +188,7 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
   const prepared = new Set<string>();
   const admins = new Map<string, string[]>();
   const faults = new Map<Operation, number>();
+  const drops = new Set<Operation>();
   let canned: CannedAnswer | undefined;
   let dropping = false;
   const cannedAnswer = () => {
@@ -245,6 +255,10 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     app.post(`/operations/${operation}`, async (c) => {
       const status = fault(operation);
       if (status) return c.json({ error: "fault" }, status as 500);
+      if (drops.delete(operation)) {
+        (c.env as HttpBindings).outgoing.socket?.destroy();
+        return RESPONSE_ALREADY_SENT;
+      }
       const { familyId } = c.get("context");
       if (!prepared.has(familyId)) return c.json({ error: "Family not prepared" }, 409);
       const answered = await answer(familyId);
@@ -285,6 +299,7 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     password: (familyId, email) => passwords.get(passwordKey(familyId, email)),
     isPrepared: (familyId) => prepared.has(familyId),
     failNext: (operation, status = 500) => faults.set(operation, status),
+    dropNextCall: (operation) => drops.add(operation),
     answerNext: (answer) => {
       canned = answer;
     },
@@ -308,8 +323,24 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     releaseAll() {
       for (const { release } of held.values()) release();
     },
+    goDown: () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+        server.closeAllConnections();
+      }),
+    comeBack: () =>
+      new Promise((resolve) => {
+        server.listen(port, "127.0.0.1", resolve);
+      }),
     close: () =>
       new Promise((resolve, reject) => {
+        if (!server.listening) {
+          resolve();
+          return;
+        }
         server.close((error) => {
           if (error) reject(error);
           else resolve();

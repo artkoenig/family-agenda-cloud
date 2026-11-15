@@ -1,7 +1,7 @@
 import { PgBoss, TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import type { RecordedRequest } from "./support/stand-in-core";
+import { startStandInCore, type RecordedRequest, type StandInCore } from "./support/stand-in-core";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 const MINUTE = 60_000;
@@ -286,5 +286,173 @@ describe("The log", () => {
         expect(routing.log()).not.toContain(secret);
       }
     }
+  });
+});
+
+/** How many of the Family's occurrences of due work the Scheduler has handled: run, failed or waited. */
+const handled = (familyId: string): number => routing.log().split(`"familyId":"${familyId}","occasion":"due-work"`).length - 1;
+
+/**
+ * Moves the clock on minute by minute, each time until the Family's occurrence of that minute is
+ * handled; answers the minutes, counted from 1, in which its due work arrived at the core.
+ */
+async function minutesWithDueWork(clock: TestClock, familyId: string, count: number): Promise<number[]> {
+  const arrived: number[] = [];
+  for (let minute = 1; minute <= count; minute++) {
+    const before = callsOf("run-due-work", familyId).length;
+    const handledBefore = handled(familyId);
+    await clock.tick(MINUTE);
+    await expect.poll(() => handled(familyId)).toBe(handledBefore + 1);
+    if (callsOf("run-due-work", familyId).length > before) arrived.push(minute);
+  }
+  return arrived;
+}
+
+const gaps = (minutes: number[]) => minutes.slice(1).map((minute, index) => minute - minutes[index]!);
+
+describe("A Family whose due work fails", () => {
+  it("is retried with growing delay, which stops growing at a quarter of an hour", { timeout: 120_000 }, async () => {
+    const familyId = await createFamily();
+    routing.core.failDueWork(familyId);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock);
+
+    const arrived = await minutesWithDueWork(clock, familyId, 45);
+
+    expect(gaps(arrived)).toEqual([2, 4, 8, 15, 15]);
+  });
+
+  it("is shown to the Operator with how it failed, how often in a row and when it is tried again", { timeout: 60_000 }, async () => {
+    const familyId = await createFamily();
+    routing.core.failDueWork(familyId, 500);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock);
+
+    expect(await minutesWithDueWork(clock, familyId, 8)).toEqual([1, 3, 7]);
+
+    const { stdout } = await routing.run(["families"]);
+    const [line] = stdout.split("\n");
+    expect(line).toMatch(new RegExp(`^${familyId}\tactive\tdue work ran 2026-11-16T08:07:`));
+    expect(line?.split("\t").slice(3)).toEqual(["failed: The core answered run-due-work with 500", "3 failures in a row, next try 2026-11-16T08:15:00.000Z"]);
+    expect(routing.log()).toContain(
+      `"message":"Due work failed","familyId":"${familyId}","occasion":"due-work","reason":"The core answered run-due-work with 500","failures":3`,
+    );
+  });
+
+  it("is triggered once per minute again after a run succeeds", { timeout: 60_000 }, async () => {
+    const familyId = await createFamily();
+    routing.core.failDueWork(familyId);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock);
+
+    // Fails in minutes 1, 3 and 7; the retry in minute 15 succeeds.
+    expect(await minutesWithDueWork(clock, familyId, 8)).toEqual([1, 3, 7]);
+    routing.core.answerDueWork(familyId, { ran: 2, failed: 0 });
+    expect(await minutesWithDueWork(clock, familyId, 11)).toEqual([7, 8, 9, 10, 11]);
+    // A failure after that starts the delays from the beginning.
+    routing.core.failDueWork(familyId);
+    expect(await minutesWithDueWork(clock, familyId, 4)).toEqual([1, 3]);
+  });
+
+  it("does not delay any other Family's due work", { timeout: 60_000 }, async () => {
+    const failing = await createFamily();
+    const other = await createFamily();
+    routing.core.failDueWork(failing);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock);
+
+    expect(await minutesWithDueWork(clock, failing, 8)).toEqual([1, 3, 7]);
+    await expect.poll(() => callsOf("run-due-work", other).length).toBe(8);
+    await expect.poll(async () => (await overview()).find(({ familyId }) => familyId === other)?.outcome).toBe("succeeded");
+  });
+});
+
+describe("A core that does not answer", () => {
+  let others: StandInCore[] = [];
+  afterEach(async () => {
+    for (const core of others) await core.close();
+    others = [];
+  });
+
+  /** A core of the pool that is down: nothing listens at its address. */
+  async function downCore(): Promise<string> {
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!);
+    await down.close();
+    return down.url;
+  }
+
+  it("makes the Scheduler use another core of the pool, and the run counts as a success", async () => {
+    const familyId = await createFamily();
+    const down = await downCore();
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, { CORE_URLS: `${down},${routing.core.url}` });
+
+    expect(await minutesWithDueWork(clock, familyId, 3)).toEqual([1, 2, 3]);
+
+    expect((await overview())[0]).toMatchObject({ outcome: "succeeded" });
+    expect(routing.log()).toContain(`"message":"A core did not run the operation; the next one of the pool is tried","operation":"run-due-work","core":"${new URL(down).host}","reason":"ECONNREFUSED"`);
+    expect(routing.log()).not.toContain('"message":"Due work failed"');
+  });
+
+  it.each([502, 503, 504])("that answers %i makes the Scheduler use another core of the pool", async (status) => {
+    const familyId = await createFamily();
+    const starting = await startStandInCore(routing.env.CONTEXT_KEY!);
+    others.push(starting);
+    starting.failNext("run-due-work", status);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, { CORE_URLS: `${starting.url},${routing.core.url}` });
+
+    expect(await minutesWithDueWork(clock, familyId, 1)).toEqual([1]);
+
+    expect(starting.requests.map(({ path }) => path)).toEqual(["/operations/run-due-work"]);
+    expect((await overview())[0]).toMatchObject({ outcome: "succeeded" });
+  });
+
+  it("that answers 500 fails the run, which is not made again on another core", async () => {
+    const familyId = await createFamily();
+    const failing = await startStandInCore(routing.env.CONTEXT_KEY!);
+    others.push(failing);
+    failing.failNext("run-due-work", 500);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, { CORE_URLS: `${failing.url},${routing.core.url}` });
+
+    await minutesWithDueWork(clock, familyId, 1);
+
+    expect(callsOf("run-due-work", familyId)).toEqual([]);
+    expect((await overview())[0]).toMatchObject({ outcome: "failed", detail: "The core answered run-due-work with 500" });
+  });
+
+  it("that drops the call after it arrived fails the run, which is not made again on another core", async () => {
+    const familyId = await createFamily();
+    const dying = await startStandInCore(routing.env.CONTEXT_KEY!);
+    others.push(dying);
+    dying.dropNextCall("run-due-work");
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, { CORE_URLS: `${dying.url},${routing.core.url}` });
+
+    await minutesWithDueWork(clock, familyId, 1);
+
+    expect(dying.requests.map(({ path }) => path)).toEqual(["/operations/run-due-work"]);
+    expect(callsOf("run-due-work", familyId)).toEqual([]);
+    expect((await overview())[0]).toMatchObject({ outcome: "failed", detail: expect.stringMatching(/^The core did not answer run-due-work/) as unknown });
+  });
+
+  it("when no core answers is recorded as failed and retried, and is neither lost nor doubled once a core is back", { timeout: 60_000 }, async () => {
+    const familyId = await createFamily();
+    const down = await downCore();
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, { CORE_URLS: `${down},${routing.core.url}` });
+    await routing.core.goDown();
+
+    // Fails in minutes 1 and 3; waits for its retry in minutes 2 and 4.
+    expect(await minutesWithDueWork(clock, familyId, 4)).toEqual([]);
+    expect(handled(familyId)).toBe(4);
+    expect((await overview())[0]).toMatchObject({ outcome: "failed", detail: expect.stringMatching(/^No core answered run-due-work/) as unknown });
+
+    await routing.core.comeBack();
+    // The retry in minute 7 is the first run again; from then on one per minute.
+    expect(await minutesWithDueWork(clock, familyId, 7)).toEqual([3, 4, 5, 6, 7]);
+    expect(callsOf("run-due-work", familyId)).toHaveLength(5);
+    expect((await overview())[0]).toMatchObject({ outcome: "succeeded" });
   });
 });

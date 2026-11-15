@@ -1,3 +1,5 @@
+import { describe, reasonOf, type Log } from "./log";
+
 /** The timers a call to the core is given up by; the system's unless a test moves time by hand. */
 export type Timers = {
   setTimeout(fn: () => void, ms: number): unknown;
@@ -50,42 +52,73 @@ export type SourcesPolled = { ran: number; failed: number };
 
 export class CoreError extends Error {}
 
-export function coreClient(coreUrls: string[], timers: Timers = systemTimers): Core {
-  // Any core of the pool serves any Family; Provisioning takes the first.
-  const [url] = coreUrls;
-  if (!url) throw new CoreError("No core configured in CORE_URLS");
+/**
+ * How a call goes. `failover` lets it go on to the next core of the pool when a core provably did
+ * not run it; only the Scheduler's operations do, which the next occurrence would make anyway.
+ */
+type CallOptions = { body?: unknown; accept?: number[]; timeoutMs?: number; failover?: boolean };
+
+/**
+ * The errors of a connection that was never made: the call did not arrive at the core. A
+ * connection that broke after the call was sent is not among them, as the core may have run it.
+ */
+const NOT_CONNECTED = new Set(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
+
+/**
+ * What a core answers when it did not run the operation, because it is starting or because a proxy
+ * in front of it has no core to pass the call to.
+ */
+const NOT_RUN = new Set([502, 503, 504]);
+
+/** A call that provably did not run on the core it was made to, so another core may take it. */
+class NotRun extends CoreError {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * A client of the pool of cores. Any core serves any Family. Provisioning's operations go to the
+ * first core and to no other: a call made a second time elsewhere could, for a password reset,
+ * hand out a second password. The Scheduler's operations take the cores in turn, and a call goes on
+ * to the next core when the core it was made to provably did not run it: it could not be connected
+ * to, as one being restarted cannot, or it answered that it is not serving (502, 503, 504). A core
+ * that was reached but did not answer in time may still be at work on the call, so the call is
+ * given up then instead of being made a second time beside it, which could double a run.
+ */
+export function coreClient(coreUrls: string[], log: Log, timers: Timers = systemTimers): Core {
+  const [first] = coreUrls;
+  if (!first) throw new CoreError("No core configured in CORE_URLS");
+  let next = 0;
+  const inTurn = () => {
+    const start = next;
+    next = (next + 1) % coreUrls.length;
+    return [...coreUrls.slice(start), ...coreUrls.slice(0, start)];
+  };
   /**
    * Calls the operation and answers its status with its JSON body ({} for none). A status other
-   * than 2xx fails the call unless `accept` names it; so does no answer within `timeoutMs`.
+   * than 2xx fails the call unless `accept` names it; so does no answer within `timeoutMs`, and,
+   * with `failover`, no core of the pool that runs it.
    */
-  const call = async (
-    operation: string,
-    sealedContext: string,
-    { body, accept = [], timeoutMs = CALL_TIMEOUT_MS }: { body?: unknown; accept?: number[]; timeoutMs?: number } = {},
-  ): Promise<{ status: number; answer: Record<string, unknown> }> => {
-    const timeout = new AbortController();
-    const timer = timers.setTimeout(() => {
-      timeout.abort(new Error(`no answer within ${timeoutMs / 1000} seconds`));
-    }, timeoutMs);
-    try {
-      const response = await fetch(`${url}/operations/${operation}`, {
-        method: "POST",
-        headers: { [CONTEXT_HEADER]: sealedContext, ...(body === undefined ? {} : { "content-type": "application/json" }) },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: timeout.signal,
-      }).catch((error: unknown) => {
-        throw new CoreError(`The core did not answer ${operation}: ${describe(timeout.signal.reason ?? error)}`);
-      });
-      if (!response.ok && !accept.includes(response.status)) throw new CoreError(`The core answered ${operation} with ${response.status}`);
-      const text = await response.text().catch((error: unknown) => {
-        throw new CoreError(`The core did not answer ${operation}: ${describe(timeout.signal.reason ?? error)}`);
-      });
-      return { status: response.status, answer: parsed(text) };
-    } finally {
-      timers.clearTimeout(timer);
+  const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<{ status: number; answer: Record<string, unknown> }> => {
+    if (!options.failover) return callCore(first, operation, sealedContext, options, timers);
+    const notRun: string[] = [];
+    for (const url of inTurn()) {
+      try {
+        return await callCore(url, operation, sealedContext, options, timers);
+      } catch (error) {
+        if (!(error instanceof NotRun)) throw error;
+        const core = new URL(url).host;
+        notRun.push(`${core} ${error.reason}`);
+        log.info("A core did not run the operation; the next one of the pool is tried", { operation, core, reason: error.reason });
+      }
     }
+    throw new CoreError(`No core answered ${operation}: ${notRun.join(", ")}`);
   };
-  const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS };
+  const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS, failover: true };
   return {
     async prepareFamily(sealedContext) {
       const { coreVersion } = (await call("prepare-family", sealedContext)).answer;
@@ -120,7 +153,41 @@ export function coreClient(coreUrls: string[], timers: Timers = systemTimers): C
   };
 }
 
-const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** Calls the operation on one core; throws NotRun if the core provably did not run it. */
+async function callCore(
+  url: string,
+  operation: string,
+  sealedContext: string,
+  { body, accept = [], timeoutMs = CALL_TIMEOUT_MS }: CallOptions,
+  timers: Timers,
+): Promise<{ status: number; answer: Record<string, unknown> }> {
+  const timeout = new AbortController();
+  const timer = timers.setTimeout(() => {
+    timeout.abort(new Error(`no answer within ${timeoutMs / 1000} seconds`));
+  }, timeoutMs);
+  const noAnswer = (error: unknown) => new CoreError(`The core did not answer ${operation}: ${describe(timeout.signal.reason ?? error)}`);
+  try {
+    const response = await fetch(`${url}/operations/${operation}`, {
+      method: "POST",
+      headers: { [CONTEXT_HEADER]: sealedContext, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: timeout.signal,
+    }).catch((error: unknown) => {
+      const code = reasonOf((error as { cause?: unknown }).cause ?? error);
+      throw NOT_CONNECTED.has(code) ? new NotRun(noAnswer(error).message, code) : noAnswer(error);
+    });
+    if (!response.ok && !accept.includes(response.status)) {
+      const message = `The core answered ${operation} with ${response.status}`;
+      throw NOT_RUN.has(response.status) ? new NotRun(message, String(response.status)) : new CoreError(message);
+    }
+    const text = await response.text().catch((error: unknown) => {
+      throw noAnswer(error);
+    });
+    return { status: response.status, answer: parsed(text) };
+  } finally {
+    timers.clearTimeout(timer);
+  }
+}
 
 /** A JSON object answered, or {} for an empty body, one that is not JSON or not an object. */
 function parsed(text: string): Record<string, unknown> {
