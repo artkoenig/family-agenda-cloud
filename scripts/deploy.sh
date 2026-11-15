@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Copies the Compose project and the landing page to the Cube and brings the services up.
-# .env and key files exist only on the Cube; they are neither copied nor deleted.
+# Copies the Compose project, the Routing module's source and the landing page to the Cube, builds
+# the Routing module's image there, brings the services up and prepares every Family for the
+# core version of the .env (`routing roll-out`). The one way to deploy: after filling the .env
+# nothing is done by hand. .env and key files exist only on the Cube; they are neither copied nor
+# deleted.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -13,11 +16,20 @@ cube_ssh "test -f $CUBE_DIR/.env" || {
 
 # --inplace keeps the inode of the Caddyfile, which is mounted as a single file.
 rsync -rlt --delete --inplace -e "$RSYNC_SSH" \
-	--exclude '.env' --exclude '*.key' --exclude '.env.example' --exclude '/site/' \
+	--exclude '.env' --exclude '*.key' --exclude '.env.example' --exclude '/site/' --exclude '/routing' \
 	"$REPO_ROOT/cube/" "$CUBE_HOST:$CUBE_DIR/"
 
 rsync -rlt --delete -e "$RSYNC_SSH" --exclude '.DS_Store' \
 	"$REPO_ROOT/site/" "$CUBE_HOST:$CUBE_DIR/site/"
 
-cube_ssh "cd $CUBE_DIR && docker compose pull -q && docker compose up -d --remove-orphans \
-	&& docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile"
+# compose.yaml builds the Routing module from ./routing, which is a link in the repository.
+rsync -rlt --delete -e "$RSYNC_SSH" \
+	--exclude 'node_modules/' --exclude 'reports/' --exclude '.stryker-tmp/' --exclude '.DS_Store' \
+	"$REPO_ROOT/routing/" "$CUBE_HOST:$CUBE_DIR/routing/"
+
+# --wait returns once every service is running or healthy and the one-shot directory-database
+# has finished; the rollout then needs the new cores.
+cube_ssh "cd $CUBE_DIR && docker compose pull -q --ignore-buildable && docker compose build -q \
+	&& docker compose up -d --wait --remove-orphans \
+	&& docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile \
+	&& docker compose exec -T router routing roll-out"
