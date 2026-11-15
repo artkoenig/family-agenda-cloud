@@ -46,11 +46,11 @@ describe("headersToCore", () => {
       browser({
         "x-forwarded-for": "203.0.113.9, 192.0.2.1 ,10.0.0.5",
         "x-forwarded-proto": " https , http",
-        "x-forwarded-host": "agenda.example, inner.example",
+        "x-forwarded-host": "public.example, inner.example",
       }),
       true,
     );
-    expect(headers).toMatchObject({ "x-forwarded-for": "10.0.0.5", "x-forwarded-proto": "https", "x-forwarded-host": "agenda.example" });
+    expect(headers).toMatchObject({ "x-forwarded-for": "10.0.0.5", "x-forwarded-proto": "https", "x-forwarded-host": "public.example" });
   });
 
   it("falls back to what the Router sees, with TRUST_PROXY, for what the proxy did not forward", () => {
@@ -84,6 +84,11 @@ describe("headersFromCore", () => {
   it("drops the headers any Connection header of the core names", () => {
     const raw = ["Connection", "X-Internal", "X-Internal", "1", "connection", " x-debug ,close", "X-Debug", "2", "X-Kept", "3"];
     expect(headersFromCore(raw)).toEqual(["X-Kept", "3"]);
+  });
+
+  it("keeps a header whose value is the name of another, unless a Connection header names it", () => {
+    const raw = ["Vary", "x-kept", "X-Kept", "3"];
+    expect(headersFromCore(raw)).toEqual(raw);
   });
 
   it("drops a name that has no value", () => {

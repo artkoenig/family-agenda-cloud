@@ -19,7 +19,7 @@ function usageError(parse: () => unknown): string {
 describe("parseCreate", () => {
   it("draws a new Family id, leaving the time zone to the default", () => {
     const input = parseCreate(["--admin-email", "ada@example.org"], defaultTimeZone);
-    expect(input).toEqual({ adminEmail: "ada@example.org", familyId: input.familyId, resume: false });
+    expect(input).toStrictEqual({ adminEmail: "ada@example.org", familyId: input.familyId, resume: false });
     expect(isFamilyId(input.familyId)).toBe(true);
   });
 
@@ -31,6 +31,10 @@ describe("parseCreate", () => {
   it("finishes the Family that --family-id names, in lower case, in the time zone named", () => {
     const args = ["--admin-email", "ada@example.org", "--time-zone", "America/New_York", "--family-id", familyId.toUpperCase()];
     expect(parseCreate(args, defaultTimeZone)).toEqual({ adminEmail: "ada@example.org", timeZone: "America/New_York", familyId, resume: true });
+  });
+
+  it.each(["ada@mail.example.org", "a.da+agenda@example.co.uk"])("takes %s as the first Admin's email address", (adminEmail) => {
+    expect(parseCreate(["--admin-email", adminEmail], defaultTimeZone).adminEmail).toBe(adminEmail);
   });
 
   it("refuses an unknown time zone", () => {
@@ -47,7 +51,7 @@ describe("parseCreate", () => {
     ["none", []],
     ["an empty one", ["--admin-email", ""]],
     ["one without @", ["--admin-email", "ada.example.org"]],
-    ["one with two @", ["--admin-email", "ada@b@example.org"]],
+    ["one with two @", ["--admin-email", "ada@example.org@example.org"]],
     ["one with nothing before @", ["--admin-email", "@example.org"]],
     ["one with an undotted domain", ["--admin-email", "ada@localhost"]],
     ["one with an empty domain label", ["--admin-email", "ada@example..org"]],
