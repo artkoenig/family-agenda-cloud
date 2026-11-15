@@ -88,7 +88,7 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
     return;
   }
   const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
-  const family = namesOperations(rest) ? undefined : await routable(setup, familyId);
+  const family = await routable(setup, familyId, rest);
   if (!family) {
     // The same answer whether the Family is unknown, suspended or deleted, which tells nobody which
     // Families exist, and for a path to the core's triggered operations (/operations/*), which no
@@ -116,9 +116,11 @@ const NOT_PREPARED = Symbol("not prepared");
 /**
  * The Family, its secrets unwrapped, if it is active and prepared for the running core version;
  * NOT_PREPARED if it is active but not prepared for it, as after the cores moved to a new release
- * and before a rollout prepared it: a core never opens a database it cannot read.
+ * and before a rollout prepared it: a core never opens a database it cannot read. Undefined, without
+ * asking the Directory, when the path below the Family's prefix names the triggered operations.
  */
-async function routable({ config, directory }: RouterSetup, familyId: string): Promise<Family | typeof NOT_PREPARED | undefined> {
+async function routable({ config, directory }: RouterSetup, familyId: string, rest: string): Promise<Family | typeof NOT_PREPARED | undefined> {
+  if (namesOperations(rest)) return undefined;
   const entry = familyId ? await directory.find(familyId) : undefined;
   if (entry?.status !== "active") return undefined;
   return entry.coreVersion === config.coreVersion ? unwrappedFamily(config, entry) : NOT_PREPARED;
