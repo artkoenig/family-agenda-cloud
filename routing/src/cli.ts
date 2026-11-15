@@ -1,9 +1,8 @@
-import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
-import { parseArgs } from "node:util";
 import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
+import { parseCreate, parseDelete, parseFamilyId, parseReset, UsageError } from "./cli-arguments";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { coreClient } from "./core";
@@ -63,14 +62,12 @@ const USAGE = `Usage:
     Runs the Router on LISTEN_HOST:PORT until SIGTERM or SIGINT, passing each Family's requests
     on to the cores in CORE_URLS.`;
 
-class UsageError extends Error {}
-
 type Command = (args: string[], config: Config, io: Io, log: Log) => Promise<number>;
 
 /** The Operator's commands by name; each answers the exit code. */
 const COMMANDS: Record<string, Command> = {
   migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
-  create: (args, config, io, log) => create(config, parseCreate(args, config), io, log),
+  create: (args, config, io, log) => create(config, parseCreate(args, config.defaultTimeZone), io, log),
   "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
   delete: (args, config, io, log) => runFamilyCommand(config, deletion(parseDelete(args)), io, log),
   suspend: (args, config, io, log) => runFamilyCommand(config, suspension(parseFamilyId(args)), io, log),
@@ -101,58 +98,6 @@ export async function run(args: string[], io: Io): Promise<number> {
     }
     log.error("The command failed", { error });
     return 1;
-  }
-}
-
-function parseCreate(args: string[], config: Config): CreateFamilyInput {
-  const values = options(args, ["admin-email", "time-zone", "family-id"]);
-  const adminEmail = adminEmailOption(values["admin-email"], "the first Admin");
-  const timeZone = values["time-zone"];
-  const effectiveTimeZone = timeZone ?? config.defaultTimeZone;
-  if (!isTimeZone(effectiveTimeZone)) throw new UsageError(`Unknown time zone ${effectiveTimeZone}`);
-  return { adminEmail, ...familyIdOption(values["family-id"]), ...(timeZone === undefined ? {} : { timeZone }) };
-}
-
-/** The Family to finish that --family-id names, or a newly drawn Family id. */
-function familyIdOption(value: string | undefined): { familyId: string; resume: boolean } {
-  if (value === undefined) return { familyId: randomUUID(), resume: false };
-  return { familyId: familyIdValue(value), resume: true };
-}
-
-/** The Family id that --family-id names, in the lower case the Directory keeps. */
-function familyIdValue(value: string | undefined): string {
-  const familyId = value?.toLowerCase();
-  if (!familyId || !isFamilyId(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
-  return familyId;
-}
-
-/** The email address that --admin-email names; `whose` says which Admin it is for. */
-function adminEmailOption(value: string | undefined, whose: string): string {
-  if (!value || !isEmailAddress(value)) throw new UsageError(`--admin-email needs the email address of ${whose}`);
-  return value;
-}
-
-function options(args: string[], names: string[]): Record<string, string | undefined> {
-  try {
-    const { values } = parseArgs({ args, options: Object.fromEntries(names.map((name) => [name, { type: "string" }])), strict: true });
-    return values;
-  } catch (error) {
-    throw new UsageError(error instanceof Error ? error.message : String(error));
-  }
-}
-
-/** One @, something before it, and a dotted domain after it; the core checks it further. */
-function isEmailAddress(text: string): boolean {
-  const [local, domain, ...rest] = text.split("@");
-  return rest.length === 0 && Boolean(local) && /^[^\s.]+(\.[^\s.]+)+$/.test(domain ?? "") && !/\s/.test(local ?? "");
-}
-
-function isTimeZone(timeZone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone });
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -200,11 +145,6 @@ async function migrate(config: Config): Promise<void> {
   }
 }
 
-function parseReset(args: string[]): ResetAdminPasswordInput {
-  const values = options(args, ["family-id", "admin-email"]);
-  return { familyId: familyIdValue(values["family-id"]), adminEmail: adminEmailOption(values["admin-email"], "the Admin") };
-}
-
 async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log: Log): Promise<number> {
   try {
     const password = await withDirectory(config, (client) => resetAdminPassword(provisioning(config, client, log), input));
@@ -221,16 +161,6 @@ async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log
     }
     return 1;
   }
-}
-
-function parseDelete(args: string[]): DeleteFamilyInput {
-  const values = options(args, ["family-id", "confirm"]);
-  // deleteFamily itself checks that it is a Family id.
-  const familyId = values["family-id"];
-  if (!familyId) throw new UsageError("--family-id needs the Family id of the Family to delete");
-  const confirmation = values.confirm;
-  if (confirmation === undefined) throw new UsageError("--confirm needs the Family id once more");
-  return { familyId: familyId.toLowerCase(), confirmation: confirmation.toLowerCase() };
 }
 
 /** A command that changes a Family and its schedules: what does it, what the Operator is told, what the log says. */
@@ -286,10 +216,6 @@ const resumption = (familyId: string): FamilyCommand => ({
   refused: "Resuming the Family was refused",
   failed: "Resuming the Family did not finish; run resume again to finish it",
 });
-
-function parseFamilyId(args: string[]): string {
-  return familyIdValue(options(args, ["family-id"])["family-id"]);
-}
 
 async function schedule(config: Config, io: Io, log: Log): Promise<number> {
   const { clock = systemClock } = io;
