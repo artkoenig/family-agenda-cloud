@@ -21,39 +21,43 @@ _Avoid_: Instance (one installation for one Family), backend, worker
 ### Routing module
 
 **Routing module**:
-The closed program in front of the pool of cores; the only thing that knows which Families exist. It is made of the Router, the Directory, the Scheduler and Provisioning.
+The closed program in front of the pool of cores, made of the Router, the Directory, the Scheduler and Provisioning; the only thing that knows which Families exist.
 _Avoid_: Gateway, control plane, proxy
 
 **Router**:
-The part of the Routing module that finds the Family of a web request by the Family id in its path and hands the request, with that Family's Context, to any core.
-_Avoid_: Gateway, load balancer
+The Routing module's entrance for web requests, which finds a request's Family by the Family id in its path and hands the request with that Family's Context to any core.
+_Avoid_: Load balancer, front door
 
 **Directory**:
-The one list of every Family with where its data lives, its wrapped family key, its settings and its status (being prepared, active, suspended, deleted). Only an active Family is routed to and scheduled.
+The one list of every Family, holding per Family its Family id, status (being prepared, active, suspended, deleted), database and role, wrapped family key and database password, blob location, time zone, the core version it was last prepared for, and how its due work last ended.
 _Avoid_: Registry, tenant table, control database
 
 **Scheduler**:
-The part of the Routing module that gives each active Family's core the occasion to run its due work and its purge; the core decides what is due.
+The Routing module's clock, which gives each active Family's core the occasion to run its due work and its purge; the core decides what is due.
 _Avoid_: Cron, job runner, worker
 
 **Provisioning**:
-The part of the Routing module, reached by the Operator through a command line, that creates, suspends, resumes and deletes a Family and prepares every Family for a new core version.
+The Operator's command line into the Routing module, which creates a Family and enters its first Admin, suspends, resumes and deletes it, resets an Admin's password, and prepares every Family for a new core version.
 _Avoid_: Onboarding, setup, admin tool
 
 ### Families and keys
 
 **Family id**:
-The one identifier of a Family, a UUID that Provisioning draws: the key of its Directory entry, the first path segment of its address, and the Family id the core writes into Tickets.
+As in the public glossary; in addition, it is the first path segment of the Family's address.
 _Avoid_: Tenant id, slug, subdomain
 
+**Family key**:
+The key, one per Family, that encrypts that Family's Source credentials; a leaked one opens only that Family's.
+_Avoid_: Tenant key
+
 **Context**:
-Everything a core needs to serve one Family for one request or run: its Family id, the database to open, its family key, its blob location, its time zone, its public address with the path prefix, and the Identity Provider settings. It is encrypted and signed with the Context key and expires after a short time.
+What a core is given to serve one Family for one request or run: its Family id, database, family key, blob location, time zone, public address with the path prefix, and Identity Provider settings.
 _Avoid_: Tenant config, session, request context
 
 **Operator key**:
-The key that wraps every family key and Family database password kept in the Directory; it lives only in the Cube's environment and the password manager, never in the Directory.
-_Avoid_: Master key (the public core's own key), KMS key
+The Operator's key that wraps every family key and Family database password kept in the Directory.
+_Avoid_: KMS key
 
 **Context key**:
-The key, shared by the Routing module and the cores, that encrypts and signs every Context.
-_Avoid_: Shared secret, Ticket key (that is `EGRESS_TICKET_KEY`)
+The key, shared by the Routing module and the cores, that protects every Context.
+_Avoid_: Shared secret, Ticket key

@@ -31,7 +31,7 @@ Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Sel
 
 ### 1.1 Composition Root als Bibliothek
 
-> **Abgelöst** durch [#90](https://github.com/artkoenig/family-agenda-cloud/issues/90) und [ADR-0001](adr/0001-routing-module-is-a-separate-program-in-front-of-unmodified-cores.md).
+(abgelöst, siehe oben)
 
 - **Heute:** `bootApplication` und `bootWorker` (`apps/api/src/composition-root.ts`) erzeugen ihre Adapter selbst aus `readConfig()`, also aus Dateipfaden und `DATABASE_URL`.
 - **Ziel:** Beide Funktionen bekommen die Adapter übergeben (DB-Verbindung, `SecretStore`, `BlobStore`, `Extractor`, `JobQueue`, `Clock`).
@@ -56,7 +56,7 @@ Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Sel
 
 ### 1.4 HTTP-App ohne eigenen Server
 
-> **Abgelöst** durch [#90](https://github.com/artkoenig/family-agenda-cloud/issues/90) und [ADR-0001](adr/0001-routing-module-is-a-separate-program-in-front-of-unmodified-cores.md).
+(abgelöst, siehe oben)
 
 - `createApp(application)` gibt die Hono-App zurück; erst `main.ts` bindet sie an einen Port.
 - Das private Gateway kann dann je nach Hostname an die App der Familie weiterreichen.
@@ -73,7 +73,7 @@ Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Sel
 
 ### 1.7 Pakete veröffentlichen
 
-> **Abgelöst** durch [#90](https://github.com/artkoenig/family-agenda-cloud/issues/90) und [ADR-0001](adr/0001-routing-module-is-a-separate-program-in-front-of-unmodified-cores.md).
+(abgelöst, siehe oben)
 
 - **Heute:** Alle Pakete sind `"private": true`, und der Code läuft über `tsx` zur Laufzeit.
 - **Ziel:**
@@ -96,7 +96,7 @@ Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Sel
 
 ## Phase 2 – Inhalt des privaten Repos (zur Einordnung)
 
-> **Abgelöst** durch [#90](https://github.com/artkoenig/family-agenda-cloud/issues/90) und [ADR-0001](adr/0001-routing-module-is-a-separate-program-in-front-of-unmodified-cores.md).
+(abgelöst, siehe oben)
 
 | Baustein | Aufgabe |
 |---|---|
