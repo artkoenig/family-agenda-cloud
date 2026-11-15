@@ -1,6 +1,6 @@
 import type { Config } from "./config";
 import type { Core } from "./core";
-import { ProvisioningError } from "./provisioning";
+import { existingEntry, ProvisioningError } from "./provisioning";
 import type { Directory } from "./directory";
 import { sealedContext, unwrappedFamily } from "./family-context";
 import type { Log } from "./log";
@@ -23,8 +23,7 @@ export async function resetAdminPassword(
   { config, directory, core, log }: { config: Config; directory: Directory; core: Core; log: Log },
   { familyId, adminEmail }: ResetAdminPasswordInput,
 ): Promise<string> {
-  const entry = await directory.find(familyId);
-  if (!entry) throw new ProvisioningError(`There is no Family ${familyId}`);
+  const entry = await existingEntry(directory, familyId);
   if (entry.status !== "active") throw new ProvisioningError(`The Family ${familyId} is ${entry.status.replaceAll("_", " ")}, not active`);
   const family = unwrappedFamily(config, entry);
   const password = await core.resetAdminPassword(await sealedContext(config, family), adminEmail);

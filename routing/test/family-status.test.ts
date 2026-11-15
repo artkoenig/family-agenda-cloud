@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Router } from "../src/router";
@@ -355,6 +358,43 @@ describe("The log", () => {
     expect(log).toContain(familyId);
     for (const secret of [entry!.wrapped_family_key, entry!.wrapped_database_password, routing.env.OPERATOR_KEY, routing.env.CONTEXT_KEY]) {
       expect(log).not.toContain(String(secret));
+    }
+  });
+});
+
+describe("Suspending and resuming at the same time", () => {
+  it("leaves the Family's status and schedules in agreement, whichever ends last", async () => {
+    const familyId = await createFamily();
+
+    for (let round = 0; round < 8; round++) {
+      const results = await Promise.all(round % 2 ? [resume(familyId), suspend(familyId)] : [suspend(familyId), resume(familyId)]);
+
+      for (const result of results) expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+      const status = await statusOf(familyId);
+      const schedules = await routing.schedules(familyId);
+      expect({ status, schedules }).toEqual(status === "active" ? { status, schedules: ALL_SCHEDULES } : { status: "suspended", schedules: [] });
+    }
+  });
+
+  it("leaves a deleted Family without schedules when a resume comes at the same time", async () => {
+    const blobRoot = await mkdtemp(join(tmpdir(), "routing-blobs-"));
+    try {
+      const created = await routing.run(["create", "--admin-email", "first.admin@example.org"], { BLOB_ROOT: blobRoot });
+      const familyId = ADDRESS.exec(created.stdout.trim())![1]!;
+      await suspend(familyId);
+
+      const [deleted, resumed] = await Promise.all([
+        routing.run(["delete", "--family-id", familyId, "--confirm", familyId], { BLOB_ROOT: blobRoot }),
+        resume(familyId),
+      ]);
+
+      expect(deleted, deleted.stderr).toMatchObject({ exitCode: 0 });
+      // Either it resumed before the deletion, or it was refused after.
+      expect([0, 1]).toContain(resumed.exitCode);
+      expect(await statusOf(familyId)).toBe("deleted");
+      expect(await routing.schedules(familyId)).toEqual([]);
+    } finally {
+      await rm(blobRoot, { recursive: true, force: true });
     }
   });
 });

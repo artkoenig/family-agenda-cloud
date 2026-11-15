@@ -1,8 +1,7 @@
 import { rm, stat } from "node:fs/promises";
 import type { DirectoryEntry } from "./directory";
 import { dropFamilyDatabase, familyDatabaseNames } from "./family-databases";
-import { blobLocationOf, isFamilyId, ProvisioningError, type Provisioning } from "./provisioning";
-import type { FamilySchedules } from "./scheduler";
+import { blobLocationOf, existingEntry, isFamilyId, ProvisioningError, withFamilyLock, type ScheduledProvisioning } from "./provisioning";
 
 export type DeleteFamilyInput = {
   familyId: string;
@@ -22,18 +21,14 @@ export type DeleteFamilyInput = {
  * not yet vacuumed, its write-ahead log and its backups still hold the wrapped values until they
  * are overwritten or expire; they open only with the Operator key.
  */
-export async function deleteFamily(
-  provisioning: Omit<Provisioning, "core"> & { schedules: FamilySchedules },
-  input: DeleteFamilyInput,
-): Promise<void> {
+export async function deleteFamily(provisioning: ScheduledProvisioning, input: DeleteFamilyInput): Promise<void> {
   const { config, client, directory, schedules, log } = provisioning;
   const { familyId } = input;
   if (!isFamilyId(familyId)) throw new ProvisioningError(`${familyId} is not a Family id; nothing was deleted`);
   if (input.confirmation !== familyId) {
     throw new ProvisioningError("The confirmation does not match the Family id; nothing was deleted");
   }
-  const entry = await directory.find(familyId);
-  if (!entry) throw new ProvisioningError(`There is no Family ${familyId}`);
+  const entry = await existingEntry(directory, familyId);
   refuseForeign(entry, blobLocationOf(config, familyId));
   if (entry.deletedAt) {
     log.info("The Family was deleted already", { familyId, deletedAt: entry.deletedAt.toISOString() });
@@ -41,11 +36,14 @@ export async function deleteFamily(
   }
   log.info(entry.status === "deleted" ? "Finishing the deletion of the Family" : "Deleting the Family", { familyId });
 
-  await directory.markDeleted(familyId);
-  log.info("The Family is marked deleted; its wrapped family key and database password are destroyed", { familyId });
+  // Under the Family's lock: a resume under way cannot give it its schedules back once removed.
+  await withFamilyLock(client, familyId, async () => {
+    await directory.markDeleted(familyId);
+    log.info("The Family is marked deleted; its wrapped family key and database password are destroyed", { familyId });
 
-  await schedules.remove(familyId);
-  log.info("The Family's schedules are removed", { familyId });
+    await schedules.remove(familyId);
+    log.info("The Family's schedules are removed", { familyId });
+  });
 
   await dropFamilyDatabase(client, entry);
   log.info("The Family's database and role are dropped", { familyId });
