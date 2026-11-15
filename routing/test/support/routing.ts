@@ -28,9 +28,9 @@ export type TestRouting = {
   startRouter(env?: Record<string, string | undefined>): Promise<Router>;
   /**
    * Starts the Scheduler, as `routing schedule` on the Cube, on a clock the test moves; answers
-   * once it is under way. close() stops it.
+   * once it is under way, with these changes to the environment. close() stops it.
    */
-  startScheduler(clock: TestClock): Promise<void>;
+  startScheduler(clock: TestClock, env?: Record<string, string | undefined>): Promise<void>;
   /** The names of the Family's schedules, as pg-boss keeps them in the Directory's database. */
   schedules(familyId: string): Promise<string[]>;
   /** Everything the Routing module logged so far, over all runs, Routers and Schedulers. */
@@ -174,7 +174,7 @@ export async function setUpRouting(): Promise<TestRouting> {
       routers.push(router);
       return router;
     },
-    async startScheduler(clock) {
+    async startScheduler(clock, overrides = {}) {
       let stopped = () => {};
       const stopping = new Promise<void>((resolve) => {
         stopped = resolve;
@@ -186,7 +186,7 @@ export async function setUpRouting(): Promise<TestRouting> {
         onLog = () => {
           if (logged.slice(before).includes(`"message":"${SCHEDULER_RUNNING}"`)) resolve();
         };
-        running = routing.run(["schedule"], {}, { clock, until: stopping });
+        running = routing.run(["schedule"], overrides, { clock, until: stopping });
         void running.then(() => {
           resolve();
         });

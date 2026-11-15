@@ -170,6 +170,10 @@ export type StandInCore = {
   holdDueWork(familyId: string): () => void;
   /** Ends every run held under way. */
   releaseAll(): void;
+  /** Stops listening, as a core that is restarted does: a call to it finds nobody there. */
+  goDown(): Promise<void>;
+  /** Listens again on the same address, with everything it knew before. */
+  comeBack(): Promise<void>;
   close(): Promise<void>;
 };
 
@@ -308,8 +312,24 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     releaseAll() {
       for (const { release } of held.values()) release();
     },
+    goDown: () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+        server.closeAllConnections();
+      }),
+    comeBack: () =>
+      new Promise((resolve) => {
+        server.listen(port, "127.0.0.1", resolve);
+      }),
     close: () =>
       new Promise((resolve, reject) => {
+        if (!server.listening) {
+          resolve();
+          return;
+        }
         server.close((error) => {
           if (error) reject(error);
           else resolve();

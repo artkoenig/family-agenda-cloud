@@ -22,11 +22,12 @@ export type DirectoryEntry = {
 
 /**
  * How a Family's due work last ran: when the Scheduler triggered it, and whether the core ran it,
- * with how many due Sources it polled and how many of those failed, or why it did not.
+ * with how many due Sources it polled and how many of those failed, or why it did not. A failed run
+ * says how many runs in a row have failed with it, and when the Scheduler tries the Family again.
  */
 export type DueWorkRun =
   | { ranAt: Date; outcome: "succeeded"; sources: SourcesPolled }
-  | { ranAt: Date; outcome: "failed"; error: string };
+  | { ranAt: Date; outcome: "failed"; error: string; failures: number; retryAt: Date };
 
 /** What the Operator sees of a Family: its status and how its due work last ran, if it ever did. */
 export type FamilyOverview = { familyId: string; status: FamilyStatus; dueWork: DueWorkRun | null };
@@ -59,6 +60,10 @@ const MIGRATIONS = [
      ADD COLUMN due_work_sources_ran integer,
      ADD COLUMN due_work_sources_failed integer,
      ADD COLUMN due_work_error text`,
+  // How many runs of due work in a row have failed, and when the Scheduler tries again (#97).
+  `ALTER TABLE family
+     ADD COLUMN due_work_failures integer NOT NULL DEFAULT 0,
+     ADD COLUMN due_work_retry_at timestamptz`,
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */
@@ -78,6 +83,8 @@ export type Directory = {
   finishDeletion(familyId: string): Promise<void>;
   /** Notes how the Family's due work last ran, in place of the run before. */
   recordDueWork(familyId: string, run: DueWorkRun): Promise<void>;
+  /** How the Family's due work last ran; null if it never did, or there is no such Family. */
+  lastDueWork(familyId: string): Promise<DueWorkRun | null>;
   /** Every Family, oldest first. */
   overview(): Promise<FamilyOverview[]>;
 };
@@ -126,7 +133,14 @@ type OverviewRow = {
   due_work_sources_ran: number | null;
   due_work_sources_failed: number | null;
   due_work_error: string | null;
+  due_work_failures: number;
+  /** For a failed run, when the Family is tried again; a run failed before retries were noted is due. */
+  due_work_retry_at: Date;
 };
+
+const DUE_WORK_COLUMNS =
+  "due_work_ran_at, due_work_outcome, due_work_sources_ran, due_work_sources_failed, due_work_error, due_work_failures, " +
+  "coalesce(due_work_retry_at, due_work_ran_at) AS due_work_retry_at";
 
 function dueWorkRun(row: OverviewRow): DueWorkRun | null {
   if (!row.due_work_ran_at) return null;
@@ -134,7 +148,13 @@ function dueWorkRun(row: OverviewRow): DueWorkRun | null {
     const sources = { ran: row.due_work_sources_ran ?? 0, failed: row.due_work_sources_failed ?? 0 };
     return { ranAt: row.due_work_ran_at, outcome: "succeeded", sources };
   }
-  return { ranAt: row.due_work_ran_at, outcome: "failed", error: row.due_work_error ?? "" };
+  return {
+    ranAt: row.due_work_ran_at,
+    outcome: "failed",
+    error: row.due_work_error ?? "",
+    failures: row.due_work_failures,
+    retryAt: row.due_work_retry_at,
+  };
 }
 
 export function directory(client: Pick<pg.ClientBase, "query">): Directory {
@@ -194,7 +214,7 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
       const succeeded = run.outcome === "succeeded";
       await client.query(
         `UPDATE family SET due_work_ran_at = $2, due_work_outcome = $3, due_work_sources_ran = $4, due_work_sources_failed = $5,
-           due_work_error = $6
+           due_work_error = $6, due_work_failures = $7, due_work_retry_at = $8
          WHERE family_id = $1`,
         [
           familyId,
@@ -203,13 +223,19 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
           succeeded ? run.sources.ran : null,
           succeeded ? run.sources.failed : null,
           succeeded ? null : run.error,
+          succeeded ? 0 : run.failures,
+          succeeded ? null : run.retryAt,
         ],
       );
     },
+    async lastDueWork(familyId) {
+      const { rows } = await client.query<OverviewRow>(`SELECT family_id, status, ${DUE_WORK_COLUMNS} FROM family WHERE family_id = $1`, [familyId]);
+      const row = rows[0];
+      return row ? dueWorkRun(row) : null;
+    },
     async overview() {
       const { rows } = await client.query<OverviewRow>(
-        `SELECT family_id, status, due_work_ran_at, due_work_outcome, due_work_sources_ran, due_work_sources_failed, due_work_error
-         FROM family ORDER BY created_at, family_id`,
+        `SELECT family_id, status, ${DUE_WORK_COLUMNS} FROM family ORDER BY created_at, family_id`,
       );
       return rows.map((row) => ({ familyId: row.family_id, status: row.status, dueWork: dueWorkRun(row) }));
     },
