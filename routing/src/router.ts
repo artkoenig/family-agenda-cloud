@@ -90,7 +90,9 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
   const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
   const family = namesOperations(rest) ? undefined : await routable(setup, familyId);
   if (!family) {
-    // The same answer whether the Family is unknown, suspended or deleted: it tells nobody which Families exist.
+    // The same answer whether the Family is unknown, suspended or deleted, which tells nobody which
+    // Families exist, and for a path to the core's triggered operations (/operations/*), which no
+    // browser may reach.
     outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found\n");
     return;
   }
