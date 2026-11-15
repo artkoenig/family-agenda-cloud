@@ -13,6 +13,7 @@ import { isFamilyId, provisioning, ProvisioningError } from "./provisioning";
 import { startRouter } from "./router";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
 import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
+import { resumeFamily, suspendFamily } from "./suspend-family";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -38,6 +39,10 @@ const USAGE = `Usage:
     Deletes the Family: its database and role, its blobs, its wrapped family key and database
     password. Its Directory entry stays, marked deleted. --confirm must repeat the Family id.
     It says when the Family is deleted; after a failure part-way, run it again to finish.
+  routing suspend --family-id <id>
+    Suspends the Family: its address answers 404 and its schedules are removed; its data stays.
+  routing resume --family-id <id>
+    Resumes a suspended Family: it is routed to and scheduled again.
   routing schedule
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
     once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
@@ -61,6 +66,8 @@ const COMMANDS: Record<string, Command> = {
   create: (args, config, io, log) => create(config, parseCreate(args, config), io, log),
   "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
   delete: (args, config, io, log) => runDelete(config, parseDelete(args), io, log),
+  suspend: (args, config, io, log) => changeStatus(config, suspension, parseFamilyId(args), io, log),
+  resume: (args, config, io, log) => changeStatus(config, resumption, parseFamilyId(args), io, log),
   serve: (_args, config, io, log) => serve(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
@@ -232,6 +239,40 @@ async function runDelete(config: Config, input: DeleteFamilyInput, io: Io, log: 
     } else {
       log.error("Deleting the Family did not finish; run delete again to finish it", { familyId: input.familyId, error });
     }
+    return 1;
+  }
+}
+
+function parseFamilyId(args: string[]): string {
+  return familyIdValue(options(args, ["family-id"])["family-id"]);
+}
+
+/** Suspending or resuming a Family: what does it, what the Operator is told, what the log says. */
+type StatusChange = { change: typeof suspendFamily; done: string; refused: string; failed: string };
+
+const suspension: StatusChange = {
+  change: suspendFamily,
+  done: "is suspended",
+  refused: "Suspending the Family was refused",
+  failed: "Suspending the Family did not finish; run suspend again to finish it",
+};
+
+const resumption: StatusChange = {
+  change: resumeFamily,
+  done: "is active again",
+  refused: "Resuming the Family was refused",
+  failed: "Resuming the Family did not finish; run resume again to finish it",
+};
+
+async function changeStatus(config: Config, statusChange: StatusChange, familyId: string, io: Io, log: Log): Promise<number> {
+  try {
+    await withDirectory(config, (client) =>
+      withSchedules(config, (schedules) => statusChange.change({ directory: directory(client), log, schedules }, familyId)),
+    );
+    io.stdout.write(`The Family ${familyId} ${statusChange.done}\n`);
+    return 0;
+  } catch (error) {
+    log.error(error instanceof ProvisioningError ? statusChange.refused : statusChange.failed, { familyId, error });
     return 1;
   }
 }

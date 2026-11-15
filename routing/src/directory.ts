@@ -89,6 +89,10 @@ export type Directory = {
   add(entry: NewDirectoryEntry): Promise<void>;
   /** Marks the Family active and notes the core version it was prepared for. */
   activate(familyId: string, coreVersion: string): Promise<void>;
+  /** Marks an active Family suspended; leaves a Family of any other status as it is. */
+  suspend(familyId: string): Promise<void>;
+  /** Marks a suspended Family active again; leaves a Family of any other status as it is. */
+  resume(familyId: string): Promise<void>;
   /** Marks the Family deleted and destroys its wrapped family key and database password. */
   markDeleted(familyId: string): Promise<void>;
   /** Notes that deleting the Family finished, unless it was noted before. */
@@ -220,6 +224,12 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async activate(familyId, coreVersion) {
       await client.query("UPDATE family SET status = 'active', core_version = $2 WHERE family_id = $1", [familyId, coreVersion]);
+    },
+    async suspend(familyId) {
+      await client.query("UPDATE family SET status = 'suspended' WHERE family_id = $1 AND status = 'active'", [familyId]);
+    },
+    async resume(familyId) {
+      await client.query("UPDATE family SET status = 'active' WHERE family_id = $1 AND status = 'suspended'", [familyId]);
     },
     async markDeleted(familyId) {
       await client.query(
