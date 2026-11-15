@@ -59,6 +59,7 @@ async function stateOf(familyId: string) {
     roles: (await routing.server("SELECT rolname FROM pg_roles WHERE rolname = $1", [name(familyId)])).length,
     blobs: await blobsOf(familyId),
     blobLocationExists: (await readdir(blobRoot).catch((): string[] => [])).includes(familyId),
+    schedules: await routing.schedules(familyId),
   };
 }
 
@@ -76,6 +77,7 @@ const deletedState = (familyId: string) => ({
   roles: 0,
   blobs: [],
   blobLocationExists: false,
+  schedules: [],
 });
 
 describe("Deleting a Family", () => {
@@ -86,6 +88,17 @@ describe("Deleting a Family", () => {
 
     expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: `The Family ${familyId} is deleted\n` });
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+  });
+
+  it("removes its schedules, so that no due work, purge or sweep is triggered for it", async () => {
+    const familyId = await createFamily();
+    const other = await createFamily();
+    expect(await routing.schedules(familyId)).toEqual(["due-work", "purge-messages", "sweep-secrets"]);
+
+    await deleteFamily(familyId);
+
+    expect(await routing.schedules(familyId)).toEqual([]);
+    expect(await routing.schedules(other)).toEqual(["due-work", "purge-messages", "sweep-secrets"]);
   });
 
   it("closes the connections a core still holds to the Family's database", async () => {
@@ -233,6 +246,15 @@ describe("Running delete again", () => {
   const alterRole = (option: string) => async () => {
     await routing.server(`ALTER ROLE ${routing.routingRole} ${option}`);
   };
+
+  it("after the schedules could not be removed ends as an undisturbed run", async () => {
+    const familyId = await failAndRunAgain(
+      /permission denied for table schedule/,
+      async () => routing.directory(`REVOKE DELETE ON scheduler.schedule FROM ${routing.routingRole}`).then(() => undefined),
+      async () => routing.directory(`GRANT DELETE ON scheduler.schedule TO ${routing.routingRole}`).then(() => undefined),
+    );
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+  });
 
   it("after the Directory entry could not be marked deleted ends as an undisturbed run", async () => {
     const familyId = await failAndRunAgain(

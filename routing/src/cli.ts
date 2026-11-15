@@ -218,7 +218,9 @@ function parseDelete(args: string[]): DeleteFamilyInput {
 
 async function runDelete(config: Config, input: DeleteFamilyInput, io: Io, log: Log): Promise<number> {
   try {
-    await withDirectory(config, (client) => deleteFamily(provisioning(config, client, log), input));
+    await withDirectory(config, (client) =>
+      withSchedules(config, (schedules) => deleteFamily({ ...provisioning(config, client, log), schedules }, input)),
+    );
     io.stdout.write(`The Family ${input.familyId} is deleted\n`);
     return 0;
   } catch (error) {
