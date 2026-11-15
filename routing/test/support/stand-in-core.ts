@@ -27,8 +27,9 @@
  * - `POST /operations/reset-admin-password` with JSON `{ "email": "<address>" }`: draws a new
  *   password for the Admin with that email address, sets it and ends their sessions, as the core's
  *   `family-agenda reset-admin-password <email>` does inside an Instance. Answers 200
- *   `{ "password": "<new password>" }`, the only place the password is ever given out; 404 when the
- *   Family has no Admin with that address; 409 for a Family that is not prepared.
+ *   `{ "password": "<new password>" }`, the only place the password is ever given out; 404
+ *   `{ "error": "unknown-admin" }` when the Family has no Admin with that address (a 404 without
+ *   that error code is no answer of this operation); 409 for a Family that is not prepared.
  *
  * ## Requests from browsers
  *
@@ -204,7 +205,7 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     const { familyId } = c.get("context");
     if (!prepared.has(familyId)) return c.json({ error: "Family not prepared" }, 409);
     const { email } = await c.req.json<{ email: string }>();
-    if (!(admins.get(familyId) ?? []).includes(email)) return c.json({ error: "unknown Admin" }, 404);
+    if (!(admins.get(familyId) ?? []).includes(email)) return c.json({ error: "unknown-admin" }, 404);
     const password = randomBytes(12).toString("base64url");
     passwords.set(passwordKey(familyId, email), password);
     return c.json({ password });

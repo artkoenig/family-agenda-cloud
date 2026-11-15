@@ -54,8 +54,22 @@ describe("Resetting an Admin's password", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain(`The Family ${familyId} has no Admin with the email stranger@example.org`);
+    expect(result.stderr).toContain(`The Family ${familyId} has no Admin with the email stranger@example.org\n`);
     expect(routing.core.requests.at(-1)?.path).toBe("/operations/reset-admin-password");
+    const logLines = result.stderr.split("\n").filter((line) => line.startsWith("{"));
+    expect(logLines.at(-1)).toContain(`"familyId":"${familyId}"`);
+    for (const line of logLines) expect(line).not.toContain("stranger@example.org");
+  });
+
+  it("when the core does not offer the operation (a bare 404) says so and prints no password", async () => {
+    const familyId = await createFamily();
+    routing.core.failNext("reset-admin-password", 404);
+
+    const result = await resetPassword(familyId);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(`"message":"Resetting the Admin's password failed","familyId":"${familyId}","error":"The core answered reset-admin-password with 404"`);
   });
 
   it("names the Admin of the Family it was given, not of another", async () => {
@@ -80,7 +94,6 @@ describe("Resetting an Admin's password", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("answered reset-admin-password with 500");
     expect(result.stderr).toContain(`"message":"Resetting the Admin's password failed","familyId":"${familyId}"`);
-    expect(result.stderr).toContain(`"familyId":"${familyId}"`);
   });
 
   it("when the core answers without a password says so and prints none", async () => {

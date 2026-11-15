@@ -20,7 +20,7 @@ export function coreClient(coreUrls: string[]): Core {
   // Any core of the pool serves any Family; Provisioning takes the first.
   const [url] = coreUrls;
   if (!url) throw new CoreError("No core configured in CORE_URLS");
-  const call = async (operation: string, sealedContext: string, body?: unknown, accepted: number[] = []) => {
+  const call = async (operation: string, sealedContext: string, body?: unknown, { accept = [] }: { accept?: number[] } = {}) => {
     const response = await fetch(`${url}/operations/${operation}`, {
       method: "POST",
       headers: { [CONTEXT_HEADER]: sealedContext, ...(body === undefined ? {} : { "content-type": "application/json" }) },
@@ -29,7 +29,7 @@ export function coreClient(coreUrls: string[]): Core {
     }).catch((error: unknown) => {
       throw new CoreError(`The core did not answer ${operation}: ${error instanceof Error ? error.message : String(error)}`);
     });
-    if (!response.ok && !accepted.includes(response.status)) throw new CoreError(`The core answered ${operation} with ${response.status}`);
+    if (!response.ok && !accept.includes(response.status)) throw new CoreError(`The core answered ${operation} with ${response.status}`);
     return response;
   };
   return {
@@ -42,9 +42,14 @@ export function coreClient(coreUrls: string[]): Core {
       await call("enter-admin", sealedContext, { email });
     },
     async resetAdminPassword(sealedContext, email) {
-      const response = await call("reset-admin-password", sealedContext, { email }, [404]);
-      if (response.status === 404) return undefined;
-      const { password } = (await response.json()) as { password?: unknown };
+      const response = await call("reset-admin-password", sealedContext, { email }, { accept: [404] });
+      const answer = (await response.json().catch(() => ({}))) as { password?: unknown; error?: unknown };
+      if (response.status === 404) {
+        // A 404 without that error code is a core that does not offer the operation.
+        if (answer.error === "unknown-admin") return undefined;
+        throw new CoreError("The core answered reset-admin-password with 404");
+      }
+      const { password } = answer;
       if (typeof password !== "string" || !password) throw new CoreError("The core answered reset-admin-password without a password");
       return password;
     },
