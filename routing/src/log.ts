@@ -26,7 +26,8 @@ export function createLog(stream: Writable, now: () => Date = () => new Date()):
   };
 }
 
-const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** An error's message, or the thing thrown as text. */
+export const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** What went wrong, for the log: an error's code or message, never the request it was about. */
 export function reasonOf(error: unknown): string {

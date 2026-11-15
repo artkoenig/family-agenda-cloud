@@ -243,7 +243,7 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
     stop.abort();
   });
   await withDirectory(config, (client) =>
-    runScheduler({ config, client, directory: directory(client), core: coreClient(config.coreUrls, clock, log), log, clock, signal: stop.signal }),
+    runScheduler({ config, client, directory: directory(client), core: coreClient(config.coreUrls, log, clock), log, clock, signal: stop.signal }),
   );
   return 0;
 }

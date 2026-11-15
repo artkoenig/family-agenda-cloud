@@ -29,6 +29,18 @@ export type DueWorkRun =
   | { ranAt: Date; outcome: "succeeded"; sources: SourcesPolled }
   | { ranAt: Date; outcome: "failed"; error: string; failures: number; retryAt: Date };
 
+/**
+ * How long a Family whose due work failed waits before it is tried again, in whole minutes counted
+ * from the minute the failed run started in: the first delay after one failure, twice as long after
+ * each further failure in a row, and never longer than the ceiling.
+ */
+export type RetryDelays = { firstDelayMinutes: number; ceilingMinutes: number };
+
+/** How a run of due work ended, as the Scheduler notes it; a failure with how it is retried. */
+export type DueWorkOutcome =
+  | { ranAt: Date; outcome: "succeeded"; sources: SourcesPolled }
+  | { ranAt: Date; outcome: "failed"; error: string; retry: RetryDelays };
+
 /** What the Operator sees of a Family: its status and how its due work last ran, if it ever did. */
 export type FamilyOverview = { familyId: string; status: FamilyStatus; dueWork: DueWorkRun | null };
 
@@ -81,8 +93,12 @@ export type Directory = {
   markDeleted(familyId: string): Promise<void>;
   /** Notes that deleting the Family finished, unless it was noted before. */
   finishDeletion(familyId: string): Promise<void>;
-  /** Notes how the Family's due work last ran, in place of the run before. */
-  recordDueWork(familyId: string, run: DueWorkRun): Promise<void>;
+  /**
+   * Notes how the Family's due work last ran, in place of the run before: a failure counts one more
+   * in a row and sets when the Family is tried again, a success ends the row. Answers the run as
+   * noted, or null when there is no such Family.
+   */
+  recordDueWork(familyId: string, run: DueWorkOutcome): Promise<DueWorkRun | null>;
   /** How the Family's due work last ran; null if it never did, or there is no such Family. */
   lastDueWork(familyId: string): Promise<DueWorkRun | null>;
   /** Every Family, oldest first. */
@@ -134,7 +150,11 @@ type OverviewRow = {
   due_work_sources_failed: number | null;
   due_work_error: string | null;
   due_work_failures: number;
-  /** For a failed run, when the Family is tried again; a run failed before retries were noted is due. */
+  /**
+   * For a failed run, when the Family is tried again. Selected as coalesce(due_work_retry_at,
+   * due_work_ran_at) (see DUE_WORK_COLUMNS): a run that failed before migration 4 noted retries has
+   * none, and is due again at once.
+   */
   due_work_retry_at: Date;
 };
 
@@ -212,10 +232,17 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async recordDueWork(familyId, run) {
       const succeeded = run.outcome === "succeeded";
-      await client.query(
-        `UPDATE family SET due_work_ran_at = $2, due_work_outcome = $3, due_work_sources_ran = $4, due_work_sources_failed = $5,
-           due_work_error = $6, due_work_failures = $7, due_work_retry_at = $8
-         WHERE family_id = $1`,
+      // One statement, so that two failures noted at once both count. In SET, the columns hold the
+      // row as it was: the delay grows with the failures in a row before this one.
+      const { rows } = await client.query<OverviewRow>(
+        `UPDATE family SET due_work_ran_at = $2, due_work_outcome = $3::text, due_work_sources_ran = $4, due_work_sources_failed = $5,
+           due_work_error = $6,
+           due_work_failures = CASE WHEN $3::text = 'failed' THEN due_work_failures + 1 ELSE 0 END,
+           due_work_retry_at = CASE WHEN $3::text = 'failed'
+             THEN date_trunc('minute', $2::timestamptz) + least($7::integer * power(2, due_work_failures), $8::integer) * interval '1 minute'
+           END
+         WHERE family_id = $1
+         RETURNING family_id, status, ${DUE_WORK_COLUMNS}`,
         [
           familyId,
           run.ranAt,
@@ -223,10 +250,12 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
           succeeded ? run.sources.ran : null,
           succeeded ? run.sources.failed : null,
           succeeded ? null : run.error,
-          succeeded ? 0 : run.failures,
-          succeeded ? null : run.retryAt,
+          succeeded ? null : run.retry.firstDelayMinutes,
+          succeeded ? null : run.retry.ceilingMinutes,
         ],
       );
+      const row = rows[0];
+      return row ? dueWorkRun(row) : null;
     },
     async lastDueWork(familyId) {
       const { rows } = await client.query<OverviewRow>(`SELECT family_id, status, ${DUE_WORK_COLUMNS} FROM family WHERE family_id = $1`, [familyId]);

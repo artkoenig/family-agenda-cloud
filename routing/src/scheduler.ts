@@ -3,9 +3,9 @@ import type pg from "pg";
 import { PgBoss, systemClock, type Clock, type ConstructorOptions } from "pg-boss";
 import type { Config } from "./config";
 import { TRIGGERED_TIMEOUT_MS, type Core, type SourcesPolled } from "./core";
-import type { Directory, DirectoryEntry, DueWorkRun } from "./directory";
+import type { Directory, DirectoryEntry, RetryDelays } from "./directory";
 import { sealedContext, unwrappedFamily } from "./family-context";
-import { reasonOf, type Log } from "./log";
+import { describe, reasonOf, type Log } from "./log";
 
 /** What the Scheduler logs once it is under way. */
 export const SCHEDULER_RUNNING = "The Scheduler is running";
@@ -22,18 +22,11 @@ const SCHEMA = "scheduler";
 const EXPIRE_IN_SECONDS = TRIGGERED_TIMEOUT_MS / 1000 + 5 * 60;
 
 /**
- * How long a Family whose due work failed waits before it is tried again: twice as long after each
- * failure in a row, starting at two minutes, and never longer than the ceiling. Waiting is counted
- * from the minute the run started in, so that the retry falls on an occurrence of the schedule.
+ * How long a Family whose due work failed waits before it is tried again: two minutes, twice as
+ * long after each further failure in a row, never longer than a quarter of an hour. The retry falls
+ * on an occurrence of the minute schedule; until then the Family's occurrences are no-ops.
  */
-const FIRST_RETRY_DELAY_MINUTES = 2;
-const RETRY_CEILING_MINUTES = 15;
-const MINUTE_MS = 60_000;
-
-function retryAfter(ranAt: Date, failures: number): Date {
-  const delay = Math.min(FIRST_RETRY_DELAY_MINUTES * 2 ** (failures - 1), RETRY_CEILING_MINUTES);
-  return new Date((Math.floor(ranAt.getTime() / MINUTE_MS) + delay) * MINUTE_MS);
-}
+const RETRY_DELAYS: RetryDelays = { firstDelayMinutes: 2, ceilingMinutes: 15 };
 
 /** How many Families' occasions of one kind run at once in this process. */
 const CONCURRENCY = 10;
@@ -118,7 +111,7 @@ export function openQueues(config: Config, options: Omit<ConstructorOptions, "da
  * another process does the same, as creating a queue that exists does nothing. A run under way
  * keeps the next occurrence of its Family from being queued at all (`exclusive`, keyed by the
  * Family id), so one Family's due work never runs twice at once. Retries are not pg-boss's: a
- * failed run is recorded, and the Family is tried again on a later occurrence (see retryAfter).
+ * failed run is recorded, and the Family is tried again on a later occurrence (see RETRY_DELAYS).
  */
 async function ensureQueues(boss: PgBoss): Promise<void> {
   const options = { retryLimit: 0, expireInSeconds: EXPIRE_IN_SECONDS };
@@ -211,22 +204,16 @@ function giving(occasion: Occasion, dependencies: SchedulerDependencies & { cloc
       if (occasion.recorded && sources) await directory.recordDueWork(familyId, { ranAt, outcome: "succeeded", sources });
       log.info(occasion.ran, { familyId, occasion: name, ...(sources ? { sources } : {}) });
     } catch (error) {
-      const retry = occasion.recorded ? await recordFailure(directory, familyId, { ranAt, error, last }) : {};
+      const retry = occasion.recorded ? await recordFailure(directory, familyId, ranAt, error) : {};
       log.error(occasion.failed, { familyId, occasion: name, reason: reasonOf(error), ...retry });
     }
   };
 }
 
-/** Records the failed run of due work with when the Family is tried again; answers both for the log. */
-async function recordFailure(
-  directory: Directory,
-  familyId: string,
-  { ranAt, error, last }: { ranAt: Date; error: unknown; last: DueWorkRun | null },
-): Promise<{ failures: number; retryAt: string }> {
-  const failures = (last?.outcome === "failed" ? last.failures : 0) + 1;
-  const retryAt = retryAfter(ranAt, failures);
-  await directory.recordDueWork(familyId, { ranAt, outcome: "failed", error: error instanceof Error ? error.message : String(error), failures, retryAt });
-  return { failures, retryAt: retryAt.toISOString() };
+/** Records the failed run of due work; answers how often in a row it failed and when it is retried, for the log. */
+async function recordFailure(directory: Directory, familyId: string, ranAt: Date, error: unknown): Promise<{ failures?: number; retryAt?: string }> {
+  const run = await directory.recordDueWork(familyId, { ranAt, outcome: "failed", error: describe(error), retry: RETRY_DELAYS });
+  return run?.outcome === "failed" ? { failures: run.failures, retryAt: run.retryAt.toISOString() } : {};
 }
 
 const contextOf = (config: Config, entry: DirectoryEntry) => sealedContext(config, unwrappedFamily(config, entry));

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
+import { startStandInCore } from "./support/stand-in-core";
 
 const ADMIN = "locked.out@example.org";
 
@@ -21,6 +22,21 @@ const resetPassword = (familyId: string, email = ADMIN) =>
   routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", email]);
 
 describe("Resetting an Admin's password", () => {
+  it("is not tried on another core when the first core of the pool does not answer, so that no second password is drawn", async () => {
+    const familyId = await createFamily();
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!);
+    await down.close();
+    const since = routing.core.requests.length;
+
+    const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], {
+      CORE_URLS: `${down.url},${routing.core.url}`,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(routing.core.requests.slice(since)).toEqual([]);
+  });
+
   it("has the core reset the named Admin's password with that Family's Context, and prints the new password once", async () => {
     const familyId = await createFamily();
     const contextOfCreate = routing.core.requests[0]!.context!;
