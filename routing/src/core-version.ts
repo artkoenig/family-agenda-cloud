@@ -13,5 +13,6 @@ function isNewer(version: string, than: string): boolean {
   const [a, b] = [version, than].map((text) => (/^\d+\.\d+\.\d+$/.test(text) ? text.split(".").map(Number) : undefined));
   if (!a || !b) return false;
   const index = a.findIndex((part, at) => part !== b[at]);
-  return index !== -1 && (a[index] ?? 0) > (b[index] ?? 0);
+  // For the same version the index is -1, with no part on either side, so it is not later.
+  return (a[index] ?? 0) > (b[index] ?? 0);
 }
