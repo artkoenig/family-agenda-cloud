@@ -62,9 +62,7 @@ async function stateOf(familyId: string) {
     )[0]?.count,
     prepared: routing.core.isPrepared(familyId),
     admins: routing.core.admins(familyId),
-    schedules: (await routing.directory("SELECT name FROM scheduler.schedule WHERE key = $1 ORDER BY name", [familyId])).map(
-      ({ name }) => name,
-    ),
+    schedules: await routing.schedules(familyId),
   };
 }
 

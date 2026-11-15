@@ -1,4 +1,5 @@
 import type pg from "pg";
+import type { SourcesPolled } from "./core";
 
 /** Only an active Family is routed to and scheduled. */
 export type FamilyStatus = "being_prepared" | "active" | "suspended" | "deleted";
@@ -24,7 +25,7 @@ export type DirectoryEntry = {
  * with how many due Sources it polled and how many of those failed, or why it did not.
  */
 export type DueWorkRun =
-  | { ranAt: Date; outcome: "succeeded"; sourcesRan: number; sourcesFailed: number }
+  | { ranAt: Date; outcome: "succeeded"; sources: SourcesPolled }
   | { ranAt: Date; outcome: "failed"; error: string };
 
 /** What the Operator sees of a Family: its status and how its due work last ran, if it ever did. */
@@ -130,7 +131,8 @@ type OverviewRow = {
 function dueWorkRun(row: OverviewRow): DueWorkRun | null {
   if (!row.due_work_ran_at) return null;
   if (row.due_work_outcome === "succeeded") {
-    return { ranAt: row.due_work_ran_at, outcome: "succeeded", sourcesRan: row.due_work_sources_ran ?? 0, sourcesFailed: row.due_work_sources_failed ?? 0 };
+    const sources = { ran: row.due_work_sources_ran ?? 0, failed: row.due_work_sources_failed ?? 0 };
+    return { ranAt: row.due_work_ran_at, outcome: "succeeded", sources };
   }
   return { ranAt: row.due_work_ran_at, outcome: "failed", error: row.due_work_error ?? "" };
 }
@@ -198,8 +200,8 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
           familyId,
           run.ranAt,
           run.outcome,
-          succeeded ? run.sourcesRan : null,
-          succeeded ? run.sourcesFailed : null,
+          succeeded ? run.sources.ran : null,
+          succeeded ? run.sources.failed : null,
           succeeded ? null : run.error,
         ],
       );

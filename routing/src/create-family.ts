@@ -3,6 +3,7 @@ import type { Directory, DirectoryEntry } from "./directory";
 import { familyUrl, sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { ensureFamilyDatabase, familyDatabaseLeftBehind, familyDatabaseNames } from "./family-databases";
 import { blobLocationOf, ProvisioningError, type Provisioning } from "./provisioning";
+import type { FamilySchedules } from "./scheduler";
 import { drawDatabasePassword, drawFamilyKey, wrapperFor } from "./secrets";
 
 export type CreateFamilyInput = {
@@ -13,14 +14,6 @@ export type CreateFamilyInput = {
   familyId: string;
   /** Whether `familyId` names a Family to finish creating, rather than a new one. */
   resume: boolean;
-};
-
-/** A Family's schedules in the Scheduler, keyed by its Family id. */
-export type FamilySchedules = {
-  /** Creates the Family's schedules, or leaves them as they are. */
-  create(familyId: string, timeZone: string): Promise<void>;
-  /** Removes the Family's schedules; a Family without them is fine. */
-  remove(familyId: string): Promise<void>;
 };
 
 /** The address the Operator sends to the Family's first Admin. */

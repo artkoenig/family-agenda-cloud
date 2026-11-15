@@ -37,7 +37,12 @@
  * - `POST /operations/purge-messages`: deletes the Family's messages past their retention.
  *   Needs a prepared Family (409 otherwise). Answers 200 `{ "purged": <n>, "deleted": <n> }`.
  * - `POST /operations/sweep-secrets`: removes the Family's secrets no Source refers to any more.
- *   Needs a prepared Family (409 otherwise). Answers 200 `{ "removed": <n> }`.
+ *   Needs a prepared Family (409 otherwise). Answers 200 `{ "removed": <n> }`. It is triggered
+ *   per Family like the others, not once for all: the secrets are in each Family's own database,
+ *   which the core opens only with that Family's Context.
+ *
+ * A triggered operation answers once it has ended, however long that takes; the Routing module
+ * gives a call up after a long timeout of its own.
  *
  * ## Requests from browsers
  *
@@ -58,6 +63,7 @@ import { serve, type HttpBindings } from "@hono/node-server";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import { Hono } from "hono";
 import { jwtDecrypt } from "jose";
+import type { SourcesPolled } from "../../src/core";
 
 export const CONTEXT_HEADER = "x-family-agenda-context";
 
@@ -130,9 +136,6 @@ export type RecordedRequest = {
 
 type Operation = "prepare-family" | "enter-admin" | "reset-admin-password" | "run-due-work" | "purge-messages" | "sweep-secrets";
 
-/** What a run of due work answers: how many due Sources were polled and how many of them failed. */
-export type DueWorkResult = { ran: number; failed: number };
-
 /** An answer the stand-in gives as it is, to show that it reaches the browser unchanged. */
 export type CannedAnswer = { status: number; headers: [string, string][]; body: Uint8Array };
 
@@ -157,14 +160,16 @@ export type StandInCore = {
   /** The next page of a Family begins its answer and then drops the connection. */
   dropNext(): void;
   /** The Family's runs of due work answer this from now on; `{ ran: 0, failed: 0 }` until set. */
-  answerDueWork(familyId: string, result: DueWorkResult): void;
+  answerDueWork(familyId: string, result: SourcesPolled): void;
   /** The Family's runs of due work fail with this status from now on. */
   failDueWork(familyId: string, status?: number): void;
   /**
-   * The next run of due work stays under way until the answered function is called, as a run
-   * that polls slow Sources does.
+   * The Family's runs of due work stay under way until the answered function is called, as a
+   * run that polls slow Sources does.
    */
-  holdNextDueWork(): () => void;
+  holdDueWork(familyId: string): () => void;
+  /** Ends every run held under way. */
+  releaseAll(): void;
   close(): Promise<void>;
 };
 
@@ -184,8 +189,9 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
   const passwords = new Map<string, string>();
   const passwordKey = (familyId: string, email: string) => `${familyId}/${email}`;
   /** What each Family's runs of due work answer: a result, or a failing status. */
-  const dueWork = new Map<string, DueWorkResult | number>();
-  let held: Promise<void> | null = null;
+  const dueWork = new Map<string, SourcesPolled | number>();
+  /** The Families whose next run of due work is held, and what releases it. */
+  const held = new Map<string, { until: Promise<void>; release: () => void }>();
 
   const app = new Hono<{ Variables: { context: Context } }>();
   app.use(async (c, next) => {
@@ -246,9 +252,8 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     });
   };
   triggered("run-due-work", async (familyId) => {
-    const hold = held;
-    held = null;
-    await hold;
+    // Held until released; the hold stays in place for releaseAll() while the run waits.
+    await held.get(familyId)?.until;
     return dueWork.get(familyId) ?? { ran: 0, failed: 0 };
   });
   triggered("purge-messages", () => Promise.resolve({ purged: 0, deleted: 0 }));
@@ -288,12 +293,20 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     },
     answerDueWork: (familyId, result) => dueWork.set(familyId, result),
     failDueWork: (familyId, status = 500) => dueWork.set(familyId, status),
-    holdNextDueWork() {
-      let release = () => {};
-      held = new Promise((resolve) => {
-        release = resolve;
+    holdDueWork(familyId) {
+      let resolve = () => {};
+      const until = new Promise<void>((resolved) => {
+        resolve = resolved;
       });
+      const release = () => {
+        if (held.get(familyId)?.until === until) held.delete(familyId);
+        resolve();
+      };
+      held.set(familyId, { until, release });
       return release;
+    },
+    releaseAll() {
+      for (const { release } of held.values()) release();
     },
     close: () =>
       new Promise((resolve, reject) => {

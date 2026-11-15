@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import pg from "pg";
-import type { Clock } from "pg-boss";
+import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
@@ -12,7 +12,7 @@ import { createLog, type Log } from "./log";
 import { isFamilyId, provisioning, ProvisioningError } from "./provisioning";
 import { startRouter } from "./router";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
-import { familySchedules, openQueues, runScheduler } from "./scheduler";
+import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -233,17 +233,16 @@ async function runDelete(config: Config, input: DeleteFamilyInput, io: Io, log: 
 }
 
 async function schedule(config: Config, io: Io, log: Log): Promise<number> {
+  const { clock = systemClock } = io;
   const stop = new AbortController();
   void (io.until ?? stopSignal()).then(() => {
     stop.abort();
   });
   await withDirectory(config, (client) =>
-    runScheduler({ config, client, directory: directory(client), core: coreClient(config.coreUrls), log, signal: stop.signal, ...withClock(io) }),
+    runScheduler({ config, client, directory: directory(client), core: coreClient(config.coreUrls, clock), log, clock, signal: stop.signal }),
   );
   return 0;
 }
-
-const withClock = ({ clock }: Io) => (clock ? { clock } : {});
 
 /** One line per Family: its Family id, its status, and when its due work last ran and how it ended. */
 async function families(config: Config, io: Io): Promise<number> {
@@ -252,7 +251,7 @@ async function families(config: Config, io: Io): Promise<number> {
     const columns = [familyId, status];
     if (!dueWork) columns.push("due work never ran");
     else if (dueWork.outcome === "succeeded") {
-      columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `succeeded: ${dueWork.sourcesRan} Sources polled, ${dueWork.sourcesFailed} failed`);
+      columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `succeeded: ${dueWork.sources.ran} Sources polled, ${dueWork.sources.failed} failed`);
     } else columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `failed: ${dueWork.error}`);
     io.stdout.write(`${columns.join("\t")}\n`);
   }
@@ -260,7 +259,7 @@ async function families(config: Config, io: Io): Promise<number> {
 }
 
 /** Opens the Scheduler's queues for writing schedules only, and runs `work` with them. */
-async function withSchedules<T>(config: Config, work: (schedules: Awaited<ReturnType<typeof familySchedules>>) => Promise<T>): Promise<T> {
+async function withSchedules<T>(config: Config, work: (schedules: FamilySchedules) => Promise<T>): Promise<T> {
   const boss = openQueues(config, { supervise: false, schedule: false, registerInstance: false, max: 1 });
   await boss.start();
   try {

@@ -12,12 +12,15 @@ import { startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
 
+/** How a command runs that runs until stopped: on a clock the test moves, until `until` settles. */
+export type RunOptions = { clock?: TestClock; until?: Promise<unknown> };
+
 export type TestRouting = {
   /** The environment the Routing module runs with: its Directory, keys and the stand-in core. */
   env: Record<string, string>;
   core: StandInCore;
   /** Runs the Routing module's command line with these arguments, as the Operator would. */
-  run(args: string[], env?: Record<string, string | undefined>, until?: { clock?: TestClock; until?: Promise<unknown> }): Promise<RunResult>;
+  run(args: string[], env?: Record<string, string | undefined>, options?: RunOptions): Promise<RunResult>;
   /**
    * Starts the Router as `routing serve` would, on a free port of localhost, with these changes to
    * the environment. It logs into the same log as the command line and is stopped by close().
@@ -25,10 +28,12 @@ export type TestRouting = {
   startRouter(env?: Record<string, string | undefined>): Promise<Router>;
   /**
    * Starts the Scheduler, as `routing schedule` on the Cube, on a clock the test moves; answers
-   * once it is under way. Stopped by close() if the test does not stop it.
+   * once it is under way. close() stops it.
    */
-  startScheduler(clock: TestClock): Promise<{ stop(): Promise<RunResult> }>;
-  /** Everything the Routing module logged so far, over all runs and Routers. */
+  startScheduler(clock: TestClock): Promise<void>;
+  /** The names of the Family's schedules, as pg-boss keeps them in the Directory's database. */
+  schedules(familyId: string): Promise<string[]>;
+  /** Everything the Routing module logged so far, over all runs, Routers and Schedulers. */
   log(): string;
   /** Runs SQL as a superuser on the Directory's database. */
   directory(sql: string, values?: unknown[]): Promise<Record<string, unknown>[]>;
@@ -136,13 +141,13 @@ export async function setUpRouting(): Promise<TestRouting> {
   const routers: Router[] = [];
   const withOverrides = (overrides: Record<string, string | undefined>) =>
     Object.fromEntries(Object.entries({ ...env, ...overrides }).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  const schedulers: (() => Promise<RunResult>)[] = [];
+  const schedulers: (() => Promise<void>)[] = [];
   let onLog = () => {};
   const routing: TestRouting = {
     env,
     core,
     routingRole,
-    async run(args, overrides = {}, until = {}) {
+    async run(args, overrides = {}, options = {}) {
       let stdout = "";
       let stderr = "";
       const sink = (append: (text: string) => void) =>
@@ -154,7 +159,7 @@ export async function setUpRouting(): Promise<TestRouting> {
         });
       const exitCode = await run(args, {
         env: withOverrides(overrides),
-        ...until,
+        ...options,
         stdout: sink((text) => (stdout += text)),
         stderr: sink((text) => {
           stderr += text;
@@ -188,18 +193,22 @@ export async function setUpRouting(): Promise<TestRouting> {
       });
       onLog = () => {};
       const result = running!;
-      const stop = async () => {
+      schedulers.push(async () => {
         stopped();
-        return result;
-      };
-      schedulers.push(stop);
-      return { stop };
+        await result;
+      });
+    },
+    async schedules(familyId) {
+      const rows = await query(directoryName, "SELECT name FROM scheduler.schedule WHERE key = $1 ORDER BY name", [familyId]);
+      return rows.map(({ name }) => String(name));
     },
     log: () => logged,
     directory: (sql, values) => query(directoryName, sql, values),
     server: (sql, values) => query(maintenance, sql, values),
     async close() {
       for (const router of routers) await router.close();
+      // A run held under way would keep its Scheduler from stopping.
+      core.releaseAll();
       await Promise.all(schedulers.map((stop) => stop()));
       await core.close();
       // The Families' roles, which the Routing module created and so was made a member of, and

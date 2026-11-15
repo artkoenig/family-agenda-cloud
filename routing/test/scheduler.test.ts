@@ -1,4 +1,4 @@
-import { TestClock } from "pg-boss";
+import { PgBoss, TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
 import type { RecordedRequest } from "./support/stand-in-core";
@@ -101,7 +101,7 @@ describe("A run of due work still under way", () => {
     const familyId = await createFamily();
     const clock = new TestClock("2026-11-16T08:01:10Z");
     await routing.startScheduler(clock);
-    const release = routing.core.holdNextDueWork();
+    const release = routing.core.holdDueWork(familyId);
 
     await minutes(clock, 1);
     await expect.poll(() => callsOf("run-due-work", familyId).length).toBe(1);
@@ -112,6 +112,40 @@ describe("A run of due work still under way", () => {
     await expect.poll(async () => (await overview())[0]?.outcome).toBe("succeeded");
     await minutes(clock, 1);
     await expect.poll(() => callsOf("run-due-work", familyId).length).toBe(2);
+  });
+
+  it("is not doubled while it lasts longer than an ordinary call may, and is given up only after ten minutes", async () => {
+    const familyId = await createFamily();
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock);
+    const release = routing.core.holdDueWork(familyId);
+
+    await minutes(clock, 1);
+    await expect.poll(() => callsOf("run-due-work", familyId).length).toBe(1);
+    await minutes(clock, 8);
+    expect(callsOf("run-due-work", familyId)).toHaveLength(1);
+    expect((await overview())[0]?.outcome).toBeUndefined();
+
+    await minutes(clock, 3);
+    await expect.poll(async () => (await routing.run(["families"])).stdout).toContain(
+      "failed: The core did not answer run-due-work: no answer within 600 seconds",
+    );
+    release();
+    await minutes(clock, 2);
+    await expect.poll(async () => (await overview())[0]?.outcome).toBe("succeeded");
+    expect(callsOf("run-due-work", familyId).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("of one Family does not hold up another Family's due work", async () => {
+    const slow = await createFamily();
+    const other = await createFamily();
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock);
+    routing.core.holdDueWork(slow);
+
+    await minutes(clock, 3);
+    await expect.poll(() => callsOf("run-due-work", other).length).toBeGreaterThanOrEqual(2);
+    expect(callsOf("run-due-work", slow)).toHaveLength(1);
   });
 });
 
@@ -133,7 +167,7 @@ describe("A Family that is not active", () => {
       "/operations/prepare-family",
       "/operations/enter-admin",
     ]);
-    expect(await schedulesOf(familyId)).toHaveLength(3);
+    expect(await routing.schedules(familyId)).toHaveLength(3);
   });
 
   it("loses its schedules once deleted", async () => {
@@ -143,22 +177,43 @@ describe("A Family that is not active", () => {
     await routing.startScheduler(clock);
 
     await minutes(clock, 1);
-    await expect.poll(() => schedulesOf(familyId)).toEqual([]);
+    await expect.poll(() => routing.schedules(familyId)).toEqual([]);
     expect(callsOf("run-due-work", familyId)).toEqual([]);
   });
 });
-
-/** The names of the Family's schedules, as pg-boss keeps them in the Directory's database. */
-async function schedulesOf(familyId: string): Promise<string[]> {
-  const rows = await routing.directory("SELECT name FROM scheduler.schedule WHERE key = $1 ORDER BY name", [familyId]);
-  return rows.map(({ name }) => String(name));
-}
 
 describe("Creating a Family", () => {
   it("creates its schedules: due work, the purge and the sweep", async () => {
     const familyId = await createFamily();
 
-    expect(await schedulesOf(familyId)).toEqual(["due-work", "purge-messages", "sweep-secrets"]);
+    expect(await routing.schedules(familyId)).toEqual(["due-work", "purge-messages", "sweep-secrets"]);
+  });
+
+  it("while the Scheduler starts on a new Directory works, and due work arrives", async () => {
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    const [familyId] = await Promise.all([createFamily(), routing.startScheduler(clock)]);
+
+    await minutes(clock, 1);
+    await expect.poll(() => callsOf("run-due-work", familyId).length).toBe(1);
+  });
+});
+
+describe("The Scheduler's queues", () => {
+  it("made by an earlier version get the options of this one", async () => {
+    const url = new URL(routing.env.DIRECTORY_DATABASE_URL!);
+    url.password = routing.env.DIRECTORY_DATABASE_PASSWORD!;
+    const earlier = new PgBoss({ connectionString: url.toString(), schema: "scheduler", supervise: false, schedule: false });
+    await earlier.start();
+    await earlier.createQueue("due-work", { policy: "exclusive", retryLimit: 2, expireInSeconds: 60 });
+    await earlier.stop({ graceful: false });
+
+    await createFamily();
+
+    expect(await routing.directory("SELECT name, retry_limit, expire_seconds FROM scheduler.queue ORDER BY name")).toEqual([
+      { name: "due-work", retry_limit: 0, expire_seconds: 900 },
+      { name: "purge-messages", retry_limit: 0, expire_seconds: 900 },
+      { name: "sweep-secrets", retry_limit: 0, expire_seconds: 900 },
+    ]);
   });
 });
 
