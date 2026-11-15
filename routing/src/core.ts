@@ -7,6 +7,11 @@ export type Core = {
   prepareFamily(sealedContext: string): Promise<{ coreVersion: string }>;
   /** Enters an Admin by email address, without a password; an Admin who exists already is fine. */
   enterAdmin(sealedContext: string, email: string): Promise<void>;
+  /**
+   * Has the core draw and set a new password for the Admin with this email address, ending their
+   * sessions; answers the new password, or undefined when the Family has no such Admin.
+   */
+  resetAdminPassword(sealedContext: string, email: string): Promise<string | undefined>;
 };
 
 export class CoreError extends Error {}
@@ -15,7 +20,7 @@ export function coreClient(coreUrls: string[]): Core {
   // Any core of the pool serves any Family; Provisioning takes the first.
   const [url] = coreUrls;
   if (!url) throw new CoreError("No core configured in CORE_URLS");
-  const call = async (operation: string, sealedContext: string, body?: unknown) => {
+  const call = async (operation: string, sealedContext: string, body?: unknown, accepted: number[] = []) => {
     const response = await fetch(`${url}/operations/${operation}`, {
       method: "POST",
       headers: { [CONTEXT_HEADER]: sealedContext, ...(body === undefined ? {} : { "content-type": "application/json" }) },
@@ -24,7 +29,7 @@ export function coreClient(coreUrls: string[]): Core {
     }).catch((error: unknown) => {
       throw new CoreError(`The core did not answer ${operation}: ${error instanceof Error ? error.message : String(error)}`);
     });
-    if (!response.ok) throw new CoreError(`The core answered ${operation} with ${response.status}`);
+    if (!response.ok && !accepted.includes(response.status)) throw new CoreError(`The core answered ${operation} with ${response.status}`);
     return response;
   };
   return {
@@ -35,6 +40,13 @@ export function coreClient(coreUrls: string[]): Core {
     },
     async enterAdmin(sealedContext, email) {
       await call("enter-admin", sealedContext, { email });
+    },
+    async resetAdminPassword(sealedContext, email) {
+      const response = await call("reset-admin-password", sealedContext, { email }, [404]);
+      if (response.status === 404) return undefined;
+      const { password } = (await response.json()) as { password?: unknown };
+      if (typeof password !== "string" || !password) throw new CoreError("The core answered reset-admin-password without a password");
+      return password;
     },
   };
 }

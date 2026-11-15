@@ -8,6 +8,7 @@ import { createFamily, ProvisioningError, type CreateFamilyInput } from "./creat
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { startRouter } from "./router";
+import { resetAdminPassword, type ResetAdminPasswordInput } from "./reset-admin-password";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -24,6 +25,9 @@ const USAGE = `Usage:
   routing create --admin-email <address> [--time-zone <IANA zone>] [--family-id <id>]
     Creates a Family with its first Admin and prints its address. After a failure part-way,
     run it again with the --family-id it names to finish that Family.
+  routing reset-admin-password --family-id <id> --admin-email <address>
+    Has a core give the Admin of an active Family a new password, ends their sessions and prints
+    the password once.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
@@ -34,21 +38,25 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 class UsageError extends Error {}
 
+type Command = (args: string[], config: Config, io: Io, log: Log) => Promise<number>;
+
+/** The Operator's commands by name; each answers the exit code. */
+const COMMANDS: Record<string, Command> = {
+  migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
+  create: (args, config, io, log) => create(config, parseCreate(args, config), io, log),
+  "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
+  serve: (_args, config, io, log) => serve(config, io, log),
+};
+
 /** The Operator's command line. Answers the exit code. */
 export async function run(args: string[], io: Io): Promise<number> {
   const log = createLog(io.stderr);
   try {
     const [command, ...rest] = args;
-    if (command === "migrate") {
-      const config = readConfig(io.env);
-      return await withDirectory(config, () => Promise.resolve(0));
-    }
-    if (command === "create") {
-      const config = readConfig(io.env);
-      return await create(config, parseCreate(rest, config), io, log);
-    }
-    if (command === "serve") return await serve(readConfig(io.env), io, log);
-    throw new UsageError(command ? `Unknown command ${command}` : "No command given");
+    if (!command) throw new UsageError("No command given");
+    const commandNamed = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
+    if (!commandNamed) throw new UsageError(`Unknown command ${command}`);
+    return await commandNamed(rest, readConfig(io.env), io, log);
   } catch (error) {
     if (error instanceof UsageError) {
       io.stderr.write(`${error.message}\n\n${USAGE}\n`);
@@ -146,6 +154,29 @@ async function migrate(config: Config): Promise<void> {
     await migrateDirectory(client);
   } finally {
     await client.end();
+  }
+}
+
+function parseReset(args: string[]): ResetAdminPasswordInput {
+  const values = options(args, ["family-id", "admin-email"]);
+  const familyId = values["family-id"]?.toLowerCase();
+  if (!familyId || !UUID.test(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
+  const adminEmail = values["admin-email"];
+  if (!adminEmail || !isEmailAddress(adminEmail)) throw new UsageError("--admin-email needs the email address of the Admin");
+  return { familyId, adminEmail };
+}
+
+async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log: Log): Promise<number> {
+  try {
+    const password = await withDirectory(config, (client) =>
+      resetAdminPassword({ config, directory: directory(client), core: coreClient(config.coreUrls), log }, input),
+    );
+    // The one place the new password is given out: on the Operator's output, never in the log.
+    io.stdout.write(`New password for ${input.adminEmail}: ${password}\nThe Admin's sessions have ended. Sign in with this password.\n`);
+    return 0;
+  } catch (error) {
+    log.error("Resetting the Admin's password failed", { familyId: input.familyId, error });
+    return 1;
   }
 }
 
