@@ -49,3 +49,25 @@ export async function ensureFamilyDatabase(
     await client.query("RESET ROLE");
   }
 }
+
+/**
+ * Drops the Family's database, closing any connection still open to it, and then its role. Safe
+ * to run again: what is gone already stays gone. The database is dropped as the Family's role, its
+ * owner, which the Routing module may act as; the role by the Routing module, which made it.
+ */
+export async function dropFamilyDatabase(
+  client: pg.ClientBase,
+  { databaseName, databaseRole }: { databaseName: string; databaseRole: string },
+): Promise<void> {
+  const role = client.escapeIdentifier(databaseRole);
+  const { rowCount: roleExists } = await client.query("SELECT 1 FROM pg_roles WHERE rolname = $1", [databaseRole]);
+  // A Family's database is owned by its role, so with the role gone the database is gone too.
+  if (!roleExists) return;
+  await client.query(`SET ROLE ${role}`);
+  try {
+    await client.query(`DROP DATABASE IF EXISTS ${client.escapeIdentifier(databaseName)} WITH (FORCE)`);
+  } finally {
+    await client.query("RESET ROLE");
+  }
+  await client.query(`DROP ROLE ${role}`);
+}

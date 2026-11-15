@@ -5,6 +5,7 @@ import pg from "pg";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
 import { coreClient } from "./core";
 import { createFamily, ProvisioningError, type CreateFamilyInput, type Provisioning } from "./create-family";
+import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { startRouter } from "./router";
@@ -28,6 +29,10 @@ const USAGE = `Usage:
   routing reset-admin-password --family-id <id> --admin-email <address>
     Has a core give the Admin of an active Family a new password, ends their sessions and prints
     the password once.
+  routing delete --family-id <id> --confirm <id>
+    Deletes the Family: its database and role, its blobs, its wrapped family key and database
+    password. Its Directory entry stays, marked deleted. --confirm must repeat the Family id.
+    After a failure part-way, run it again to finish.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
@@ -45,6 +50,7 @@ const COMMANDS: Record<string, Command> = {
   migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
   create: (args, config, io, log) => create(config, parseCreate(args, config), io, log),
   "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
+  delete: (args, config, _io, log) => remove(config, parseDelete(args), log),
   serve: (_args, config, io, log) => serve(config, io, log),
 };
 
@@ -183,6 +189,28 @@ async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log
       log.error("Resetting the Admin's password was refused: the Family has no Admin with that email", { familyId: input.familyId });
     } else {
       log.error("Resetting the Admin's password failed", { familyId: input.familyId, error });
+    }
+    return 1;
+  }
+}
+
+function parseDelete(args: string[]): DeleteFamilyInput {
+  const values = options(args, ["family-id", "confirm"]);
+  const familyId = familyIdValue(values["family-id"]);
+  const confirmation = values.confirm;
+  if (confirmation === undefined) throw new UsageError("--confirm needs the Family id once more");
+  return { familyId, confirmation: confirmation.toLowerCase() };
+}
+
+async function remove(config: Config, input: DeleteFamilyInput, log: Log): Promise<number> {
+  try {
+    await withDirectory(config, (client) => deleteFamily(provisioning(config, client, log), input));
+    return 0;
+  } catch (error) {
+    if (error instanceof ProvisioningError) {
+      log.error("Deleting the Family was refused", { familyId: input.familyId, error });
+    } else {
+      log.error("Deleting the Family failed; run delete again to finish it", { familyId: input.familyId, error });
     }
     return 1;
   }

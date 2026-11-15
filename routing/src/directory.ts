@@ -49,6 +49,8 @@ export type Directory = {
   add(entry: NewDirectoryEntry): Promise<void>;
   /** Marks the Family active and notes the core version it was prepared for. */
   activate(familyId: string, coreVersion: string): Promise<void>;
+  /** Marks the Family deleted and destroys its wrapped family key and database password. */
+  markDeleted(familyId: string): Promise<void>;
 };
 
 /** Brings the Directory's schema up to date. */
@@ -128,6 +130,12 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async activate(familyId, coreVersion) {
       await client.query("UPDATE family SET status = 'active', core_version = $2 WHERE family_id = $1", [familyId, coreVersion]);
+    },
+    async markDeleted(familyId) {
+      await client.query(
+        "UPDATE family SET status = 'deleted', wrapped_family_key = NULL, wrapped_database_password = NULL WHERE family_id = $1",
+        [familyId],
+      );
     },
   };
 }
