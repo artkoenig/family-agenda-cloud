@@ -2,8 +2,8 @@ import { Writable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { createLog, reasonOf } from "../../src/log";
 
-/** A Log that writes to memory, at a fixed time; `lines` are the lines written, parsed. */
-const memoryLog = () => {
+/** A Log that writes to memory, at a fixed time unless `now` is null (the Log's own clock); `lines` are the lines written, parsed. */
+const memoryLog = (now: (() => Date) | null = () => new Date("2026-05-01T10:00:00.000Z")) => {
   const chunks: string[] = [];
   const stream = new Writable({
     write(chunk: Buffer, _encoding, done) {
@@ -11,7 +11,7 @@ const memoryLog = () => {
       done();
     },
   });
-  const log = createLog(stream, () => new Date("2026-05-01T10:00:00.000Z"));
+  const log = now ? createLog(stream, now) : createLog(stream);
   return { log, chunks, lines: () => chunks.map((chunk) => JSON.parse(chunk) as unknown) };
 };
 
@@ -48,16 +48,10 @@ describe("createLog", () => {
   });
 
   it("writes the current time unless told otherwise", () => {
-    const chunks: string[] = [];
-    const stream = new Writable({
-      write(chunk: Buffer, _encoding, done) {
-        chunks.push(chunk.toString("utf8"));
-        done();
-      },
-    });
+    const { log, lines } = memoryLog(null);
     const before = Date.now();
-    createLog(stream).info("now");
-    const { time } = JSON.parse(chunks[0]!) as { time: string };
+    log.info("now");
+    const [{ time }] = lines() as [{ time: string }];
     expect(Date.parse(time)).toBeGreaterThanOrEqual(before);
     expect(Date.parse(time)).toBeLessThanOrEqual(Date.now());
   });
