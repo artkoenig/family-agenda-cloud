@@ -2,6 +2,7 @@ import { rm, stat } from "node:fs/promises";
 import type { DirectoryEntry } from "./directory";
 import { dropFamilyDatabase, familyDatabaseNames } from "./family-databases";
 import { blobLocationOf, isFamilyId, ProvisioningError, type Provisioning } from "./provisioning";
+import type { FamilySchedules } from "./scheduler";
 
 export type DeleteFamilyInput = {
   familyId: string;
@@ -14,15 +15,18 @@ export type DeleteFamilyInput = {
  * again and ends in the state of an undisturbed run.
  *
  * The first step marks the Family deleted and destroys its wrapped family key and database
- * password, so that from then on nothing routes to it or schedules it, and what is left of its
+ * password, so that from then on nothing routes to it or triggers its due work, and what is left of its
  * data opens with no key the Routing module still has. Its entry stays, as the record that it was
  * deleted, with no secrets in it; the time deleting finished is noted only after the last step, so
  * that a deleted Family without it was not deleted to the end. Old row versions of the Directory
  * not yet vacuumed, its write-ahead log and its backups still hold the wrapped values until they
  * are overwritten or expire; they open only with the Operator key.
  */
-export async function deleteFamily(provisioning: Omit<Provisioning, "core">, input: DeleteFamilyInput): Promise<void> {
-  const { config, client, directory, log } = provisioning;
+export async function deleteFamily(
+  provisioning: Omit<Provisioning, "core"> & { schedules: FamilySchedules },
+  input: DeleteFamilyInput,
+): Promise<void> {
+  const { config, client, directory, schedules, log } = provisioning;
   const { familyId } = input;
   if (!isFamilyId(familyId)) throw new ProvisioningError(`${familyId} is not a Family id; nothing was deleted`);
   if (input.confirmation !== familyId) {
@@ -39,6 +43,9 @@ export async function deleteFamily(provisioning: Omit<Provisioning, "core">, inp
 
   await directory.markDeleted(familyId);
   log.info("The Family is marked deleted; its wrapped family key and database password are destroyed", { familyId });
+
+  await schedules.remove(familyId);
+  log.info("The Family's schedules are removed", { familyId });
 
   await dropFamilyDatabase(client, entry);
   log.info("The Family's database and role are dropped", { familyId });

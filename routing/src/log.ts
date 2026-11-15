@@ -27,3 +27,10 @@ export function createLog(stream: Writable, now: () => Date = () => new Date()):
 }
 
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** What went wrong, for the log: an error's code or message, never the request it was about. */
+export function reasonOf(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const { code } = error as NodeJS.ErrnoException;
+  return code ?? error.message;
+}

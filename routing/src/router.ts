@@ -6,7 +6,7 @@ import { directoryConnection, type Config } from "./config";
 import { CONTEXT_HEADER } from "./core";
 import { directory as openDirectory, type Directory } from "./directory";
 import { sealedContext, unwrappedFamily, type Family } from "./family-context";
-import type { Log } from "./log";
+import { reasonOf, type Log } from "./log";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
@@ -166,13 +166,6 @@ function answerBadGateway(outgoing: ServerResponse): void {
     return;
   }
   outgoing.writeHead(502, { "content-type": "text/plain; charset=utf-8" }).end("Bad gateway\n");
-}
-
-/** What went wrong, for the log: an error's code or message, never the request it was about. */
-function reasonOf(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  const { code } = error as NodeJS.ErrnoException;
-  return code ?? error.message;
 }
 
 /**

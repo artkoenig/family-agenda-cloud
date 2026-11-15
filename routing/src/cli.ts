@@ -2,14 +2,17 @@ import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import { parseArgs } from "node:util";
 import pg from "pg";
+import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
-import { migrateDirectory } from "./directory";
+import { coreClient } from "./core";
+import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { isFamilyId, provisioning, ProvisioningError } from "./provisioning";
 import { startRouter } from "./router";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
+import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -18,8 +21,10 @@ export type Io = {
   stdout: Writable;
   /** The log. */
   stderr: Writable;
-  /** When a long-running command such as serve stops; SIGTERM or SIGINT unless given. */
+  /** When a long-running command such as serve or schedule stops; SIGTERM or SIGINT unless given. */
   until?: Promise<unknown>;
+  /** The clock the Scheduler fires by; the system's unless a test moves one by hand. */
+  clock?: Clock;
 };
 
 const USAGE = `Usage:
@@ -33,6 +38,11 @@ const USAGE = `Usage:
     Deletes the Family: its database and role, its blobs, its wrapped family key and database
     password. Its Directory entry stays, marked deleted. --confirm must repeat the Family id.
     It says when the Family is deleted; after a failure part-way, run it again to finish.
+  routing schedule
+    Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
+    once an hour and its sweep of unreferenced secrets once a day.
+  routing families
+    Lists every Family with its status and when its due work last ran and how it ended.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
@@ -50,6 +60,8 @@ const COMMANDS: Record<string, Command> = {
   "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
   delete: (args, config, io, log) => runDelete(config, parseDelete(args), io, log),
   serve: (_args, config, io, log) => serve(config, io, log),
+  schedule: (_args, config, io, log) => schedule(config, io, log),
+  families: (_args, config, io) => families(config, io),
 };
 
 /** The Operator's command line. Answers the exit code. */
@@ -129,7 +141,9 @@ function isTimeZone(timeZone: string): boolean {
 
 async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log): Promise<number> {
   try {
-    const address = await withDirectory(config, (client) => createFamily(provisioning(config, client, log), input));
+    const address = await withDirectory(config, (client) =>
+      withSchedules(config, (schedules) => createFamily({ ...provisioning(config, client, log), schedules }, input)),
+    );
     io.stdout.write(`${address}\n`);
     return 0;
   } catch (error) {
@@ -204,7 +218,9 @@ function parseDelete(args: string[]): DeleteFamilyInput {
 
 async function runDelete(config: Config, input: DeleteFamilyInput, io: Io, log: Log): Promise<number> {
   try {
-    await withDirectory(config, (client) => deleteFamily(provisioning(config, client, log), input));
+    await withDirectory(config, (client) =>
+      withSchedules(config, (schedules) => deleteFamily({ ...provisioning(config, client, log), schedules }, input)),
+    );
     io.stdout.write(`The Family ${input.familyId} is deleted\n`);
     return 0;
   } catch (error) {
@@ -215,6 +231,43 @@ async function runDelete(config: Config, input: DeleteFamilyInput, io: Io, log: 
       log.error("Deleting the Family did not finish; run delete again to finish it", { familyId: input.familyId, error });
     }
     return 1;
+  }
+}
+
+async function schedule(config: Config, io: Io, log: Log): Promise<number> {
+  const { clock = systemClock } = io;
+  const stop = new AbortController();
+  void (io.until ?? stopSignal()).then(() => {
+    stop.abort();
+  });
+  await withDirectory(config, (client) =>
+    runScheduler({ config, client, directory: directory(client), core: coreClient(config.coreUrls, clock), log, clock, signal: stop.signal }),
+  );
+  return 0;
+}
+
+/** One line per Family: its Family id, its status, and when its due work last ran and how it ended. */
+async function families(config: Config, io: Io): Promise<number> {
+  const overview = await withDirectory(config, (client) => directory(client).overview());
+  for (const { familyId, status, dueWork } of overview) {
+    const columns = [familyId, status];
+    if (!dueWork) columns.push("due work never ran");
+    else if (dueWork.outcome === "succeeded") {
+      columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `succeeded: ${dueWork.sources.ran} Sources polled, ${dueWork.sources.failed} failed`);
+    } else columns.push(`due work ran ${dueWork.ranAt.toISOString()}`, `failed: ${dueWork.error}`);
+    io.stdout.write(`${columns.join("\t")}\n`);
+  }
+  return 0;
+}
+
+/** Opens the Scheduler's queues for writing schedules only, and runs `work` with them. */
+async function withSchedules<T>(config: Config, work: (schedules: FamilySchedules) => Promise<T>): Promise<T> {
+  const boss = openQueues(config, { supervise: false, schedule: false, registerInstance: false, max: 1 });
+  await boss.start();
+  try {
+    return await work(await familySchedules(boss));
+  } finally {
+    await boss.stop({ graceful: false });
   }
 }
 

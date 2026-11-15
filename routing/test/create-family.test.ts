@@ -62,6 +62,7 @@ async function stateOf(familyId: string) {
     )[0]?.count,
     prepared: routing.core.isPrepared(familyId),
     admins: routing.core.admins(familyId),
+    schedules: await routing.schedules(familyId),
   };
 }
 
@@ -80,6 +81,7 @@ const expectedState = (familyId: string) => ({
   familyRoles: 1,
   prepared: true,
   admins: [EMAIL],
+  schedules: ["due-work", "purge-messages", "sweep-secrets"],
 });
 
 describe("Creating a Family", () => {
@@ -368,10 +370,12 @@ describe("Secrets", () => {
       context!.database.password,
     ]);
     const tables = await routing.directory(
-      "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public'",
+      "SELECT table_schema AS schema, table_name AS name FROM information_schema.tables WHERE table_schema IN ('public', 'scheduler')",
     );
     const dump = (
-      await Promise.all(tables.map(({ name }) => routing.directory(`SELECT row_to_json(t)::text AS row FROM "${String(name)}" t`)))
+      await Promise.all(
+        tables.map(({ schema, name }) => routing.directory(`SELECT row_to_json(t)::text AS row FROM "${String(schema)}"."${String(name)}" t`)),
+      )
     )
       .flat()
       .map(({ row }) => String(row))
