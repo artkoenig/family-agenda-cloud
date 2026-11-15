@@ -1,13 +1,17 @@
-import type { DirectoryEntry } from "./directory";
+import type { DirectoryEntry, FailedPreparation } from "./directory";
 import { sealedContext, unwrappedFamily } from "./family-context";
 import { reasonOf } from "./log";
 import type { Provisioning } from "./provisioning";
 
-/** How a rollout ended: the Families it prepared, and those it could not prepare, with why. */
+/**
+ * How a rollout ended: the Families it prepared, those it could not prepare, with why, and those
+ * it refused because they are prepared for a newer core version than the pool runs.
+ */
 export type RollOutResult = {
   coreVersion: string;
   prepared: string[];
-  failed: { familyId: string; error: string }[];
+  failed: FailedPreparation[];
+  newer: { familyId: string; coreVersion: string }[];
 };
 
 /**
@@ -22,16 +26,32 @@ export type RollOutResult = {
  *   as it finishes it; a deleted Family has no database to prepare and is skipped.
  * - A failure is noted in the Directory and the rollout carries on with the next Family. So is a
  *   core that answers a version other than CORE_VERSION: the pool and CORE_VERSION disagree.
- * - Running it again prepares only the Families still behind.
+ * - Running it again prepares only the Families still behind. For a Family whose preparation
+ *   succeeded but was not noted it calls "prepare the Family" again, which the core's contract
+ *   makes safe: prepare-family is idempotent.
+ * - A Family prepared for a newer core version than CORE_VERSION is refused and named, not
+ *   prepared: an older core cannot read a database a newer one migrated. Going back to an older
+ *   release is a restore of the backup taken before the upgrade, not a rollout.
+ * - While a rollout runs, every path of a Family it has not reached yet, the Agenda feed that
+ *   calendar apps subscribe to too, answers 503 with `Retry-After: 30` until it is prepared.
  */
 export async function rollOut(provisioning: Provisioning): Promise<RollOutResult> {
   const { config, directory, log } = provisioning;
   const { coreVersion } = config;
-  const result: RollOutResult = { coreVersion, prepared: [], failed: [] };
+  const result: RollOutResult = { coreVersion, prepared: [], failed: [], newer: [] };
   const behind = await directory.behind(coreVersion);
   log.info("Rolling out the core version", { coreVersion, families: behind.length });
   for (const entry of behind) {
     const { familyId } = entry;
+    if (entry.coreVersion !== null && isNewer(entry.coreVersion, coreVersion)) {
+      result.newer.push({ familyId, coreVersion: entry.coreVersion });
+      log.error("The Family is prepared for a newer core version; it is not prepared for an older one", {
+        familyId,
+        familyCoreVersion: entry.coreVersion,
+        coreVersion,
+      });
+      continue;
+    }
     try {
       await prepare(provisioning, entry);
       result.prepared.push(familyId);
@@ -55,4 +75,12 @@ async function prepare({ config, directory, core, log }: Provisioning, entry: Di
   }
   await directory.notePrepared(familyId, coreVersion);
   log.info("The Family is prepared for the core version", { familyId, coreVersion });
+}
+
+/** Whether `version` is a later release than `than`, both `major.minor.patch`; text that is not one is not later. */
+export function isNewer(version: string, than: string): boolean {
+  const [a, b] = [version, than].map((text) => (/^\d+\.\d+\.\d+$/.test(text) ? text.split(".").map(Number) : undefined));
+  if (!a || !b) return false;
+  const index = a.findIndex((part, at) => part !== b[at]);
+  return index !== -1 && (a[index] ?? 0) > (b[index] ?? 0);
 }

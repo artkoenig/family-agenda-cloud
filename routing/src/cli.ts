@@ -303,12 +303,15 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
 }
 
 async function rollOutCommand(config: Config, io: Io, log: Log): Promise<number> {
-  const { coreVersion, prepared, failed } = await withDirectory(config, (client) => rollOut(provisioning(config, client, log)));
+  const { coreVersion, prepared, failed, newer } = await withDirectory(config, (client) => rollOut(provisioning(config, client, log)));
   io.stdout.write(`Prepared ${familiesCounted(prepared.length)} for core version ${coreVersion}\n`);
-  if (failed.length === 0) return 0;
-  io.stdout.write(`Failed for ${familiesCounted(failed.length)}; run roll-out again to retry:\n`);
+  if (failed.length > 0) io.stdout.write(`Failed for ${familiesCounted(failed.length)}; run roll-out again to retry:\n`);
   for (const { familyId, error } of failed) io.stdout.write(`${familyId}\t${error}\n`);
-  return 1;
+  if (newer.length > 0) io.stdout.write(`Refused ${familiesCounted(newer.length)}; going back to an older core version needs a restore:\n`);
+  for (const { familyId, coreVersion: newerVersion } of newer) {
+    io.stdout.write(`${familyId}\tprepared for a newer core version ${newerVersion}\n`);
+  }
+  return failed.length + newer.length === 0 ? 0 : 1;
 }
 
 const familiesCounted = (count: number) => `${count} ${count === 1 ? "Family" : "Families"}`;

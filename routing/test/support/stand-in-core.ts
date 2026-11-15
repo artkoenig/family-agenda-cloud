@@ -50,14 +50,16 @@
  *   the same text its `GET /api/health` answers as `version` (docs/upgrading.md: "Check the running
  *   version ... at `/api/health`"), such as `0.3.1`.
  * - The Routing module does not ask the cores which version they run. It is told, as
- *   `CORE_VERSION`, and the Cube's `.env` names the core image's tag and `CORE_VERSION` from one
- *   variable, an exact release (not `latest`), so that the pool and the Routing module change
- *   release together. Asking the pool instead would put a health check on every request and
+ *   `CORE_VERSION`, an exact release (`0.3.1`, never `latest`). The intended setup is that the
+ *   Cube's compose project names the core image's tag from the same `CORE_VERSION` of its `.env`,
+ *   so that the pool and the Routing module change release together. Asking the pool instead would put a health check on every request and
  *   every scheduled run, and leaves open which answer counts while the pool is half upgraded.
  * - A Family is prepared for the running version when its Directory entry notes `CORE_VERSION`.
  *   Until then the Router answers it 503 and the Scheduler triggers nothing for it, so that a core
  *   never opens a database it has not migrated. `routing roll-out` prepares it; a core that
  *   answers another version than `CORE_VERSION` fails the Family's preparation.
+ * - `prepare-family` is idempotent: a rollout run again calls it again for a Family whose earlier
+ *   call failed, and for one whose call succeeded but was not noted.
  *
  * ## Requests from browsers
  *
@@ -83,7 +85,7 @@ import type { SourcesPolled } from "../../src/core";
 export const CONTEXT_HEADER = "x-family-agenda-context";
 
 /** The version the stand-in runs, and answers "prepare the Family" with, until told otherwise. */
-export const STAND_IN_CORE_VERSION = "0.0.0-stand-in";
+export const STAND_IN_CORE_VERSION = "0.0.0";
 
 /** What a Context tells the core about the Family a request or operation is for. */
 export type Context = {

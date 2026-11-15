@@ -17,9 +17,10 @@ export type Config = {
   /** The cores of the pool. */
   coreUrls: string[];
   /**
-   * The core version the pool runs, the release its image was built from, such as `0.3.1`: only a
-   * Family prepared for it is routed to and scheduled, and a rollout prepares every Family for it.
-   * The Cube's `.env` names the core image's tag and this from the same variable.
+   * The core version the pool runs, the exact release its image was built from, such as `0.3.1`:
+   * only a Family prepared for it is routed to and scheduled, and a rollout prepares every Family
+   * for it. The intended setup: the Cube's compose project names the core image's tag from
+   * CORE_VERSION in its `.env`, so that the pool and the Routing module change release together.
    */
   coreVersion: string;
   /** Where the cores reach the Families' databases; the Directory's server unless set. */
@@ -57,7 +58,7 @@ export function readConfig(env: Env): Config {
     operatorKey: key(env, "OPERATOR_KEY"),
     contextKey: key(env, "CONTEXT_KEY"),
     coreUrls: coreUrls(env),
-    coreVersion: required(env, "CORE_VERSION"),
+    coreVersion: coreVersion(env),
     familyDatabaseHost: env.FAMILY_DATABASE_HOST ?? directoryDatabaseUrl.hostname,
     familyDatabasePort: Number(env.FAMILY_DATABASE_PORT ?? (directoryDatabaseUrl.port || "5432")),
     blobRoot: withoutTrailingSlash(required(env, "BLOB_ROOT")),
@@ -76,6 +77,16 @@ function coreUrls(env: Env): string[] {
     .filter(Boolean);
   if (urls.length === 0) throw new ConfigError("CORE_URLS must name at least one core");
   return urls;
+}
+
+/**
+ * An exact release, `major.minor.patch`: a tag such as `latest` or `0.3` names no version a
+ * Family could be prepared for, and would have the Router answer every Family 503.
+ */
+function coreVersion(env: Env): string {
+  const version = required(env, "CORE_VERSION");
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new ConfigError("CORE_VERSION must be an exact release such as 0.3.1, the core image's tag");
+  return version;
 }
 
 /** Where and how the Router listens. */

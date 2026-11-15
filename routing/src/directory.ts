@@ -44,6 +44,9 @@ export type DueWorkOutcome =
 /** Why preparing a Family for a core version failed the last time it was tried. */
 export type PreparationFailure = { coreVersion: string; error: string };
 
+/** A Family a rollout could not prepare, and why. */
+export type FailedPreparation = { familyId: string; error: string };
+
 /**
  * What the Operator sees of a Family: its status, how its due work last ran, if it ever did, and
  * why preparing it for a core version last failed, unless it was prepared since.
@@ -237,19 +240,7 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     async find(familyId) {
       const { rows } = await client.query<Row>("SELECT * FROM family WHERE family_id = $1", [familyId]);
       const row = rows[0];
-      return row && {
-        familyId: row.family_id,
-        status: row.status,
-        databaseName: row.database_name,
-        databaseRole: row.database_role,
-        blobLocation: row.blob_location,
-        timeZone: row.time_zone,
-        wrappedFamilyKey: row.wrapped_family_key,
-        wrappedDatabasePassword: row.wrapped_database_password,
-        coreVersion: row.core_version,
-        createdAt: row.created_at,
-        deletedAt: row.deleted_at,
-      };
+      return row && entryOf(row);
     },
     async beingPrepared() {
       const { rows } = await client.query<{ family_id: string }>(
@@ -341,7 +332,10 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
       );
     },
     async notePreparationFailed(familyId, { coreVersion, error }) {
-      await client.query("UPDATE family SET preparation_failed_for = $2, preparation_error = $3 WHERE family_id = $1", [familyId, coreVersion, error]);
+      await client.query(
+        "UPDATE family SET preparation_failed_for = $2, preparation_error = $3 WHERE family_id = $1 AND status IN ('active', 'suspended')",
+        [familyId, coreVersion, error],
+      );
     },
   };
 }

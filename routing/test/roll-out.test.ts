@@ -4,7 +4,7 @@ import { setUpRouting, type TestRouting } from "./support/routing";
 import { STAND_IN_CORE_VERSION, type RecordedRequest } from "./support/stand-in-core";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
-const NEXT_VERSION = "0.0.1-stand-in";
+const NEXT_VERSION = "0.0.1";
 
 let routing: TestRouting;
 beforeEach(async () => {
@@ -132,6 +132,72 @@ describe("A rollout", () => {
     expect(routing.core.requests.slice(since)).toEqual([]);
   });
 
+  it.each(["latest", "0.3", "v0.3.1", "0.3.1-rc.1"])("refuses CORE_VERSION %s, which is no exact release, and prepares nothing", async (version) => {
+    await createFamily();
+    const since = routing.core.requests.length;
+
+    const result = await routing.run(["roll-out"], { CORE_VERSION: version });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("CORE_VERSION must be an exact release such as 0.3.1");
+    expect(routing.core.requests.slice(since)).toEqual([]);
+  });
+
+  it("refuses a Family prepared for a newer core version, names it, and prepares the others", async () => {
+    const [newer, older] = [await createFamily(), await createFamily()];
+    // The cores went back from 0.10.0 to 0.9.0 after the newer one had been prepared for 0.10.0.
+    await routing.directory("UPDATE family SET core_version = '0.10.0' WHERE family_id = $1", [newer]);
+    await routing.directory("UPDATE family SET core_version = '0.8.5' WHERE family_id = $1", [older]);
+    upgradeCores("0.9.0");
+    const since = routing.core.requests.length;
+
+    const result = await routing.run(["roll-out"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe(
+      "Prepared 1 Family for core version 0.9.0\n" +
+        "Refused 1 Family; going back to an older core version needs a restore:\n" +
+        `${newer}\tprepared for a newer core version 0.10.0\n`,
+    );
+    expect(preparesOf(newer, since)).toEqual([]);
+    expect(preparesOf(older, since)).toHaveLength(1);
+    expect([await coreVersionOf(newer), await coreVersionOf(older)]).toEqual(["0.10.0", "0.9.0"]);
+    expect(routing.log()).toContain(
+      `"message":"The Family is prepared for a newer core version; it is not prepared for an older one","familyId":"${newer}",` +
+        '"familyCoreVersion":"0.10.0","coreVersion":"0.9.0"',
+    );
+  });
+
+  it.each([
+    ["0.9.1", "0.9.0"],
+    ["1.0.0", "0.99.99"],
+    ["2.0.0", "1.9.9"],
+  ])("refuses a Family prepared for %s when the cores run %s", async (noted, running) => {
+    const familyId = await createFamily();
+    await routing.directory("UPDATE family SET core_version = $2 WHERE family_id = $1", [familyId, noted]);
+    upgradeCores(running);
+
+    const result = await routing.run(["roll-out"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain(`${familyId}\tprepared for a newer core version ${noted}`);
+  });
+
+  it.each([
+    ["0.9.0", "0.9.1"],
+    ["0.99.99", "1.0.0"],
+    ["not a release", "1.0.0"],
+  ])("prepares a Family noted at %s when the cores run %s", async (noted, running) => {
+    const familyId = await createFamily();
+    await routing.directory("UPDATE family SET core_version = $2 WHERE family_id = $1", [familyId, noted]);
+    upgradeCores(running);
+
+    const result = await routing.run(["roll-out"]);
+
+    expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: `Prepared 1 Family for core version ${running}\n` });
+    expect(await coreVersionOf(familyId)).toBe(running);
+  });
+
   it("with every Family prepared already prepares none", async () => {
     await createFamily();
     const since = routing.core.requests.length;
@@ -212,6 +278,9 @@ describe("A Family not prepared for the running core version", () => {
     expect(callsOf("run-due-work", behind)).toEqual([]);
     expect(callsOf("purge-messages", behind)).toEqual([]);
     expect(callsOf("sweep-secrets", behind)).toEqual([]);
+    // Once, not every minute and occasion.
+    const skipped = `"message":"The Family is not prepared for the running core version; nothing is triggered","familyId":"${behind}","coreVersion":"${STAND_IN_CORE_VERSION}"`;
+    expect(routing.log().split(skipped)).toHaveLength(2);
 
     expect((await routing.run(["roll-out"])).exitCode).toBe(0);
     await minutes(clock, 1);
