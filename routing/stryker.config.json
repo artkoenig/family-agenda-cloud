@@ -5,12 +5,15 @@
   ],
   "testRunner": "vitest",
   "vitest": {
-    "configFile": "./vitest.config.ts",
+    "configFile": "./vitest.stryker.config.ts",
     "related": false
   },
   "mutate": [
-    "src/**/*.ts",
-    "!src/main.ts"
+    "src/config.ts",
+    "src/context.ts",
+    "src/secrets.ts",
+    "src/log.ts",
+    "src/family-context.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

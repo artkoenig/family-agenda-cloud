@@ -1,0 +1,156 @@
+import { describe, expect, it } from "vitest";
+import { ConfigError, directoryConnection, readConfig } from "../../src/config";
+
+const operatorKey = Buffer.alloc(32, 1);
+const contextKey = Buffer.alloc(32, 2);
+
+/** The least environment the Routing module starts with. */
+const minimal = {
+  DIRECTORY_DATABASE_URL: "postgres://routing@db.internal:6543/directory",
+  DIRECTORY_DATABASE_PASSWORD: "directory-password",
+  OPERATOR_KEY: operatorKey.toString("base64"),
+  CONTEXT_KEY: contextKey.toString("base64"),
+  CORE_URLS: "http://core-1:3000",
+  BLOB_ROOT: "/srv/blobs",
+};
+
+const without = (name: keyof typeof minimal) => {
+  const env: Record<string, string | undefined> = { ...minimal };
+  env[name] = undefined;
+  return env;
+};
+
+describe("readConfig", () => {
+  it("reads the minimal environment, with defaults for everything else", () => {
+    expect(readConfig(minimal)).toEqual({
+      directoryDatabaseUrl: "postgres://routing@db.internal:6543/directory",
+      directoryDatabasePassword: "directory-password",
+      operatorKey,
+      contextKey,
+      coreUrls: ["http://core-1:3000"],
+      familyDatabaseHost: "db.internal",
+      familyDatabasePort: 6543,
+      blobRoot: "/srv/blobs",
+      publicUrl: "https://app.family-agenda.cloud",
+      defaultTimeZone: "Europe/Berlin",
+      identityProvider: null,
+      listenHost: "0.0.0.0",
+      listenPort: 8080,
+      trustProxy: false,
+    });
+  });
+
+  it("takes every optional setting from the environment", () => {
+    const config = readConfig({
+      ...minimal,
+      FAMILY_DATABASE_HOST: "families.internal",
+      FAMILY_DATABASE_PORT: "7000",
+      PUBLIC_URL: "https://agenda.example//",
+      TIME_ZONE: "America/New_York",
+      LISTEN_HOST: "127.0.0.1",
+      PORT: "0",
+      TRUST_PROXY: "true",
+      OIDC_ISSUER_URL: "https://idp.example",
+      OIDC_CLIENT_ID: "client",
+      OIDC_CLIENT_SECRET: "secret",
+      OIDC_REQUIRED_GROUP: "families",
+    });
+    expect(config).toMatchObject({
+      familyDatabaseHost: "families.internal",
+      familyDatabasePort: 7000,
+      publicUrl: "https://agenda.example",
+      defaultTimeZone: "America/New_York",
+      listenHost: "127.0.0.1",
+      listenPort: 0,
+      trustProxy: true,
+      identityProvider: { issuerUrl: "https://idp.example", clientId: "client", clientSecret: "secret", requiredGroup: "families" },
+    });
+  });
+
+  it("uses Postgres' default port for the Families' databases when the Directory's address names none", () => {
+    expect(readConfig({ ...minimal, DIRECTORY_DATABASE_URL: "postgres://routing@db.internal/directory" }).familyDatabasePort).toBe(5432);
+  });
+
+  it("trusts the proxy only when TRUST_PROXY is exactly true", () => {
+    expect(readConfig({ ...minimal, TRUST_PROXY: "yes" }).trustProxy).toBe(false);
+  });
+
+  it("splits CORE_URLS at commas, trimmed, without trailing slashes or empty entries", () => {
+    expect(readConfig({ ...minimal, CORE_URLS: " http://core-1:3000/ ,, http://core-2:3000// ," }).coreUrls).toEqual([
+      "http://core-1:3000",
+      "http://core-2:3000",
+    ]);
+  });
+
+  it("drops the trailing slashes of BLOB_ROOT", () => {
+    expect(readConfig({ ...minimal, BLOB_ROOT: "/srv/blobs//" }).blobRoot).toBe("/srv/blobs");
+  });
+
+  it.each(Object.keys(minimal) as (keyof typeof minimal)[])("refuses an environment without %s", (name) => {
+    expect(() => readConfig(without(name))).toThrow(new ConfigError(`${name} is not set`));
+  });
+
+  it("refuses with a ConfigError", () => {
+    expect(() => readConfig({})).toThrow(ConfigError);
+  });
+
+  it("refuses an empty setting as not set", () => {
+    expect(() => readConfig({ ...minimal, BLOB_ROOT: "" })).toThrow(new ConfigError("BLOB_ROOT is not set"));
+  });
+
+  it("refuses a Directory address with a password in it", () => {
+    expect(() => readConfig({ ...minimal, DIRECTORY_DATABASE_URL: "postgres://routing:secret@db.internal/directory" })).toThrow(
+      new ConfigError("DIRECTORY_DATABASE_URL must not contain a password; set DIRECTORY_DATABASE_PASSWORD"),
+    );
+  });
+
+  it.each(["OPERATOR_KEY", "CONTEXT_KEY"])("refuses a %s that is not 32 bytes", (name) => {
+    for (const length of [31, 33]) {
+      expect(() => readConfig({ ...minimal, [name]: Buffer.alloc(length).toString("base64") })).toThrow(
+        new ConfigError(`${name} must be 32 bytes in base64 (openssl rand -base64 32)`),
+      );
+    }
+  });
+
+  it("refuses CORE_URLS that name no core", () => {
+    expect(() => readConfig({ ...minimal, CORE_URLS: " , ," })).toThrow(new ConfigError("CORE_URLS must name at least one core"));
+  });
+
+  it.each(["65536", "-1", "80a", "123456", "", " 80"])("refuses PORT %j", (port) => {
+    expect(() => readConfig({ ...minimal, PORT: port })).toThrow(new ConfigError("PORT must be a port number, 0 to 65535"));
+  });
+
+  it("accepts the highest port", () => {
+    expect(readConfig({ ...minimal, PORT: "65535" }).listenPort).toBe(65_535);
+  });
+
+  it.each(["OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REQUIRED_GROUP"])("refuses an Identity Provider without %s", (name) => {
+    const env: Record<string, string | undefined> = {
+      ...minimal,
+      OIDC_ISSUER_URL: "https://idp.example",
+      OIDC_CLIENT_ID: "client",
+      OIDC_CLIENT_SECRET: "secret",
+      OIDC_REQUIRED_GROUP: "families",
+    };
+    env[name] = undefined;
+    expect(() => readConfig(env)).toThrow(new ConfigError(`${name} is not set`));
+  });
+});
+
+describe("directoryConnection", () => {
+  it("opens the Directory with the address' parts, decoded, and the password set apart", () => {
+    const config = readConfig({ ...minimal, DIRECTORY_DATABASE_URL: "postgres://routing%40ops@db.internal:6543/the%20directory" });
+    expect(directoryConnection(config)).toEqual({
+      host: "db.internal",
+      port: 6543,
+      user: "routing@ops",
+      database: "the directory",
+      password: "directory-password",
+    });
+  });
+
+  it("uses Postgres' default port when the address names none", () => {
+    const config = readConfig({ ...minimal, DIRECTORY_DATABASE_URL: "postgres://routing@db.internal/directory" });
+    expect(directoryConnection(config).port).toBe(5432);
+  });
+});
