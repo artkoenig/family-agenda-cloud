@@ -88,7 +88,7 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
     return;
   }
   const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
-  const family = await routable(setup, familyId);
+  const family = namesOperations(rest) ? undefined : await routable(setup, familyId);
   if (!family) {
     // The same answer whether the Family is unknown, suspended or deleted: it tells nobody which Families exist.
     outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found\n");
@@ -120,6 +120,26 @@ async function routable({ config, directory }: RouterSetup, familyId: string): P
   const entry = familyId ? await directory.find(familyId) : undefined;
   if (entry?.status !== "active") return undefined;
   return entry.coreVersion === config.coreVersion ? unwrappedFamily(config, entry) : NOT_PREPARED;
+}
+
+/**
+ * Whether the path below a Family's prefix names the core's triggered operations, as a core could
+ * read it once it decodes the path and resolves its dot segments. Only the Routing module triggers
+ * them, with a Context of its own: passed on from a browser, they would let anyone who knows a
+ * Family's address reset its Admin's password.
+ */
+function namesOperations(rest: string): boolean {
+  const [pathname = ""] = rest.split("?", 1);
+  let decoded = pathname;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    // Not decodable as a whole: checked as it is, which still resolves its dot segments.
+  }
+  // One slash for many: "//operations" would otherwise be read as a host.
+  const resolved = new URL(`/${decoded}`.replaceAll(/[/\\]+/g, "/"), "https://core.invalid").pathname;
+  const [first = ""] = resolved.split("/").filter(Boolean);
+  return first.toLowerCase() === "operations";
 }
 
 /** Static files and the health check: the same for every Family, so served without one. */
