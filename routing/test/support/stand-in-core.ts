@@ -24,6 +24,12 @@
  * - `POST /operations/enter-admin` with JSON `{ "email": "<address>" }`: enters an Admin with that
  *   email address and no password, which closes the setup page. Needs a prepared Family (409
  *   otherwise). Answers 201 when the Admin is new and 200 when one with that address exists.
+ * - `POST /operations/reset-admin-password` with JSON `{ "email": "<address>" }`: draws a new
+ *   password for the Admin with that email address, sets it and ends their sessions, as the core's
+ *   `family-agenda reset-admin-password <email>` does inside an Instance. Answers 200
+ *   `{ "password": "<new password>" }`, the only place the password is ever given out; 404
+ *   `{ "error": "unknown-admin" }` when the Family has no Admin with that address (a 404 without
+ *   that error code is no answer of this operation); 409 for a Family that is not prepared.
  *
  * ## Requests from browsers
  *
@@ -37,6 +43,7 @@
  *   `X-Forwarded-Proto`, the host from `X-Forwarded-Host`, and the client's address from the last
  *   entry of `X-Forwarded-For`.
  */
+import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve, type HttpBindings } from "@hono/node-server";
@@ -113,7 +120,7 @@ export type RecordedRequest = {
   body: unknown;
 };
 
-type Operation = "prepare-family" | "enter-admin";
+type Operation = "prepare-family" | "enter-admin" | "reset-admin-password";
 
 /** An answer the stand-in gives as it is, to show that it reaches the browser unchanged. */
 export type CannedAnswer = { status: number; headers: [string, string][]; body: Uint8Array };
@@ -128,6 +135,8 @@ export type StandInCore = {
   requests: RecordedRequest[];
   /** The Admins entered per Family id. */
   admins(familyId: string): string[];
+  /** The password the stand-in last gave out for an Admin of a Family, if any. */
+  password(familyId: string, email: string): string | undefined;
   /** Whether a Family was prepared. */
   isPrepared(familyId: string): boolean;
   /** The next call of the operation answers with this status, and does nothing. */
@@ -152,6 +161,8 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     canned = undefined;
     return answer && new Response(answer.body, { status: answer.status, headers: answer.headers });
   };
+  const passwords = new Map<string, string>();
+  const passwordKey = (familyId: string, email: string) => `${familyId}/${email}`;
 
   const app = new Hono<{ Variables: { context: Context } }>();
   app.use(async (c, next) => {
@@ -188,6 +199,17 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     admins.set(familyId, [...entered, email]);
     return c.json({ created: true }, 201);
   });
+  app.post("/operations/reset-admin-password", async (c) => {
+    const status = fault("reset-admin-password");
+    if (status) return c.json({ error: "fault" }, status as 500);
+    const { familyId } = c.get("context");
+    if (!prepared.has(familyId)) return c.json({ error: "Family not prepared" }, 409);
+    const { email } = await c.req.json<{ email: string }>();
+    if (!(admins.get(familyId) ?? []).includes(email)) return c.json({ error: "unknown-admin" }, 404);
+    const password = randomBytes(12).toString("base64url");
+    passwords.set(passwordKey(familyId, email), password);
+    return c.json({ password });
+  });
 
   // Every other page of the Family: says which Family and page it served.
   app.all("*", (c) => {
@@ -212,6 +234,7 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     url: `http://127.0.0.1:${port}`,
     requests,
     admins: (familyId) => admins.get(familyId) ?? [],
+    password: (familyId, email) => passwords.get(passwordKey(familyId, email)),
     isPrepared: (familyId) => prepared.has(familyId),
     failNext: (operation, status = 500) => faults.set(operation, status),
     answerNext: (answer) => {

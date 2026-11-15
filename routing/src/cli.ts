@@ -4,10 +4,11 @@ import { parseArgs } from "node:util";
 import pg from "pg";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
 import { coreClient } from "./core";
-import { createFamily, ProvisioningError, type CreateFamilyInput } from "./create-family";
+import { createFamily, ProvisioningError, type CreateFamilyInput, type Provisioning } from "./create-family";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { startRouter } from "./router";
+import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -24,6 +25,9 @@ const USAGE = `Usage:
   routing create --admin-email <address> [--time-zone <IANA zone>] [--family-id <id>]
     Creates a Family with its first Admin and prints its address. After a failure part-way,
     run it again with the --family-id it names to finish that Family.
+  routing reset-admin-password --family-id <id> --admin-email <address>
+    Has a core give the Admin of an active Family a new password, ends their sessions and prints
+    the password once.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
@@ -34,21 +38,25 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 class UsageError extends Error {}
 
+type Command = (args: string[], config: Config, io: Io, log: Log) => Promise<number>;
+
+/** The Operator's commands by name; each answers the exit code. */
+const COMMANDS: Record<string, Command> = {
+  migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
+  create: (args, config, io, log) => create(config, parseCreate(args, config), io, log),
+  "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
+  serve: (_args, config, io, log) => serve(config, io, log),
+};
+
 /** The Operator's command line. Answers the exit code. */
 export async function run(args: string[], io: Io): Promise<number> {
   const log = createLog(io.stderr);
   try {
     const [command, ...rest] = args;
-    if (command === "migrate") {
-      const config = readConfig(io.env);
-      return await withDirectory(config, () => Promise.resolve(0));
-    }
-    if (command === "create") {
-      const config = readConfig(io.env);
-      return await create(config, parseCreate(rest, config), io, log);
-    }
-    if (command === "serve") return await serve(readConfig(io.env), io, log);
-    throw new UsageError(command ? `Unknown command ${command}` : "No command given");
+    if (!command) throw new UsageError("No command given");
+    const commandNamed = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
+    if (!commandNamed) throw new UsageError(`Unknown command ${command}`);
+    return await commandNamed(rest, readConfig(io.env), io, log);
   } catch (error) {
     if (error instanceof UsageError) {
       io.stderr.write(`${error.message}\n\n${USAGE}\n`);
@@ -65,8 +73,7 @@ export async function run(args: string[], io: Io): Promise<number> {
 
 function parseCreate(args: string[], config: Config): CreateFamilyInput {
   const values = options(args, ["admin-email", "time-zone", "family-id"]);
-  const adminEmail = values["admin-email"];
-  if (!adminEmail || !isEmailAddress(adminEmail)) throw new UsageError("--admin-email needs the email address of the first Admin");
+  const adminEmail = adminEmailOption(values["admin-email"], "the first Admin");
   const timeZone = values["time-zone"];
   const effectiveTimeZone = timeZone ?? config.defaultTimeZone;
   if (!isTimeZone(effectiveTimeZone)) throw new UsageError(`Unknown time zone ${effectiveTimeZone}`);
@@ -76,9 +83,20 @@ function parseCreate(args: string[], config: Config): CreateFamilyInput {
 /** The Family to finish that --family-id names, or a newly drawn Family id. */
 function familyIdOption(value: string | undefined): { familyId: string; resume: boolean } {
   if (value === undefined) return { familyId: randomUUID(), resume: false };
-  const familyId = value.toLowerCase();
-  if (!UUID.test(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
-  return { familyId, resume: true };
+  return { familyId: familyIdValue(value), resume: true };
+}
+
+/** The Family id that --family-id names, in the lower case the Directory keeps. */
+function familyIdValue(value: string | undefined): string {
+  const familyId = value?.toLowerCase();
+  if (!familyId || !UUID.test(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
+  return familyId;
+}
+
+/** The email address that --admin-email names; `whose` says which Admin it is for. */
+function adminEmailOption(value: string | undefined, whose: string): string {
+  if (!value || !isEmailAddress(value)) throw new UsageError(`--admin-email needs the email address of ${whose}`);
+  return value;
 }
 
 function options(args: string[], names: string[]): Record<string, string | undefined> {
@@ -107,9 +125,7 @@ function isTimeZone(timeZone: string): boolean {
 
 async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log): Promise<number> {
   try {
-    const address = await withDirectory(config, (client) =>
-      createFamily({ config, client, directory: directory(client), core: coreClient(config.coreUrls), log }, input),
-    );
+    const address = await withDirectory(config, (client) => createFamily(provisioning(config, client, log), input));
     io.stdout.write(`${address}\n`);
     return 0;
   } catch (error) {
@@ -147,6 +163,34 @@ async function migrate(config: Config): Promise<void> {
   } finally {
     await client.end();
   }
+}
+
+function parseReset(args: string[]): ResetAdminPasswordInput {
+  const values = options(args, ["family-id", "admin-email"]);
+  return { familyId: familyIdValue(values["family-id"]), adminEmail: adminEmailOption(values["admin-email"], "the Admin") };
+}
+
+async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log: Log): Promise<number> {
+  try {
+    const password = await withDirectory(config, (client) => resetAdminPassword(provisioning(config, client, log), input));
+    // The one place the new password is given out: on the Operator's output, never in the log.
+    io.stdout.write(`New password for ${input.adminEmail}: ${password}\nThe Admin's sessions have ended. Sign in with this password.\n`);
+    return 0;
+  } catch (error) {
+    if (error instanceof UnknownAdminError) {
+      // The Operator is told which address was not found; the log names the Family only.
+      io.stderr.write(`${error.message}\n`);
+      log.error("Resetting the Admin's password was refused: the Family has no Admin with that email", { familyId: input.familyId });
+    } else {
+      log.error("Resetting the Admin's password failed", { familyId: input.familyId, error });
+    }
+    return 1;
+  }
+}
+
+/** What Provisioning works with, on the Directory's connection. */
+function provisioning(config: Config, client: pg.Client, log: Log): Provisioning {
+  return { config, client, directory: directory(client), core: coreClient(config.coreUrls), log };
 }
 
 /** Opens the Directory, brings its schema up to date and runs `work` with it. */
