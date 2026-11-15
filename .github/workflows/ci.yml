@@ -49,22 +49,9 @@ jobs:
       - run: pnpm crap
 
   mutation:
-    # Mutation testing of src/, against the same Postgres as the tests.
+    # Mutation testing of the Routing module's pure logic (see stryker.config.json), with the unit
+    # tests in test/unit only (vitest.stryker.config.ts): no Postgres, no HTTP servers, no processes.
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
