@@ -2,6 +2,14 @@
 
 Stand: 06.11.2026 · Grundlage: Analyse des Repos `artkoenig/family-agenda`
 
+> **Teilweise abgelöst.** Phase 2 sowie die Punkte 1.1, 1.4 und 1.7 für das öffentliche Repo sind durch
+> [#90](https://github.com/artkoenig/family-agenda-cloud/issues/90) und
+> [ADR-0001](adr/0001-routing-module-is-a-separate-program-in-front-of-unmodified-cores.md) abgelöst: Der geschlossene
+> Teil ist ein eigenes Programm (das Routing-Modul), das keine öffentlichen Pakete importiert und per HTTP mit einem Pool
+> unveränderter öffentlicher Cores spricht, statt viele Instanzen in einem Prozess zu betreiben. Grund ist die Lizenz
+> (AGPLv3 mit DCO, ohne CLA). Die Leitlinie, dass das private Repo „die öffentlichen Pakete als Bibliothek nutzt“, gilt damit nicht mehr. Nicht
+> nach diesen Abschnitten bauen.
+
 ## Ziel und Leitlinien
 
 - **Selbsthosting bleibt vollständig und unabhängig.** Das öffentliche Repo (AGPLv3) bekommt kein Konzept von Mandanten. Jede Änderung muss auch für Selbsthoster sinnvoll sein.
@@ -22,6 +30,8 @@ Stand: 06.11.2026 · Grundlage: Analyse des Repos `artkoenig/family-agenda`
 Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Selbsthoster ändert sich das Verhalten nicht.
 
 ### 1.1 Composition Root als Bibliothek
+
+(abgelöst, siehe oben)
 
 - **Heute:** `bootApplication` und `bootWorker` (`apps/api/src/composition-root.ts`) erzeugen ihre Adapter selbst aus `readConfig()`, also aus Dateipfaden und `DATABASE_URL`.
 - **Ziel:** Beide Funktionen bekommen die Adapter übergeben (DB-Verbindung, `SecretStore`, `BlobStore`, `Extractor`, `JobQueue`, `Clock`).
@@ -46,6 +56,8 @@ Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Sel
 
 ### 1.4 HTTP-App ohne eigenen Server
 
+(abgelöst, siehe oben)
+
 - `createApp(application)` gibt die Hono-App zurück; erst `main.ts` bindet sie an einen Port.
 - Das private Gateway kann dann je nach Hostname an die App der Familie weiterreichen.
 
@@ -60,6 +72,8 @@ Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Sel
 - Private Adapter (S3, KMS, LLM mit Kontingenten) durchlaufen dieselben Prüfungen wie die Standard-Adapter.
 
 ### 1.7 Pakete veröffentlichen
+
+(abgelöst, siehe oben)
 
 - **Heute:** Alle Pakete sind `"private": true`, und der Code läuft über `tsx` zur Laufzeit.
 - **Ziel:**
@@ -81,6 +95,8 @@ Jedes Refactoring ist ein eigenes Issue; `pnpm check` bleibt grün, und für Sel
 - CI-Lauf der API-Tests mit **zwei Familien** (zwei Datenbanken in einem Prozess), damit Fehler bei der Trennung auffallen, die im Selbsthosting nie sichtbar würden.
 
 ## Phase 2 – Inhalt des privaten Repos (zur Einordnung)
+
+(abgelöst, siehe oben)
 
 | Baustein | Aufgabe |
 |---|---|

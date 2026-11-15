@@ -81,9 +81,13 @@ Stages:
 
 ### 10. Capacity check
 
-- **Threshold:** a script creates 120 Family databases and drives 60 Instances open at once across `api` and `worker`.
-  **No connection error**, **total RSS under 70 % of 8 GB**, and the **61st Family evicts an Instance instead of
-  failing** ([#55](https://github.com/artkoenig/family-agenda-cloud/issues/55), [#68](https://github.com/artkoenig/family-agenda-cloud/issues/68)).
+- **Threshold:** a script creates 120 Families through Provisioning and drives 60 of them at once through the Router
+  and the Scheduler against the pool of cores ([#90](https://github.com/artkoenig/family-agenda-cloud/issues/90)).
+  **60 Families served at once with no failed request and no connection error**, **at most 2 Postgres connections held
+  per Family served and the total under the usable `max_connections` of the Postgres in use**
+  (`docs/research/ionos-postgres-object-storage.md`, Connection limits), and **total RSS of the pool, the Routing module and
+  Postgres under 70 % of 8 GB** ([#55](https://github.com/artkoenig/family-agenda-cloud/issues/55),
+  [#68](https://github.com/artkoenig/family-agenda-cloud/issues/68)).
   A throughput load test is deferred until a growth trigger fires.
 - **Measured:** — **Date:** — **Proof:**
 
@@ -104,4 +108,13 @@ Stages:
 
 - **Threshold:** landing page, registration, billing and legal texts from
   [#32](https://github.com/artkoenig/family-agenda-cloud/issues/32) are live.
+- **Measured:** — **Date:** — **Proof:**
+
+### 14. Content Security Policy
+
+- **Threshold:** every page served below `app.family-agenda.cloud` carries a strict Content Security Policy, sent by the
+  core or else added by the Router, and the core's escaping has been reviewed, so that script from one Family's content
+  cannot run and reach another Family's pages on the shared origin
+  ([#90](https://github.com/artkoenig/family-agenda-cloud/issues/90), amendment).
+- **Until then:** the Operator does not sign in as an Admin of more than one Family in the same browser.
 - **Measured:** — **Date:** — **Proof:**
