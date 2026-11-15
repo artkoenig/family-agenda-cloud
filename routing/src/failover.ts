@@ -26,14 +26,16 @@ export function takingTurns<T>(items: readonly T[]): () => T[] {
 }
 
 /**
- * Why a call provably did not run on the core it was made to, so that another core may take it:
- * the error `code` of a connection that was never made, or the `status` of a core that is not
- * serving. Undefined when the core may have run it.
+ * Whether a call failed with the error `code` of a connection that was never made, so that it
+ * provably did not run and another core may take it.
  */
-export function notRunReason(failure: { code: string } | { status: number }): string | undefined {
-  if ("code" in failure) return NOT_CONNECTED.has(failure.code) ? failure.code : undefined;
-  return NOT_RUN.has(failure.status) ? String(failure.status) : undefined;
-}
+export const neverConnected = (code: string): boolean => NOT_CONNECTED.has(code);
+
+/**
+ * Whether a core answered with the `status` of a core that is not serving, so that the call
+ * provably did not run and another core may take it.
+ */
+export const notServing = (status: number): boolean => NOT_RUN.has(status);
 
 /** Whether a request with this method has no body, and so may be sent to a second core. */
 export const isBodiless = (method: string | undefined): boolean => method === "GET" || method === "HEAD";

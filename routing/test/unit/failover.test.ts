@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coresFor, isBodiless, notRunReason, takingTurns } from "../../src/failover";
+import { coresFor, isBodiless, neverConnected, notServing, takingTurns } from "../../src/failover";
 
 describe("takingTurns", () => {
   it("starts each round at the next item, and wraps around", () => {
@@ -32,24 +32,26 @@ describe("takingTurns", () => {
   });
 });
 
-describe("notRunReason", () => {
+describe("neverConnected", () => {
   it.each(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"])(
-    "names %s: the connection was never made",
+    "takes %s: the connection was never made",
     (code) => {
-      expect(notRunReason({ code })).toBe(code);
+      expect(neverConnected(code)).toBe(true);
     },
   );
 
-  it.each(["ECONNRESET", "EPIPE", "UND_ERR_SOCKET", "ETIMEDOUT", "Error", ""])("names none for %s: the core may have run the call", (code) => {
-    expect(notRunReason({ code })).toBeUndefined();
+  it.each(["ECONNRESET", "EPIPE", "UND_ERR_SOCKET", "ETIMEDOUT", "Error", ""])("does not take %s: the core may have run the call", (code) => {
+    expect(neverConnected(code)).toBe(false);
+  });
+});
+
+describe("notServing", () => {
+  it.each([502, 503, 504])("takes %i: the core is not serving", (status) => {
+    expect(notServing(status)).toBe(true);
   });
 
-  it.each([502, 503, 504])("names %i: the core is not serving", (status) => {
-    expect(notRunReason({ status })).toBe(String(status));
-  });
-
-  it.each([400, 404, 409, 500, 501, 505])("names none for %i: the core answered", (status) => {
-    expect(notRunReason({ status })).toBeUndefined();
+  it.each([400, 404, 409, 500, 501, 505])("does not take %i: the core answered", (status) => {
+    expect(notServing(status)).toBe(false);
   });
 });
 

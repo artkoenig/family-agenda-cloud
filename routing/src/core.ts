@@ -1,5 +1,5 @@
 import { CONTEXT_HEADER } from "./context";
-import { notRunReason, takingTurns } from "./failover";
+import { neverConnected, notServing, takingTurns } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 
 /** The timers a call to the core is given up by; the system's unless a test moves time by hand. */
@@ -155,13 +155,12 @@ async function callCore(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: timeout.signal,
     }).catch((error: unknown) => {
-      const notRun = notRunReason({ code: reasonOf((error as { cause?: unknown }).cause ?? error) });
-      throw notRun ? new NotRun(noAnswer(error).message, notRun) : noAnswer(error);
+      const code = reasonOf((error as { cause?: unknown }).cause ?? error);
+      throw neverConnected(code) ? new NotRun(noAnswer(error).message, code) : noAnswer(error);
     });
     if (!response.ok && !accept.includes(response.status)) {
       const message = `The core answered ${operation} with ${response.status}`;
-      const notRun = notRunReason({ status: response.status });
-      throw notRun ? new NotRun(message, notRun) : new CoreError(message);
+      throw notServing(response.status) ? new NotRun(message, String(response.status)) : new CoreError(message);
     }
     const text = await response.text().catch((error: unknown) => {
       throw noAnswer(error);

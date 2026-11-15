@@ -15,10 +15,13 @@ import { BAD_GATEWAY, routeRequest } from "./request-routing";
 export type Router = { url: string; close(): Promise<void> };
 
 /** What the Router works with on every request. */
-type RouterSetup = { config: Config; directory: Directory; log: Log; cores: Cores };
-
-/** The cores of the pool, each request starting at the next; any core may answer any request. */
-type Cores = { inTurn(): URL[] };
+type RouterSetup = {
+  config: Config;
+  directory: Directory;
+  log: Log;
+  /** The cores of the pool, each request starting at the next; any core may answer any request. */
+  inTurn: () => URL[];
+};
 
 /** A request as the Router passes it on to a core. */
 type CoreRequest = {
@@ -41,7 +44,7 @@ export async function startRouter(config: Config, log: Log): Promise<Router> {
   directoryPool.on("error", (error) => {
     log.error("A connection to the Directory failed", { reason: reasonOf(error) });
   });
-  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, cores: { inTurn: takingTurns(config.coreUrls.map((url) => new URL(url))) } };
+  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, inTurn: takingTurns(config.coreUrls.map((url) => new URL(url))) };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -86,7 +89,7 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
  * with a body cannot be sent twice. An answer that breaks off breaks off for the browser too.
  */
 function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse, coreRequest: CoreRequest): void {
-  const { config, log, cores } = setup;
+  const { config, log, inTurn } = setup;
   const bodiless = isBodiless(incoming.method);
   const familyField = coreRequest.familyId === undefined ? {} : { familyId: coreRequest.familyId };
   const browser = { headers: incoming.headers, remoteAddress: incoming.socket.remoteAddress };
@@ -123,7 +126,7 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
       incoming.pipe(toCore);
     }
   };
-  attempt(coresFor(incoming.method, cores.inTurn()));
+  attempt(coresFor(incoming.method, inTurn()));
 }
 
 function answerBadGateway(outgoing: ServerResponse): void {
