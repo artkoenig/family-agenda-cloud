@@ -29,8 +29,8 @@ check() { # name, expected, actual
 
 status() { curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$@"; }
 
-# Whether a status is an answer of the Family's core: a page or a redirect, such as to sign-in.
-answers() { case "$1" in 2?? | 3??) echo answers ;; *) echo "status $1" ;; esac }
+# "answers" for a status of the Family's core, a page or a redirect such as to sign-in; else "status <code>".
+core_answer_or_status() { case "$1" in 2?? | 3??) echo answers ;; *) echo "status $1" ;; esac }
 
 check "http redirects to https" 308 "$(status "http://${BASE#https://}/")"
 check "landing page asks for Basic Auth" 401 "$(status "$BASE/")"
@@ -43,7 +43,7 @@ if [ -n "${LANDING_AUTH:-}" ]; then
 	check "stylesheet" 200 "$(status -u "$LANDING_AUTH" "$BASE/landing.css")"
 fi
 
-check "known Family answers" answers "$(answers "$(status "$APP_BASE/$SMOKE_FAMILY_ID/")")"
+check "known Family answers" answers "$(core_answer_or_status "$(status "$APP_BASE/$SMOKE_FAMILY_ID/")")"
 check "unknown Family gets 404" 404 "$(status "$APP_BASE/$UNKNOWN_FAMILY_ID/")"
 
 exit "$failed"
