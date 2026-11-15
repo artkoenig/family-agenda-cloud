@@ -60,10 +60,12 @@ export function readConfig(env: Env): Config {
     publicUrl: withoutTrailingSlash(env.PUBLIC_URL ?? "https://app.family-agenda.cloud"),
     defaultTimeZone: env.TIME_ZONE ?? "Europe/Berlin",
     identityProvider: identityProvider(env),
-    listenHost: env.LISTEN_HOST ?? "0.0.0.0",
-    listenPort: Number(env.PORT ?? "8080"),
-    trustProxy: env.TRUST_PROXY === "true",
+    ...router(env),
   };
+}
+
+function router(env: Env): Pick<Config, "listenHost" | "listenPort" | "trustProxy"> {
+  return { listenHost: env.LISTEN_HOST ?? "0.0.0.0", listenPort: Number(env.PORT ?? "8080"), trustProxy: env.TRUST_PROXY === "true" };
 }
 
 /** How to open the Directory's database. */

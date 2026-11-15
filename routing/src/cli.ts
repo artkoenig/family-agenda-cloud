@@ -47,11 +47,7 @@ export async function run(args: string[], io: Io): Promise<number> {
       const config = readConfig(io.env);
       return await create(config, parseCreate(rest, config), io, log);
     }
-    if (command === "serve") {
-      const config = readConfig(io.env);
-      await withDirectory(config, () => Promise.resolve());
-      return await serve(config, io.until ?? stopSignal(), log);
-    }
+    if (command === "serve") return await serve(readConfig(io.env), io, log);
     throw new UsageError(command ? `Unknown command ${command}` : "No command given");
   } catch (error) {
     if (error instanceof UsageError) {
@@ -127,10 +123,11 @@ async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log
   }
 }
 
-async function serve(config: Config, until: Promise<unknown>, log: Log): Promise<number> {
+async function serve(config: Config, io: Io, log: Log): Promise<number> {
+  await withDirectory(config, () => Promise.resolve());
   const router = await startRouter(config, log);
   log.info("The Router listens", { url: router.url });
-  await until;
+  await (io.until ?? stopSignal());
   await router.close();
   log.info("The Router stopped");
   return 0;

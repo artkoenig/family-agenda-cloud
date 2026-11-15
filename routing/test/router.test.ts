@@ -166,6 +166,16 @@ describe("routing serve", () => {
   });
 });
 
+describe("routing serve, when the Directory cannot be opened", () => {
+  it("does not start, and says why", async () => {
+    const result = await routing.run(["serve"], { DIRECTORY_DATABASE_PASSWORD: "not-the-password", PORT: "0" });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("The command failed");
+    expect(result.stderr).not.toContain("The Router listens");
+  });
+});
+
 describe("the log", () => {
   it("names the Family by its Family id, and holds no Context, family key, database password or page address", async () => {
     const familyId = await createFamily();
@@ -293,7 +303,7 @@ describe("static files and the health check", () => {
     const answers = await Promise.all(
       ["/static/app.css", "/static/icons/agenda-192.png", "/api/health"].map(async (path) => {
         const response = await fetch(`${withoutDirectory.url}${path}`, { headers: { "x-family-agenda-context": "forged" } });
-        return { status: response.status, body: (await response.json()) as unknown };
+        return { status: response.status, body: (await response.json()) };
       }),
     );
 

@@ -4,7 +4,7 @@ import pg from "pg";
 import { directoryConnection, type Config } from "./config";
 import { CONTEXT_HEADER } from "./core";
 import { directory as openDirectory, type Directory } from "./directory";
-import { sealedContext, unwrappedFamily } from "./family-context";
+import { sealedContext, unwrappedFamily, type Family } from "./family-context";
 import type { Log } from "./log";
 
 /** The Router, listening for the browsers' requests. */
@@ -46,7 +46,7 @@ export async function startRouter(config: Config, log: Log): Promise<Router> {
     url: `http://${address}:${port}`,
     async close() {
       server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => { resolve(); }));
       await pool.end();
     },
   };
@@ -65,29 +65,32 @@ function cores(urls: string[]): Cores {
 }
 
 async function route(routing: Routing, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const { config, directory } = routing;
   const target = incoming.url ?? "/";
   if (isFamilyIndependent(incoming.method, target)) {
     pass(routing, incoming, outgoing, { path: target, added: {} });
     return;
   }
-  const match = FAMILY_PATH.exec(target);
-  const familyId = match?.[1];
-  const entry = familyId === undefined ? undefined : await directory.find(familyId);
-  const { wrappedFamilyKey, wrappedDatabasePassword } = entry ?? {};
-  if (entry?.status !== "active" || !wrappedFamilyKey || !wrappedDatabasePassword) {
+  const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
+  const family = familyId ? await activeFamily(routing, familyId) : undefined;
+  if (!family) {
     // The same answer whether the Family is unknown, suspended or deleted: it tells nobody which Families exist.
     outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found\n");
     return;
   }
   // Not the path: an Agenda's id in it is what keeps the Agenda's address private.
   outgoing.on("close", () => {
-    routing.log.info("Served a request", { familyId: entry.familyId, method: incoming.method, status: outgoing.statusCode });
+    routing.log.info("Served a request", { familyId, method: incoming.method, status: outgoing.statusCode });
   });
-  const family = unwrappedFamily(config, { ...entry, wrappedFamilyKey, wrappedDatabasePassword });
-  const rest = match?.[2] ?? "";
   const path = rest.startsWith("/") ? rest : `/${rest}`;
-  pass(routing, incoming, outgoing, { familyId: entry.familyId, path, added: { [CONTEXT_HEADER]: await sealedContext(config, family) } });
+  pass(routing, incoming, outgoing, { familyId, path, added: { [CONTEXT_HEADER]: await sealedContext(routing.config, family) } });
+}
+
+/** The Family, its secrets unwrapped, if it is active; only an active Family is routed to. */
+async function activeFamily({ config, directory }: Routing, familyId: string): Promise<Family | undefined> {
+  const entry = await directory.find(familyId);
+  const { wrappedFamilyKey, wrappedDatabasePassword } = entry ?? {};
+  if (entry?.status !== "active" || !wrappedFamilyKey || !wrappedDatabasePassword) return undefined;
+  return unwrappedFamily(config, { ...entry, wrappedFamilyKey, wrappedDatabasePassword });
 }
 
 /** Static files and the health check: the same for every Family, so served without one. */
@@ -151,13 +154,16 @@ function answerBadGateway(outgoing: ServerResponse): void {
  * the Router itself sees, whatever the request claims.
  */
 function forwarded(config: Config, incoming: IncomingMessage): Record<string, string> {
-  const header = (name: string) => (config.trustProxy ? incoming.headers[name] : undefined)?.toString();
+  const trusted = config.trustProxy ? incoming.headers : {};
   return {
-    "x-forwarded-for": header("x-forwarded-for")?.split(",").at(-1)?.trim() ?? incoming.socket.remoteAddress ?? "",
-    "x-forwarded-proto": header("x-forwarded-proto")?.split(",")[0]?.trim() ?? "http",
-    "x-forwarded-host": header("x-forwarded-host") ?? incoming.headers.host ?? "",
+    "x-forwarded-for": entries(trusted["x-forwarded-for"]).at(-1) ?? String(incoming.socket.remoteAddress),
+    "x-forwarded-proto": entries(trusted["x-forwarded-proto"])[0] ?? "http",
+    "x-forwarded-host": entries(trusted["x-forwarded-host"])[0] ?? String(incoming.headers.host),
   };
 }
+
+/** The entries of a header that lists values separated by commas. */
+const entries = (header: string | string[] | undefined): string[] => (header === undefined ? [] : String(header).split(",").map((entry) => entry.trim()));
 
 /** The browser's headers a core gets: a Context comes from the Router only, never from the browser. */
 function passedOn(headers: IncomingHttpHeaders): IncomingHttpHeaders {
