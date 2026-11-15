@@ -1,8 +1,11 @@
 import type pg from "pg";
 import { scramVerifier } from "./secrets";
 
+/** The names of a Family's own database and of the role that owns it. */
+export type FamilyDatabaseNames = { databaseName: string; databaseRole: string };
+
 /** The names of a Family's own database and role, both drawn from its Family id. */
-export function familyDatabaseNames(familyId: string): { databaseName: string; databaseRole: string } {
+export function familyDatabaseNames(familyId: string): FamilyDatabaseNames {
   const name = `family_${familyId.replaceAll("-", "")}`;
   return { databaseName: name, databaseRole: name };
 }
@@ -10,7 +13,7 @@ export function familyDatabaseNames(familyId: string): { databaseName: string; d
 /** Whether creating the Family's role or database began: either of them exists. */
 export async function familyDatabaseLeftBehind(
   client: pg.ClientBase,
-  { databaseName, databaseRole }: { databaseName: string; databaseRole: string },
+  { databaseName, databaseRole }: FamilyDatabaseNames,
 ): Promise<boolean> {
   const { rows } = await client.query<{ found: boolean }>(
     "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1) OR EXISTS (SELECT 1 FROM pg_database WHERE datname = $2) AS found",
@@ -29,7 +32,7 @@ export async function familyDatabaseLeftBehind(
  */
 export async function ensureFamilyDatabase(
   client: pg.ClientBase,
-  { databaseName, databaseRole }: { databaseName: string; databaseRole: string },
+  { databaseName, databaseRole }: FamilyDatabaseNames,
   password: string,
 ): Promise<void> {
   const role = client.escapeIdentifier(databaseRole);
@@ -48,4 +51,26 @@ export async function ensureFamilyDatabase(
   } finally {
     await client.query("RESET ROLE");
   }
+}
+
+/**
+ * Drops the Family's database, closing any connection still open to it, and then its role. Safe
+ * to run again: what is gone already stays gone. The database is dropped as the Family's role, its
+ * owner, which the Routing module may act as; the role by the Routing module, which made it.
+ */
+export async function dropFamilyDatabase(
+  client: pg.ClientBase,
+  { databaseName, databaseRole }: FamilyDatabaseNames,
+): Promise<void> {
+  const role = client.escapeIdentifier(databaseRole);
+  const { rowCount: roleExists } = await client.query("SELECT 1 FROM pg_roles WHERE rolname = $1", [databaseRole]);
+  // A Family's database is owned by its role, so with the role gone the database is gone too.
+  if (!roleExists) return;
+  await client.query(`SET ROLE ${role}`);
+  try {
+    await client.query(`DROP DATABASE IF EXISTS ${client.escapeIdentifier(databaseName)} WITH (FORCE)`);
+  } finally {
+    await client.query("RESET ROLE");
+  }
+  await client.query(`DROP ROLE ${role}`);
 }

@@ -15,9 +15,11 @@ export type DirectoryEntry = {
   wrappedDatabasePassword: string | null;
   coreVersion: string | null;
   createdAt: Date;
+  /** When deleting the Family finished; null while it is not deleted, or not to the end. */
+  deletedAt: Date | null;
 };
 
-export type NewDirectoryEntry = Omit<DirectoryEntry, "status" | "coreVersion" | "createdAt"> & {
+export type NewDirectoryEntry = Omit<DirectoryEntry, "status" | "coreVersion" | "createdAt" | "deletedAt"> & {
   wrappedFamilyKey: string;
   wrappedDatabasePassword: string;
 };
@@ -36,6 +38,8 @@ const MIGRATIONS = [
      core_version text,
      created_at timestamptz NOT NULL DEFAULT now()
    )`,
+  // When deleting the Family finished: a deleted Family without it was not deleted to the end.
+  "ALTER TABLE family ADD COLUMN deleted_at timestamptz",
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */
@@ -49,6 +53,10 @@ export type Directory = {
   add(entry: NewDirectoryEntry): Promise<void>;
   /** Marks the Family active and notes the core version it was prepared for. */
   activate(familyId: string, coreVersion: string): Promise<void>;
+  /** Marks the Family deleted and destroys its wrapped family key and database password. */
+  markDeleted(familyId: string): Promise<void>;
+  /** Notes that deleting the Family finished, unless it was noted before. */
+  finishDeletion(familyId: string): Promise<void>;
 };
 
 /** Brings the Directory's schema up to date. */
@@ -84,6 +92,7 @@ type Row = {
   wrapped_database_password: string | null;
   core_version: string | null;
   created_at: Date;
+  deleted_at: Date | null;
 };
 
 export function directory(client: Pick<pg.ClientBase, "query">): Directory {
@@ -102,6 +111,7 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
         wrappedDatabasePassword: row.wrapped_database_password,
         coreVersion: row.core_version,
         createdAt: row.created_at,
+        deletedAt: row.deleted_at,
       };
     },
     async beingPrepared() {
@@ -128,6 +138,15 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async activate(familyId, coreVersion) {
       await client.query("UPDATE family SET status = 'active', core_version = $2 WHERE family_id = $1", [familyId, coreVersion]);
+    },
+    async markDeleted(familyId) {
+      await client.query(
+        "UPDATE family SET status = 'deleted', wrapped_family_key = NULL, wrapped_database_password = NULL WHERE family_id = $1",
+        [familyId],
+      );
+    },
+    async finishDeletion(familyId) {
+      await client.query("UPDATE family SET deleted_at = now() WHERE family_id = $1 AND deleted_at IS NULL", [familyId]);
     },
   };
 }

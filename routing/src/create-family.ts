@@ -1,10 +1,8 @@
-import type pg from "pg";
 import type { Config } from "./config";
-import type { Core } from "./core";
 import type { Directory, DirectoryEntry } from "./directory";
 import { familyUrl, sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { ensureFamilyDatabase, familyDatabaseLeftBehind, familyDatabaseNames } from "./family-databases";
-import type { Log } from "./log";
+import { blobLocationOf, ProvisioningError, type Provisioning } from "./provisioning";
 import { drawDatabasePassword, drawFamilyKey, wrapperFor } from "./secrets";
 
 export type CreateFamilyInput = {
@@ -17,16 +15,6 @@ export type CreateFamilyInput = {
   resume: boolean;
 };
 
-export type Provisioning = {
-  config: Config;
-  /** The Routing module's connection to the Directory's server, which creates the Families' databases too. */
-  client: pg.ClientBase;
-  directory: Directory;
-  core: Core;
-  log: Log;
-};
-
-export class ProvisioningError extends Error {}
 
 /** The address the Operator sends to the Family's first Admin. */
 const familyAddress = (config: Config, familyId: string): string => `${familyUrl(config, familyId)}/`;
@@ -99,7 +87,7 @@ function newFamily(config: Config, { familyId, timeZone }: CreateFamilyInput): F
   return {
     familyId,
     ...familyDatabaseNames(familyId),
-    blobLocation: `${config.blobRoot}/${familyId}`,
+    blobLocation: blobLocationOf(config, familyId),
     timeZone: timeZone ?? config.defaultTimeZone,
     familyKey: drawFamilyKey(),
     databasePassword: drawDatabasePassword(),

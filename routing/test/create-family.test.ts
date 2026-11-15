@@ -417,7 +417,7 @@ describe("Secrets", () => {
 describe("The command line", () => {
   it.each([
     [[], "No command given"],
-    [["delete"], "Unknown command delete"],
+    [["destroy"], "Unknown command destroy"],
     [["create"], "--admin-email"],
     [["create", "--admin-email", "nobody"], "--admin-email"],
     [["create", "--admin-email", EMAIL, "--time-zone", "Mars/Olympus"], "Unknown time zone"],
