@@ -2,10 +2,12 @@ import { randomBytes } from "node:crypto";
 import { Writable } from "node:stream";
 import pg from "pg";
 import { afterAll, inject } from "vitest";
+import type { TestClock } from "pg-boss";
 import { run } from "../../src/cli";
 import { readConfig } from "../../src/config";
 import { createLog } from "../../src/log";
 import { startRouter, type Router } from "../../src/router";
+import { SCHEDULER_RUNNING } from "../../src/scheduler";
 import { startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
@@ -15,12 +17,17 @@ export type TestRouting = {
   env: Record<string, string>;
   core: StandInCore;
   /** Runs the Routing module's command line with these arguments, as the Operator would. */
-  run(args: string[], env?: Record<string, string | undefined>): Promise<RunResult>;
+  run(args: string[], env?: Record<string, string | undefined>, until?: { clock?: TestClock; until?: Promise<unknown> }): Promise<RunResult>;
   /**
    * Starts the Router as `routing serve` would, on a free port of localhost, with these changes to
    * the environment. It logs into the same log as the command line and is stopped by close().
    */
   startRouter(env?: Record<string, string | undefined>): Promise<Router>;
+  /**
+   * Starts the Scheduler, as `routing schedule` on the Cube, on a clock the test moves; answers
+   * once it is under way. Stopped by close() if the test does not stop it.
+   */
+  startScheduler(clock: TestClock): Promise<{ stop(): Promise<RunResult> }>;
   /** Everything the Routing module logged so far, over all runs and Routers. */
   log(): string;
   /** Runs SQL as a superuser on the Directory's database. */
@@ -129,11 +136,13 @@ export async function setUpRouting(): Promise<TestRouting> {
   const routers: Router[] = [];
   const withOverrides = (overrides: Record<string, string | undefined>) =>
     Object.fromEntries(Object.entries({ ...env, ...overrides }).filter((entry): entry is [string, string] => entry[1] !== undefined));
+  const schedulers: (() => Promise<RunResult>)[] = [];
+  let onLog = () => {};
   const routing: TestRouting = {
     env,
     core,
     routingRole,
-    async run(args, overrides = {}) {
+    async run(args, overrides = {}, until = {}) {
       let stdout = "";
       let stderr = "";
       const sink = (append: (text: string) => void) =>
@@ -145,10 +154,12 @@ export async function setUpRouting(): Promise<TestRouting> {
         });
       const exitCode = await run(args, {
         env: withOverrides(overrides),
+        ...until,
         stdout: sink((text) => (stdout += text)),
         stderr: sink((text) => {
           stderr += text;
           logged += text;
+          onLog();
         }),
       });
       return { exitCode, stdout, stderr };
@@ -158,11 +169,38 @@ export async function setUpRouting(): Promise<TestRouting> {
       routers.push(router);
       return router;
     },
+    async startScheduler(clock) {
+      let stopped = () => {};
+      const stopping = new Promise<void>((resolve) => {
+        stopped = resolve;
+      });
+      const before = logged.length;
+      let running: Promise<RunResult> | undefined;
+      // Under way once it says so, or over if it ended before.
+      await new Promise<void>((resolve) => {
+        onLog = () => {
+          if (logged.slice(before).includes(`"message":"${SCHEDULER_RUNNING}"`)) resolve();
+        };
+        running = routing.run(["schedule"], {}, { clock, until: stopping });
+        void running.then(() => {
+          resolve();
+        });
+      });
+      onLog = () => {};
+      const result = running!;
+      const stop = async () => {
+        stopped();
+        return result;
+      };
+      schedulers.push(stop);
+      return { stop };
+    },
     log: () => logged,
     directory: (sql, values) => query(directoryName, sql, values),
     server: (sql, values) => query(maintenance, sql, values),
     async close() {
       for (const router of routers) await router.close();
+      await Promise.all(schedulers.map((stop) => stop()));
       await core.close();
       // The Families' roles, which the Routing module created and so was made a member of, and
       // the databases they own.

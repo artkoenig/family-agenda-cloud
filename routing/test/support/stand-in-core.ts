@@ -30,6 +30,14 @@
  *   `{ "password": "<new password>" }`, the only place the password is ever given out; 404
  *   `{ "error": "unknown-admin" }` when the Family has no Admin with that address (a 404 without
  *   that error code is no answer of this operation); 409 for a Family that is not prepared.
+ * - `POST /operations/run-due-work`: polls each of the Family's Sources that is due, as the core
+ *   decides; the caller only gives it the occasion. Needs a prepared Family (409 otherwise).
+ *   Answers 200 `{ "ran": <Sources polled>, "failed": <of those, Sources that failed> }` once the
+ *   run has ended.
+ * - `POST /operations/purge-messages`: deletes the Family's messages past their retention.
+ *   Needs a prepared Family (409 otherwise). Answers 200 `{ "purged": <n>, "deleted": <n> }`.
+ * - `POST /operations/sweep-secrets`: removes the Family's secrets no Source refers to any more.
+ *   Needs a prepared Family (409 otherwise). Answers 200 `{ "removed": <n> }`.
  *
  * ## Requests from browsers
  *
@@ -120,7 +128,10 @@ export type RecordedRequest = {
   body: unknown;
 };
 
-type Operation = "prepare-family" | "enter-admin" | "reset-admin-password";
+type Operation = "prepare-family" | "enter-admin" | "reset-admin-password" | "run-due-work" | "purge-messages" | "sweep-secrets";
+
+/** What a run of due work answers: how many due Sources were polled and how many of them failed. */
+export type DueWorkResult = { ran: number; failed: number };
 
 /** An answer the stand-in gives as it is, to show that it reaches the browser unchanged. */
 export type CannedAnswer = { status: number; headers: [string, string][]; body: Uint8Array };
@@ -145,6 +156,15 @@ export type StandInCore = {
   answerNext(answer: CannedAnswer): void;
   /** The next page of a Family begins its answer and then drops the connection. */
   dropNext(): void;
+  /** The Family's runs of due work answer this from now on; `{ ran: 0, failed: 0 }` until set. */
+  answerDueWork(familyId: string, result: DueWorkResult): void;
+  /** The Family's runs of due work fail with this status from now on. */
+  failDueWork(familyId: string, status?: number): void;
+  /**
+   * The next run of due work stays under way until the answered function is called, as a run
+   * that polls slow Sources does.
+   */
+  holdNextDueWork(): () => void;
   close(): Promise<void>;
 };
 
@@ -163,6 +183,9 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
   };
   const passwords = new Map<string, string>();
   const passwordKey = (familyId: string, email: string) => `${familyId}/${email}`;
+  /** What each Family's runs of due work answer: a result, or a failing status. */
+  const dueWork = new Map<string, DueWorkResult | number>();
+  let held: Promise<void> | null = null;
 
   const app = new Hono<{ Variables: { context: Context } }>();
   app.use(async (c, next) => {
@@ -211,6 +234,26 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     return c.json({ password });
   });
 
+  /** A triggered operation on a prepared Family, which answers what `answer` gives: a body, or a failing status. */
+  const triggered = (operation: Operation, answer: (familyId: string) => Promise<object | number>) => {
+    app.post(`/operations/${operation}`, async (c) => {
+      const status = fault(operation);
+      if (status) return c.json({ error: "fault" }, status as 500);
+      const { familyId } = c.get("context");
+      if (!prepared.has(familyId)) return c.json({ error: "Family not prepared" }, 409);
+      const answered = await answer(familyId);
+      return typeof answered === "number" ? c.json({ error: "fault" }, answered as 500) : c.json(answered);
+    });
+  };
+  triggered("run-due-work", async (familyId) => {
+    const hold = held;
+    held = null;
+    await hold;
+    return dueWork.get(familyId) ?? { ran: 0, failed: 0 };
+  });
+  triggered("purge-messages", () => Promise.resolve({ purged: 0, deleted: 0 }));
+  triggered("sweep-secrets", () => Promise.resolve({ removed: 0 }));
+
   // Every other page of the Family: says which Family and page it served.
   app.all("*", (c) => {
     if (dropping) {
@@ -242,6 +285,15 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     },
     dropNext: () => {
       dropping = true;
+    },
+    answerDueWork: (familyId, result) => dueWork.set(familyId, result),
+    failDueWork: (familyId, status = 500) => dueWork.set(familyId, status),
+    holdNextDueWork() {
+      let release = () => {};
+      held = new Promise((resolve) => {
+        release = resolve;
+      });
+      return release;
     },
     close: () =>
       new Promise((resolve, reject) => {

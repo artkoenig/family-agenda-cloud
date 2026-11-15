@@ -15,6 +15,13 @@ export type CreateFamilyInput = {
   resume: boolean;
 };
 
+/** A Family's schedules in the Scheduler, keyed by its Family id. */
+export type FamilySchedules = {
+  /** Creates the Family's schedules, or leaves them as they are. */
+  create(familyId: string, timeZone: string): Promise<void>;
+  /** Removes the Family's schedules; a Family without them is fine. */
+  remove(familyId: string): Promise<void>;
+};
 
 /** The address the Operator sends to the Family's first Admin. */
 const familyAddress = (config: Config, familyId: string): string => `${familyUrl(config, familyId)}/`;
@@ -23,13 +30,14 @@ const familyAddress = (config: Config, familyId: string): string => `${familyUrl
  * Creates a Family, or finishes creating one after a failure part-way: every step is safe to run
  * again with the same Family id and ends in the state of an undisturbed run. Answers its address.
  */
-export async function createFamily(provisioning: Provisioning, input: CreateFamilyInput): Promise<string> {
-  const { config, client, directory, core, log } = provisioning;
+export async function createFamily(provisioning: Provisioning & { schedules: FamilySchedules }, input: CreateFamilyInput): Promise<string> {
+  const { config, client, directory, core, schedules, log } = provisioning;
   const { familyId } = input;
   if (!input.resume) await refuseUnfinished(directory);
   const existing = input.resume ? await resumable(provisioning, input) : undefined;
   log.info(existing ? "Finishing the Family" : "Creating the Family", { familyId });
   if (existing?.status === "active") {
+    await schedules.create(familyId, existing.timeZone);
     log.info("The Family is active already", { familyId });
     return familyAddress(config, familyId);
   }
@@ -55,6 +63,10 @@ export async function createFamily(provisioning: Provisioning, input: CreateFami
 
   await core.enterAdmin(await sealedContext(config, family), input.adminEmail);
   log.info("The core entered the first Admin", { familyId });
+
+  // Before it is active, so that an active Family always has them; a Family that is not active is skipped.
+  await schedules.create(familyId, family.timeZone);
+  log.info("The Family's schedules exist", { familyId });
 
   await directory.activate(familyId, coreVersion);
   log.info("The Family is active", { familyId });

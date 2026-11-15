@@ -19,6 +19,17 @@ export type DirectoryEntry = {
   deletedAt: Date | null;
 };
 
+/**
+ * How a Family's due work last ran: when the Scheduler triggered it, and whether the core ran it,
+ * with how many due Sources it polled and how many of those failed, or why it did not.
+ */
+export type DueWorkRun =
+  | { ranAt: Date; outcome: "succeeded"; sourcesRan: number; sourcesFailed: number }
+  | { ranAt: Date; outcome: "failed"; error: string };
+
+/** What the Operator sees of a Family: its status and how its due work last ran, if it ever did. */
+export type FamilyOverview = { familyId: string; status: FamilyStatus; dueWork: DueWorkRun | null };
+
 export type NewDirectoryEntry = Omit<DirectoryEntry, "status" | "coreVersion" | "createdAt" | "deletedAt"> & {
   wrappedFamilyKey: string;
   wrappedDatabasePassword: string;
@@ -40,6 +51,13 @@ const MIGRATIONS = [
    )`,
   // When deleting the Family finished: a deleted Family without it was not deleted to the end.
   "ALTER TABLE family ADD COLUMN deleted_at timestamptz",
+  // How each Family's due work last ran, written by the Scheduler (#95).
+  `ALTER TABLE family
+     ADD COLUMN due_work_ran_at timestamptz,
+     ADD COLUMN due_work_outcome text CHECK (due_work_outcome IN ('succeeded', 'failed')),
+     ADD COLUMN due_work_sources_ran integer,
+     ADD COLUMN due_work_sources_failed integer,
+     ADD COLUMN due_work_error text`,
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */
@@ -57,6 +75,10 @@ export type Directory = {
   markDeleted(familyId: string): Promise<void>;
   /** Notes that deleting the Family finished, unless it was noted before. */
   finishDeletion(familyId: string): Promise<void>;
+  /** Notes how the Family's due work last ran, in place of the run before. */
+  recordDueWork(familyId: string, run: DueWorkRun): Promise<void>;
+  /** Every Family, oldest first. */
+  overview(): Promise<FamilyOverview[]>;
 };
 
 /** Brings the Directory's schema up to date. */
@@ -94,6 +116,24 @@ type Row = {
   created_at: Date;
   deleted_at: Date | null;
 };
+
+type OverviewRow = {
+  family_id: string;
+  status: FamilyStatus;
+  due_work_ran_at: Date | null;
+  due_work_outcome: "succeeded" | "failed" | null;
+  due_work_sources_ran: number | null;
+  due_work_sources_failed: number | null;
+  due_work_error: string | null;
+};
+
+function dueWorkRun(row: OverviewRow): DueWorkRun | null {
+  if (!row.due_work_ran_at) return null;
+  if (row.due_work_outcome === "succeeded") {
+    return { ranAt: row.due_work_ran_at, outcome: "succeeded", sourcesRan: row.due_work_sources_ran ?? 0, sourcesFailed: row.due_work_sources_failed ?? 0 };
+  }
+  return { ranAt: row.due_work_ran_at, outcome: "failed", error: row.due_work_error ?? "" };
+}
 
 export function directory(client: Pick<pg.ClientBase, "query">): Directory {
   return {
@@ -147,6 +187,29 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async finishDeletion(familyId) {
       await client.query("UPDATE family SET deleted_at = now() WHERE family_id = $1 AND deleted_at IS NULL", [familyId]);
+    },
+    async recordDueWork(familyId, run) {
+      const succeeded = run.outcome === "succeeded";
+      await client.query(
+        `UPDATE family SET due_work_ran_at = $2, due_work_outcome = $3, due_work_sources_ran = $4, due_work_sources_failed = $5,
+           due_work_error = $6
+         WHERE family_id = $1`,
+        [
+          familyId,
+          run.ranAt,
+          run.outcome,
+          succeeded ? run.sourcesRan : null,
+          succeeded ? run.sourcesFailed : null,
+          succeeded ? null : run.error,
+        ],
+      );
+    },
+    async overview() {
+      const { rows } = await client.query<OverviewRow>(
+        `SELECT family_id, status, due_work_ran_at, due_work_outcome, due_work_sources_ran, due_work_sources_failed, due_work_error
+         FROM family ORDER BY created_at, family_id`,
+      );
+      return rows.map((row) => ({ familyId: row.family_id, status: row.status, dueWork: dueWorkRun(row) }));
     },
   };
 }

@@ -12,7 +12,16 @@ export type Core = {
    * sessions; answers the new password, or undefined when the Family has no such Admin.
    */
   resetAdminPassword(sealedContext: string, email: string): Promise<string | undefined>;
+  /** Polls the Family's Sources the core finds due; answers how many it polled and how many failed. */
+  runDueWork(sealedContext: string): Promise<DueWorkResult>;
+  /** Deletes the Family's messages past their retention. */
+  purgeMessages(sealedContext: string): Promise<void>;
+  /** Removes the Family's secrets no Source refers to any more. */
+  sweepSecrets(sealedContext: string): Promise<void>;
 };
+
+/** What a run of due work answers: how many due Sources the core polled, and of those how many failed. */
+export type DueWorkResult = { ran: number; failed: number };
 
 export class CoreError extends Error {}
 
@@ -52,6 +61,17 @@ export function coreClient(coreUrls: string[]): Core {
       const { password } = answer;
       if (typeof password !== "string" || !password) throw new CoreError("The core answered reset-admin-password without a password");
       return password;
+    },
+    async runDueWork(sealedContext) {
+      const { ran, failed } = (await (await call("run-due-work", sealedContext)).json()) as { ran?: unknown; failed?: unknown };
+      if (!Number.isInteger(ran) || !Number.isInteger(failed)) throw new CoreError("The core answered run-due-work without what ran");
+      return { ran: ran as number, failed: failed as number };
+    },
+    async purgeMessages(sealedContext) {
+      await call("purge-messages", sealedContext);
+    },
+    async sweepSecrets(sealedContext) {
+      await call("sweep-secrets", sealedContext);
     },
   };
 }

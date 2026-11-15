@@ -19,6 +19,7 @@
   "dependencies": {
     "jose": "6.2.17",
     "pg": "8.23.1",
+    "pg-boss": "12.38.1",
     "tsx": "^4.23.15"
   },
   "devDependencies": {
