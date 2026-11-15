@@ -9,10 +9,11 @@ import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { coreClient } from "./core";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
-import { isFamilyId, provisioning, ProvisioningError } from "./provisioning";
+import { isFamilyId, provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
 import { startRouter } from "./router";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
 import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
+import { resumeFamily, suspendFamily } from "./family-status";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -38,6 +39,10 @@ const USAGE = `Usage:
     Deletes the Family: its database and role, its blobs, its wrapped family key and database
     password. Its Directory entry stays, marked deleted. --confirm must repeat the Family id.
     It says when the Family is deleted; after a failure part-way, run it again to finish.
+  routing suspend --family-id <id>
+    Suspends the Family: its address answers 404 and its schedules are removed; its data stays.
+  routing resume --family-id <id>
+    Resumes a suspended Family: it is routed to and scheduled again.
   routing schedule
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
     once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
@@ -60,7 +65,9 @@ const COMMANDS: Record<string, Command> = {
   migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
   create: (args, config, io, log) => create(config, parseCreate(args, config), io, log),
   "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
-  delete: (args, config, io, log) => runDelete(config, parseDelete(args), io, log),
+  delete: (args, config, io, log) => runFamilyCommand(config, deletion(parseDelete(args)), io, log),
+  suspend: (args, config, io, log) => runFamilyCommand(config, suspension(parseFamilyId(args)), io, log),
+  resume: (args, config, io, log) => runFamilyCommand(config, resumption(parseFamilyId(args)), io, log),
   serve: (_args, config, io, log) => serve(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
@@ -218,22 +225,62 @@ function parseDelete(args: string[]): DeleteFamilyInput {
   return { familyId: familyId.toLowerCase(), confirmation: confirmation.toLowerCase() };
 }
 
-async function runDelete(config: Config, input: DeleteFamilyInput, io: Io, log: Log): Promise<number> {
+/** A command that changes a Family and its schedules: what does it, what the Operator is told, what the log says. */
+type FamilyCommand = {
+  familyId: string;
+  work(provisioning: ScheduledProvisioning): Promise<unknown>;
+  /** What the Operator is told after the Family id once it is done. */
+  done: string;
+  refused: string;
+  failed: string;
+};
+
+/** Runs the command with the Directory and the Scheduler's queues; answers the exit code. */
+async function runFamilyCommand(config: Config, command: FamilyCommand, io: Io, log: Log): Promise<number> {
+  const { familyId } = command;
   try {
     await withDirectory(config, (client) =>
-      withSchedules(config, (schedules) => deleteFamily({ ...provisioning(config, client, log), schedules }, input)),
+      withSchedules(config, (schedules) => command.work({ ...provisioning(config, client, log), schedules })),
     );
-    io.stdout.write(`The Family ${input.familyId} is deleted\n`);
+    io.stdout.write(`The Family ${familyId} ${command.done}\n`);
     return 0;
   } catch (error) {
     if (error instanceof ProvisioningError) {
       // Text that is not a Family id names no Family and is not worth logging.
-      log.error("Deleting the Family was refused", { ...(isFamilyId(input.familyId) ? { familyId: input.familyId } : {}), error });
+      log.error(command.refused, { ...(isFamilyId(familyId) ? { familyId } : {}), error });
     } else {
-      log.error("Deleting the Family did not finish; run delete again to finish it", { familyId: input.familyId, error });
+      log.error(command.failed, { familyId, error });
     }
     return 1;
   }
+}
+
+const deletion = (input: DeleteFamilyInput): FamilyCommand => ({
+  familyId: input.familyId,
+  work: (provisioning) => deleteFamily(provisioning, input),
+  done: "is deleted",
+  refused: "Deleting the Family was refused",
+  failed: "Deleting the Family did not finish; run delete again to finish it",
+});
+
+const suspension = (familyId: string): FamilyCommand => ({
+  familyId,
+  work: (provisioning) => suspendFamily(provisioning, familyId),
+  done: "is suspended",
+  refused: "Suspending the Family was refused",
+  failed: "Suspending the Family did not finish; run suspend again to finish it",
+});
+
+const resumption = (familyId: string): FamilyCommand => ({
+  familyId,
+  work: (provisioning) => resumeFamily(provisioning, familyId),
+  done: "is active again",
+  refused: "Resuming the Family was refused",
+  failed: "Resuming the Family did not finish; run resume again to finish it",
+});
+
+function parseFamilyId(args: string[]): string {
+  return familyIdValue(options(args, ["family-id"])["family-id"]);
 }
 
 async function schedule(config: Config, io: Io, log: Log): Promise<number> {

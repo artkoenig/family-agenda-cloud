@@ -89,6 +89,10 @@ export type Directory = {
   add(entry: NewDirectoryEntry): Promise<void>;
   /** Marks the Family active and notes the core version it was prepared for. */
   activate(familyId: string, coreVersion: string): Promise<void>;
+  /** Marks an active Family suspended, leaving any other status as it is; answers the status it has now. */
+  suspend(familyId: string): Promise<FamilyStatus | undefined>;
+  /** Marks a suspended Family active again, leaving any other status as it is; answers the status it has now. */
+  resume(familyId: string): Promise<FamilyStatus | undefined>;
   /** Marks the Family deleted and destroys its wrapped family key and database password. */
   markDeleted(familyId: string): Promise<void>;
   /** Notes that deleting the Family finished, unless it was noted before. */
@@ -177,6 +181,15 @@ function dueWorkRun(row: OverviewRow): DueWorkRun | null {
   };
 }
 
+/** Changes the Family's status from `from` to `to`, and no other; answers the status it has now. */
+async function changeStatus(client: Pick<pg.ClientBase, "query">, familyId: string, from: FamilyStatus, to: FamilyStatus) {
+  const { rows } = await client.query<{ status: FamilyStatus }>(
+    "UPDATE family SET status = CASE WHEN status = $2 THEN $3 ELSE status END WHERE family_id = $1 RETURNING status",
+    [familyId, from, to],
+  );
+  return rows[0]?.status;
+}
+
 export function directory(client: Pick<pg.ClientBase, "query">): Directory {
   return {
     async find(familyId) {
@@ -221,6 +234,8 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     async activate(familyId, coreVersion) {
       await client.query("UPDATE family SET status = 'active', core_version = $2 WHERE family_id = $1", [familyId, coreVersion]);
     },
+    suspend: (familyId) => changeStatus(client, familyId, "active", "suspended"),
+    resume: (familyId) => changeStatus(client, familyId, "suspended", "active"),
     async markDeleted(familyId) {
       await client.query(
         "UPDATE family SET status = 'deleted', wrapped_family_key = NULL, wrapped_database_password = NULL WHERE family_id = $1",
