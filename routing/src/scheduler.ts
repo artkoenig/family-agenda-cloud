@@ -5,6 +5,7 @@ import type { Config } from "./config";
 import { TRIGGERED_TIMEOUT_MS, type Core, type SourcesPolled } from "./core";
 import type { Directory, DirectoryEntry, RetryDelays } from "./directory";
 import { sealedContext, unwrappedFamily } from "./family-context";
+import { readinessOf, waitsForRetry } from "./family-readiness";
 import { describe, reasonOf, type Log } from "./log";
 
 /** What the Scheduler logs once it is under way. */
@@ -194,14 +195,14 @@ function giving(
 ) {
   const { config, directory, core, log, clock, schedules, unprepared } = dependencies;
   return async (name: string, familyId: string): Promise<void> => {
-    const entry = await directory.find(familyId);
-    if (entry?.status !== "active") {
+    const { readiness, entry } = readinessOf(await directory.find(familyId), config.coreVersion);
+    if (readiness === "gone" || readiness === "inactive") {
       log.info("The Family is not active; nothing is triggered", { familyId, occasion: name, status: entry?.status ?? "unknown" });
-      if (!entry || entry.status === "deleted") await schedules.remove(familyId);
+      if (readiness === "gone") await schedules.remove(familyId);
       return;
     }
     // A core never opens a database it cannot read: the Family waits for a rollout to prepare it.
-    if (entry.coreVersion !== config.coreVersion) {
+    if (readiness === "unprepared") {
       const noted = `${familyId} ${entry.coreVersion}`;
       if (!unprepared.has(noted)) {
         unprepared.add(noted);
@@ -211,7 +212,7 @@ function giving(
     }
     const last = occasion.recorded ? await directory.lastDueWork(familyId) : null;
     const ranAt = new Date(clock.now());
-    if (last?.outcome === "failed" && ranAt < last.retryAt) {
+    if (waitsForRetry(last, ranAt)) {
       log.info("Due work waits for its retry", { familyId, occasion: name, failures: last.failures, retryAt: last.retryAt.toISOString() });
       return;
     }

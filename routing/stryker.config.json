@@ -14,7 +14,8 @@
     "src/secrets.ts",
     "src/log.ts",
     "src/family-context.ts",
-    "src/family-id.ts"
+    "src/family-id.ts",
+    "src/family-readiness.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

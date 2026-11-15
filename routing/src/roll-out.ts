@@ -1,5 +1,6 @@
 import type { DirectoryEntry, FailedPreparation } from "./directory";
 import { sealedContext, unwrappedFamily } from "./family-context";
+import { isNewer } from "./family-readiness";
 import { reasonOf } from "./log";
 import type { Provisioning } from "./provisioning";
 
@@ -75,12 +76,4 @@ async function prepare({ config, directory, core, log }: Provisioning, entry: Di
   }
   await directory.notePrepared(familyId, coreVersion);
   log.info("The Family is prepared for the core version", { familyId, coreVersion });
-}
-
-/** Whether `version` is a later release than `than`, both `major.minor.patch`; text that is not one is not later. */
-export function isNewer(version: string, than: string): boolean {
-  const [a, b] = [version, than].map((text) => (/^\d+\.\d+\.\d+$/.test(text) ? text.split(".").map(Number) : undefined));
-  if (!a || !b) return false;
-  const index = a.findIndex((part, at) => part !== b[at]);
-  return index !== -1 && (a[index] ?? 0) > (b[index] ?? 0);
 }
