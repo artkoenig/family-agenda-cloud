@@ -183,6 +183,7 @@ async function stopped(signal: AbortSignal | undefined): Promise<void> {
  * Gives the Family's core the occasion, if the Family is active. A deleted Family loses its
  * schedules; how due work ended is recorded, and the job ends with the call either way. A Family
  * whose due work failed is left out until its retry is due, so that it does not burn the pool.
+ * not prepared for the running core version (CORE_VERSION) keeps its schedules and gets nothing.
  */
 function giving(occasion: Occasion, dependencies: SchedulerDependencies & { clock: Clock; schedules: FamilySchedules }) {
   const { config, directory, core, log, clock, schedules } = dependencies;
@@ -191,6 +192,11 @@ function giving(occasion: Occasion, dependencies: SchedulerDependencies & { cloc
     if (entry?.status !== "active") {
       log.info("The Family is not active; nothing is triggered", { familyId, occasion: name, status: entry?.status ?? "unknown" });
       if (!entry || entry.status === "deleted") await schedules.remove(familyId);
+      return;
+    }
+    // A core never opens a database it cannot read: the Family waits for a rollout to prepare it.
+    if (entry.coreVersion !== config.coreVersion) {
+      log.info("The Family is not prepared for the running core version; nothing is triggered", { familyId, occasion: name, coreVersion: entry.coreVersion });
       return;
     }
     const last = occasion.recorded ? await directory.lastDueWork(familyId) : null;

@@ -88,10 +88,16 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
     return;
   }
   const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
-  const family = familyId ? await activeFamily(setup, familyId) : undefined;
+  const family = await routable(setup, familyId);
   if (!family) {
     // The same answer whether the Family is unknown, suspended or deleted: it tells nobody which Families exist.
     outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found\n");
+    return;
+  }
+  if (family === NOT_PREPARED) {
+    outgoing
+      .writeHead(503, { "content-type": "text/plain; charset=utf-8", "retry-after": "30", "cache-control": "no-store" })
+      .end("This Family is being updated. Try again in a moment.\n");
     return;
   }
   // Not the path: an Agenda's id in it is what keeps the Agenda's address private.
@@ -102,10 +108,18 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
   passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(setup.config, family) } });
 }
 
-/** The Family, its secrets unwrapped, if it is active; only an active Family is routed to. */
-async function activeFamily({ config, directory }: RouterSetup, familyId: string): Promise<Family | undefined> {
-  const entry = await directory.find(familyId);
-  return entry?.status === "active" ? unwrappedFamily(config, entry) : undefined;
+/** A Family that is active but not prepared for the running core version. */
+const NOT_PREPARED = Symbol("not prepared");
+
+/**
+ * The Family, its secrets unwrapped, if it is active and prepared for the running core version;
+ * NOT_PREPARED if it is active but not prepared for it, as after the cores moved to a new release
+ * and before a rollout prepared it: a core never opens a database it cannot read.
+ */
+async function routable({ config, directory }: RouterSetup, familyId: string): Promise<Family | typeof NOT_PREPARED | undefined> {
+  const entry = familyId ? await directory.find(familyId) : undefined;
+  if (entry?.status !== "active") return undefined;
+  return entry.coreVersion === config.coreVersion ? unwrappedFamily(config, entry) : NOT_PREPARED;
 }
 
 /** Static files and the health check: the same for every Family, so served without one. */

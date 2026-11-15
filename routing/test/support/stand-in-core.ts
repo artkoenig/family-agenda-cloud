@@ -44,6 +44,21 @@
  * A triggered operation answers once it has ended, however long that takes; the Routing module
  * gives a call up after a long timeout of its own.
  *
+ * ## The core version
+ *
+ * - The version a core answers `prepare-family` with is the release its image was built from,
+ *   the same text its `GET /api/health` answers as `version` (docs/upgrading.md: "Check the running
+ *   version ... at `/api/health`"), such as `0.3.1`.
+ * - The Routing module does not ask the cores which version they run. It is told, as
+ *   `CORE_VERSION`, and the Cube's `.env` names the core image's tag and `CORE_VERSION` from one
+ *   variable, an exact release (not `latest`), so that the pool and the Routing module change
+ *   release together. Asking the pool instead would put a health check on every request and
+ *   every scheduled run, and leaves open which answer counts while the pool is half upgraded.
+ * - A Family is prepared for the running version when its Directory entry notes `CORE_VERSION`.
+ *   Until then the Router answers it 503 and the Scheduler triggers nothing for it, so that a core
+ *   never opens a database it has not migrated. `routing roll-out` prepares it; a core that
+ *   answers another version than `CORE_VERSION` fails the Family's preparation.
+ *
  * ## Requests from browsers
  *
  * - The Router passes a Family's request on below the root, its Family id removed from the path
@@ -67,7 +82,7 @@ import type { SourcesPolled } from "../../src/core";
 
 export const CONTEXT_HEADER = "x-family-agenda-context";
 
-/** The version the stand-in answers "prepare the Family" with. */
+/** The version the stand-in runs, and answers "prepare the Family" with, until told otherwise. */
 export const STAND_IN_CORE_VERSION = "0.0.0-stand-in";
 
 /** What a Context tells the core about the Family a request or operation is for. */
@@ -179,6 +194,8 @@ export type StandInCore = {
   goDown(): Promise<void>;
   /** Listens again on the same address, with everything it knew before. */
   comeBack(): Promise<void>;
+  /** From now on the stand-in runs this version, as a core of a new release does. */
+  runVersion(version: string): void;
   close(): Promise<void>;
 };
 
@@ -203,6 +220,8 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
   /** The Families whose next run of due work is held, and what releases it. */
   const held = new Map<string, { until: Promise<void>; release: () => void }>();
 
+  let version = STAND_IN_CORE_VERSION;
+
   const app = new Hono<{ Variables: { context: Context } }>();
   app.use(async (c, next) => {
     const sealedContext = c.req.header(CONTEXT_HEADER) ?? null;
@@ -225,7 +244,7 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     const status = fault("prepare-family");
     if (status) return c.json({ error: "fault" }, status as 500);
     prepared.add(c.get("context").familyId);
-    return c.json({ coreVersion: STAND_IN_CORE_VERSION });
+    return c.json({ coreVersion: version });
   });
   app.post("/operations/enter-admin", async (c) => {
     const status = fault("enter-admin");
@@ -335,6 +354,9 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
       new Promise((resolve) => {
         server.listen(port, "127.0.0.1", resolve);
       }),
+    runVersion(next) {
+      version = next;
+    },
     close: () =>
       new Promise((resolve, reject) => {
         if (!server.listening) {

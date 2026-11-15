@@ -16,6 +16,12 @@ export type Config = {
   contextKey: Buffer;
   /** The cores of the pool. */
   coreUrls: string[];
+  /**
+   * The core version the pool runs, the release its image was built from, such as `0.3.1`: only a
+   * Family prepared for it is routed to and scheduled, and a rollout prepares every Family for it.
+   * The Cube's `.env` names the core image's tag and this from the same variable.
+   */
+  coreVersion: string;
   /** Where the cores reach the Families' databases; the Directory's server unless set. */
   familyDatabaseHost: string;
   familyDatabasePort: number;
@@ -51,6 +57,7 @@ export function readConfig(env: Env): Config {
     operatorKey: key(env, "OPERATOR_KEY"),
     contextKey: key(env, "CONTEXT_KEY"),
     coreUrls: coreUrls(env),
+    coreVersion: required(env, "CORE_VERSION"),
     familyDatabaseHost: env.FAMILY_DATABASE_HOST ?? directoryDatabaseUrl.hostname,
     familyDatabasePort: Number(env.FAMILY_DATABASE_PORT ?? (directoryDatabaseUrl.port || "5432")),
     blobRoot: withoutTrailingSlash(required(env, "BLOB_ROOT")),
