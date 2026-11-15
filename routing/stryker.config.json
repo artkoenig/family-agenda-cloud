@@ -19,6 +19,7 @@
     "src/core-version.ts",
     "src/due-work.ts",
     "src/failover.ts",
+    "src/core-answers.ts",
     "src/proxy-headers.ts",
     "src/request-routing.ts",
     "src/cli-arguments.ts",

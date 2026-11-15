@@ -1,4 +1,5 @@
 import { CONTEXT_HEADER } from "./context";
+import { answerOf, isUnknownAdmin, newPassword, preparedVersion, sourcesPolled, type Answer } from "./core-answers";
 import { neverConnected, notServing, takingTurns } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 
@@ -85,7 +86,7 @@ export function coreClient(coreUrls: string[], log: Log, timers: Timers = system
    * than 2xx fails the call unless `accept` names it; so does no answer within `timeoutMs`, and,
    * with `failover`, no core of the pool that runs it.
    */
-  const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<{ status: number; answer: Record<string, unknown> }> => {
+  const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<{ status: number; answer: Answer }> => {
     if (!options.failover) return callCore(first, operation, sealedContext, options, timers);
     const notRun: string[] = [];
     for (const url of inTurn()) {
@@ -103,8 +104,8 @@ export function coreClient(coreUrls: string[], log: Log, timers: Timers = system
   const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS, failover: true };
   return {
     async prepareFamily(sealedContext) {
-      const { coreVersion } = (await call("prepare-family", sealedContext)).answer;
-      if (typeof coreVersion !== "string") throw new CoreError("The core answered prepare-family without its version");
+      const coreVersion = preparedVersion((await call("prepare-family", sealedContext)).answer);
+      if (coreVersion === undefined) throw new CoreError("The core answered prepare-family without its version");
       return { coreVersion };
     },
     async enterAdmin(sealedContext, email) {
@@ -113,18 +114,17 @@ export function coreClient(coreUrls: string[], log: Log, timers: Timers = system
     async resetAdminPassword(sealedContext, email) {
       const { status, answer } = await call("reset-admin-password", sealedContext, { body: { email }, accept: [404] });
       if (status === 404) {
-        // A 404 without that error code is a core that does not offer the operation.
-        if (answer.error === "unknown-admin") return undefined;
+        if (isUnknownAdmin(answer)) return undefined;
         throw new CoreError("The core answered reset-admin-password with 404");
       }
-      const { password } = answer;
-      if (typeof password !== "string" || !password) throw new CoreError("The core answered reset-admin-password without a password");
+      const password = newPassword(answer);
+      if (password === undefined) throw new CoreError("The core answered reset-admin-password without a password");
       return password;
     },
     async runDueWork(sealedContext) {
-      const { ran, failed } = (await call("run-due-work", sealedContext, triggered)).answer;
-      if (!Number.isInteger(ran) || !Number.isInteger(failed)) throw new CoreError("The core answered run-due-work without what ran");
-      return { ran: ran as number, failed: failed as number };
+      const polled = sourcesPolled((await call("run-due-work", sealedContext, triggered)).answer);
+      if (!polled) throw new CoreError("The core answered run-due-work without what ran");
+      return polled;
     },
     async purgeMessages(sealedContext) {
       await call("purge-messages", sealedContext, triggered);
@@ -142,7 +142,7 @@ async function callCore(
   sealedContext: string,
   { body, accept = [], timeoutMs = CALL_TIMEOUT_MS }: CallOptions,
   timers: Timers,
-): Promise<{ status: number; answer: Record<string, unknown> }> {
+): Promise<{ status: number; answer: Answer }> {
   const timeout = new AbortController();
   const timer = timers.setTimeout(() => {
     timeout.abort(new Error(`no answer within ${timeoutMs / 1000} seconds`));
@@ -165,18 +165,8 @@ async function callCore(
     const text = await response.text().catch((error: unknown) => {
       throw noAnswer(error);
     });
-    return { status: response.status, answer: parsed(text) };
+    return { status: response.status, answer: answerOf(text) };
   } finally {
     timers.clearTimeout(timer);
-  }
-}
-
-/** A JSON object answered, or {} for an empty body, one that is not JSON or not an object. */
-function parsed(text: string): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
-  } catch {
-    return {};
   }
 }
