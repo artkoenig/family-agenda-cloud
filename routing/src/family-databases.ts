@@ -7,6 +7,18 @@ export function familyDatabaseNames(familyId: string): { databaseName: string; d
   return { databaseName: name, databaseRole: name };
 }
 
+/** Whether creating the Family's role or database began: either of them exists. */
+export async function familyDatabaseLeftBehind(
+  client: pg.ClientBase,
+  { databaseName, databaseRole }: { databaseName: string; databaseRole: string },
+): Promise<boolean> {
+  const { rows } = await client.query<{ found: boolean }>(
+    "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1) OR EXISTS (SELECT 1 FROM pg_database WHERE datname = $2) AS found",
+    [databaseRole, databaseName],
+  );
+  return rows[0]?.found === true;
+}
+
 /**
  * Makes sure the Family's role exists with this password and owns the Family's database, which no
  * other role may connect to. Safe to run again: it creates what is missing and sets the password.

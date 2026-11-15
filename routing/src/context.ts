@@ -1,4 +1,5 @@
 import { EncryptJWT } from "jose";
+import type { IdentityProviderSettings } from "./config";
 
 /**
  * The Family's Context, as the core opens it: what database to open, with which key, below which
@@ -11,9 +12,10 @@ export type ContextClaims = {
   familyKey: string;
   blobLocation: string;
   timeZone: string;
+  /** The Family's public address, without a trailing slash. */
   publicUrl: string;
   pathPrefix: string;
-  identityProvider: { issuerUrl: string; clientId: string; clientSecret: string; requiredGroup: string } | null;
+  identityProvider: IdentityProviderSettings | null;
   identityProviderSignIn: "known-admins-only";
 };
 

@@ -47,7 +47,11 @@ export type Context = {
   blobLocation: string;
   /** IANA time zone, where the Family's days start. */
   timeZone: string;
-  /** The Family's public address, with the path prefix: `https://app.family-agenda.cloud/<family id>`. */
+  /**
+   * The Family's public address, with the path prefix and without a trailing slash:
+   * `https://app.family-agenda.cloud/<family id>`. The core emits its addresses below it; the
+   * address the Operator hands out is this with a trailing slash.
+   */
   publicUrl: string;
   /** The path prefix the core emits its addresses below: `/<family id>`. */
   pathPrefix: string;

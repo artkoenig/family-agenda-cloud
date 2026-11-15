@@ -43,6 +43,8 @@ const MIGRATION_LOCK = 7_320_092;
 
 export type Directory = {
   find(familyId: string): Promise<DirectoryEntry | undefined>;
+  /** The Family ids of the Families still being prepared, oldest first. */
+  beingPrepared(): Promise<string[]>;
   /** Writes a new entry as being prepared; leaves an existing entry of that Family as it is. */
   add(entry: NewDirectoryEntry): Promise<void>;
   /** Marks the Family active and notes the core version it was prepared for. */
@@ -101,6 +103,12 @@ export function directory(client: pg.ClientBase): Directory {
         coreVersion: row.core_version,
         createdAt: row.created_at,
       };
+    },
+    async beingPrepared() {
+      const { rows } = await client.query<{ family_id: string }>(
+        "SELECT family_id FROM family WHERE status = 'being_prepared' ORDER BY created_at, family_id",
+      );
+      return rows.map(({ family_id }) => family_id);
     },
     async add(entry) {
       await client.query(

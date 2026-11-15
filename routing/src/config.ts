@@ -3,6 +3,9 @@
  * the Directory's database password are secrets: they live in the `.env` on the Cube and are read
  * from nowhere else.
  */
+/** The Identity Provider all Families sign in through, named as the core names its `OIDC_*` settings. */
+export type IdentityProviderSettings = { issuerUrl: string; clientId: string; clientSecret: string; requiredGroup: string };
+
 export type Config = {
   /** The Directory's database, without its password. */
   directoryDatabaseUrl: string;
@@ -22,7 +25,7 @@ export type Config = {
   publicUrl: string;
   /** The time zone of a new Family unless the command names one. */
   defaultTimeZone: string;
-  identityProvider: { issuerUrl: string; clientId: string; clientSecret: string; requiredGroup: string } | null;
+  identityProvider: IdentityProviderSettings | null;
 };
 
 export class ConfigError extends Error {}
@@ -52,8 +55,7 @@ export function readConfig(env: Env): Config {
   };
 }
 
-/** The Identity Provider all Families sign in through, named as the core names its settings. */
-function identityProvider(env: Env): Config["identityProvider"] {
+function identityProvider(env: Env): IdentityProviderSettings | null {
   if (!env.OIDC_ISSUER_URL) return null;
   return {
     issuerUrl: env.OIDC_ISSUER_URL,

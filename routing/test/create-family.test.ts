@@ -237,10 +237,61 @@ describe("Running create again", () => {
     await routing.server(`ALTER ROLE ${routing.routingRole} ${option}`);
   };
 
-  it("after the role could not be created ends as an undisturbed run", async () => {
-    const familyId = await failAndRunAgain(/permission denied to create role/, alterRole("NOCREATEROLE"), alterRole("CREATEROLE"));
+  it("after the role could not be created, with nothing left to finish, ends as an undisturbed run", async () => {
+    await alterRole("NOCREATEROLE")();
+    const failed = await routing.run(["create", "--admin-email", EMAIL]);
+    expect(failed.stderr).toMatch(/permission denied to create role/);
+    await alterRole("CREATEROLE")();
+
+    const resumed = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyIdIn(failed.stderr)!]);
+    expect(resumed.exitCode).toBe(1);
+    expect(resumed.stderr).toContain("run create without --family-id");
+    const { familyId } = await createFamily();
 
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
+  });
+
+  it("with another time zone than the Family was begun with is refused", async () => {
+    routing.core.failNext("enter-admin");
+    const failed = await routing.run(["create", "--admin-email", EMAIL, "--time-zone", "Europe/Vienna"]);
+    const familyId = familyIdIn(failed.stderr)!;
+
+    const other = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyId, "--time-zone", "Europe/Berlin"]);
+    expect(other.exitCode).toBe(1);
+    expect(other.stderr).toContain("begun with the time zone Europe/Vienna, not Europe/Berlin");
+    expect(routing.core.requests).toHaveLength(2);
+
+    await createFamily(EMAIL, ["--family-id", familyId, "--time-zone", "Europe/Vienna"]);
+    expect(await stateOf(familyId)).toMatchObject({ entry: { status: "active", time_zone: "Europe/Vienna" } });
+  });
+
+  it("without --family-id is refused while a Family is being prepared, and names it", async () => {
+    routing.core.failNext("prepare-family");
+    const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL])).stderr)!;
+    const calls = routing.core.requests.length;
+
+    const careless = await routing.run(["create", "--admin-email", EMAIL]);
+
+    expect(careless.exitCode).toBe(1);
+    expect(careless.stderr).toContain(`The Family ${familyId} is still being prepared; finish it first with create --family-id ${familyId}`);
+    expect(routing.core.requests).toHaveLength(calls);
+    expect((await routing.directory("SELECT family_id FROM family")).map(({ family_id }) => family_id)).toEqual([familyId]);
+    await createFamily(EMAIL, ["--family-id", familyId]);
+    expect(await stateOf(familyId)).toEqual(expectedState(familyId));
+  });
+
+  it("with a Family id that create never began is refused, and creates nothing", async () => {
+    const familyId = "0b6c3b0e-6a3a-4f7e-9d55-2f1f8d2c9a41";
+
+    const result = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyId]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`Nothing of the Family ${familyId} was created`);
+    expect(routing.core.requests).toEqual([]);
+    expect(await routing.directory("SELECT count(*)::int AS count FROM family")).toEqual([{ count: 0 }]);
+    expect(await routing.server("SELECT count(*)::int AS count FROM pg_roles WHERE rolname = $1", [`family_${familyId.replaceAll("-", "")}`])).toEqual([
+      { count: 0 },
+    ]);
   });
 
   it("after the database could not be created ends as an undisturbed run", async () => {

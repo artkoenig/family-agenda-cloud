@@ -15,14 +15,14 @@ const VERSION = "v1";
  * Wraps a secret with the Operator key (AES-256-GCM), bound to its Family and purpose: only the
  * wrapped form is stored in the Directory.
  */
-export function wrap(operatorKey: Buffer, familyId: string, purpose: WrapPurpose, secret: string): string {
+function wrap(operatorKey: Buffer, familyId: string, purpose: WrapPurpose, secret: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", operatorKey, iv).setAAD(aad(familyId, purpose));
   const sealed = Buffer.concat([cipher.update(secret, "utf8"), cipher.final(), cipher.getAuthTag()]);
   return [VERSION, iv.toString("base64url"), sealed.toString("base64url")].join(".");
 }
 
-export function unwrap(operatorKey: Buffer, familyId: string, purpose: WrapPurpose, wrapped: string): string {
+function unwrap(operatorKey: Buffer, familyId: string, purpose: WrapPurpose, wrapped: string): string {
   const [version, iv, sealed] = wrapped.split(".");
   if (version !== VERSION || !iv || !sealed) throw new Error(`The wrapped ${purpose} has an unknown format`);
   const bytes = Buffer.from(sealed, "base64url");
@@ -31,18 +31,31 @@ export function unwrap(operatorKey: Buffer, familyId: string, purpose: WrapPurpo
   return Buffer.concat([decipher.update(bytes.subarray(0, -16)), decipher.final()]).toString("utf8");
 }
 
+/** Wraps and unwraps one Family's secrets with the Operator key. */
+export type Wrapper = {
+  wrap(purpose: WrapPurpose, secret: string): string;
+  unwrap(purpose: WrapPurpose, wrapped: string): string;
+};
+
+export const wrapperFor = (operatorKey: Buffer, familyId: string): Wrapper => ({
+  wrap: (purpose, secret) => wrap(operatorKey, familyId, purpose, secret),
+  unwrap: (purpose, wrapped) => unwrap(operatorKey, familyId, purpose, wrapped),
+});
+
 const aad = (familyId: string, purpose: WrapPurpose) => Buffer.from(`${familyId}/${purpose}`, "utf8");
 
 /**
  * The SCRAM-SHA-256 verifier Postgres stores for a password (RFC 7677). Handing Postgres the
  * verifier instead of the password keeps the password out of its statement log.
  */
-export function scramVerifier(password: string, iterations = 4096): string {
+const SCRAM_ITERATIONS = 4096;
+
+export function scramVerifier(password: string): string {
   const salt = randomBytes(16);
-  const salted = pbkdf2Sync(password.normalize("NFKC"), salt, iterations, 32, "sha256");
+  const salted = pbkdf2Sync(password.normalize("NFKC"), salt, SCRAM_ITERATIONS, 32, "sha256");
   const storedKey = createHash("sha256").update(hmac(salted, "Client Key")).digest();
   const serverKey = hmac(salted, "Server Key");
-  return `SCRAM-SHA-256$${iterations}:${salt.toString("base64")}$${storedKey.toString("base64")}:${serverKey.toString("base64")}`;
+  return `SCRAM-SHA-256$${SCRAM_ITERATIONS}:${salt.toString("base64")}$${storedKey.toString("base64")}:${serverKey.toString("base64")}`;
 }
 
 const hmac = (key: Buffer, text: string) => createHmac("sha256", key).update(text).digest();

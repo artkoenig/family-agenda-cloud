@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import pg from "pg";
 import { ConfigError, readConfig, type Config } from "./config";
 import { coreClient } from "./core";
-import { createFamily, type CreateFamilyInput } from "./create-family";
+import { createFamily, ProvisioningError, type CreateFamilyInput } from "./create-family";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 
@@ -60,11 +60,18 @@ function parseCreate(args: string[], config: Config): CreateFamilyInput {
   const values = options(args, ["admin-email", "time-zone", "family-id"]);
   const adminEmail = values["admin-email"];
   if (!adminEmail || !isEmailAddress(adminEmail)) throw new UsageError("--admin-email needs the email address of the first Admin");
-  const timeZone = values["time-zone"] ?? config.defaultTimeZone;
-  if (!isTimeZone(timeZone)) throw new UsageError(`Unknown time zone ${timeZone}`);
-  const familyId = values["family-id"]?.toLowerCase() ?? randomUUID();
+  const timeZone = values["time-zone"];
+  const effectiveTimeZone = timeZone ?? config.defaultTimeZone;
+  if (!isTimeZone(effectiveTimeZone)) throw new UsageError(`Unknown time zone ${effectiveTimeZone}`);
+  return { adminEmail, ...familyIdOption(values["family-id"]), ...(timeZone === undefined ? {} : { timeZone }) };
+}
+
+/** The Family to finish that --family-id names, or a newly drawn Family id. */
+function familyIdOption(value: string | undefined): { familyId: string; resume: boolean } {
+  if (value === undefined) return { familyId: randomUUID(), resume: false };
+  const familyId = value.toLowerCase();
   if (!UUID.test(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
-  return { adminEmail, timeZone, familyId };
+  return { familyId, resume: true };
 }
 
 function options(args: string[], names: string[]): Record<string, string | undefined> {
@@ -99,7 +106,12 @@ async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log
     io.stdout.write(`${address}\n`);
     return 0;
   } catch (error) {
-    log.error("Creating the Family failed; run create again with --family-id to finish it", { familyId: input.familyId, error });
+    if (error instanceof ProvisioningError) {
+      // Nothing was done; a drawn Family id that was never used is not worth naming.
+      log.error("Creating the Family was refused", { ...(input.resume ? { familyId: input.familyId } : {}), error });
+    } else {
+      log.error("Creating the Family failed; run create again with --family-id to finish it", { familyId: input.familyId, error });
+    }
     return 1;
   }
 }
