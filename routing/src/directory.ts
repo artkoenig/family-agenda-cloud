@@ -41,8 +41,17 @@ export type DueWorkOutcome =
   | { ranAt: Date; outcome: "succeeded"; sources: SourcesPolled }
   | { ranAt: Date; outcome: "failed"; error: string; retry: RetryDelays };
 
-/** What the Operator sees of a Family: its status and how its due work last ran, if it ever did. */
-export type FamilyOverview = { familyId: string; status: FamilyStatus; dueWork: DueWorkRun | null };
+/** Why preparing a Family for a core version failed the last time it was tried. */
+export type PreparationFailure = { coreVersion: string; error: string };
+
+/** A Family a rollout could not prepare, and why. */
+export type FailedPreparation = { familyId: string; error: string };
+
+/**
+ * What the Operator sees of a Family: its status, how its due work last ran, if it ever did, and
+ * why preparing it for a core version last failed, unless it was prepared since.
+ */
+export type FamilyOverview = { familyId: string; status: FamilyStatus; dueWork: DueWorkRun | null; preparationFailure: PreparationFailure | null };
 
 export type NewDirectoryEntry = Omit<DirectoryEntry, "status" | "coreVersion" | "createdAt" | "deletedAt"> & {
   wrappedFamilyKey: string;
@@ -76,6 +85,10 @@ const MIGRATIONS = [
   `ALTER TABLE family
      ADD COLUMN due_work_failures integer NOT NULL DEFAULT 0,
      ADD COLUMN due_work_retry_at timestamptz`,
+  // Why preparing the Family for a core version last failed, and for which; cleared once it is prepared (#99).
+  `ALTER TABLE family
+     ADD COLUMN preparation_failed_for text,
+     ADD COLUMN preparation_error text`,
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */
@@ -107,6 +120,15 @@ export type Directory = {
   lastDueWork(familyId: string): Promise<DueWorkRun | null>;
   /** Every Family, oldest first. */
   overview(): Promise<FamilyOverview[]>;
+  /**
+   * The active and suspended Families not prepared for this core version, oldest first: the order
+   * a rollout prepares them in.
+   */
+  behind(coreVersion: string): Promise<DirectoryEntry[]>;
+  /** Notes the core version the Family was prepared for, and forgets an earlier failure; its status stays. */
+  notePrepared(familyId: string, coreVersion: string): Promise<void>;
+  /** Notes that preparing the Family for the core version failed, and why. */
+  notePreparationFailed(familyId: string, failure: PreparationFailure): Promise<void>;
 };
 
 /** Brings the Directory's schema up to date. */
@@ -160,6 +182,8 @@ type OverviewRow = {
    * none, and is due again at once.
    */
   due_work_retry_at: Date;
+  preparation_failed_for: string | null;
+  preparation_error: string | null;
 };
 
 const DUE_WORK_COLUMNS =
@@ -190,24 +214,33 @@ async function changeStatus(client: Pick<pg.ClientBase, "query">, familyId: stri
   return rows[0]?.status;
 }
 
+/** The entry a row of the family table holds. */
+function entryOf(row: Row): DirectoryEntry {
+  return {
+    familyId: row.family_id,
+    status: row.status,
+    databaseName: row.database_name,
+    databaseRole: row.database_role,
+    blobLocation: row.blob_location,
+    timeZone: row.time_zone,
+    wrappedFamilyKey: row.wrapped_family_key,
+    wrappedDatabasePassword: row.wrapped_database_password,
+    coreVersion: row.core_version,
+    createdAt: row.created_at,
+    deletedAt: row.deleted_at,
+  };
+}
+
+function preparationFailure(row: OverviewRow): PreparationFailure | null {
+  return row.preparation_failed_for === null ? null : { coreVersion: row.preparation_failed_for, error: row.preparation_error ?? "" };
+}
+
 export function directory(client: Pick<pg.ClientBase, "query">): Directory {
   return {
     async find(familyId) {
       const { rows } = await client.query<Row>("SELECT * FROM family WHERE family_id = $1", [familyId]);
       const row = rows[0];
-      return row && {
-        familyId: row.family_id,
-        status: row.status,
-        databaseName: row.database_name,
-        databaseRole: row.database_role,
-        blobLocation: row.blob_location,
-        timeZone: row.time_zone,
-        wrappedFamilyKey: row.wrapped_family_key,
-        wrappedDatabasePassword: row.wrapped_database_password,
-        coreVersion: row.core_version,
-        createdAt: row.created_at,
-        deletedAt: row.deleted_at,
-      };
+      return row && entryOf(row);
     },
     async beingPrepared() {
       const { rows } = await client.query<{ family_id: string }>(
@@ -279,9 +312,30 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async overview() {
       const { rows } = await client.query<OverviewRow>(
-        `SELECT family_id, status, ${DUE_WORK_COLUMNS} FROM family ORDER BY created_at, family_id`,
+        `SELECT family_id, status, ${DUE_WORK_COLUMNS}, preparation_failed_for, preparation_error FROM family ORDER BY created_at, family_id`,
       );
-      return rows.map((row) => ({ familyId: row.family_id, status: row.status, dueWork: dueWorkRun(row) }));
+      return rows.map((row) => ({ familyId: row.family_id, status: row.status, dueWork: dueWorkRun(row), preparationFailure: preparationFailure(row) }));
+    },
+    async behind(coreVersion) {
+      const { rows } = await client.query<Row>(
+        `SELECT * FROM family WHERE status IN ('active', 'suspended') AND core_version IS DISTINCT FROM $1
+         ORDER BY created_at, family_id`,
+        [coreVersion],
+      );
+      return rows.map(entryOf);
+    },
+    async notePrepared(familyId, coreVersion) {
+      await client.query(
+        `UPDATE family SET core_version = $2, preparation_failed_for = NULL, preparation_error = NULL
+         WHERE family_id = $1 AND status IN ('active', 'suspended')`,
+        [familyId, coreVersion],
+      );
+    },
+    async notePreparationFailed(familyId, { coreVersion, error }) {
+      await client.query(
+        "UPDATE family SET preparation_failed_for = $2, preparation_error = $3 WHERE family_id = $1 AND status IN ('active', 'suspended')",
+        [familyId, coreVersion, error],
+      );
     },
   };
 }

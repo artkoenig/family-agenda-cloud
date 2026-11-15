@@ -8,7 +8,7 @@ import { readConfig } from "../../src/config";
 import { createLog } from "../../src/log";
 import { startRouter, type Router } from "../../src/router";
 import { SCHEDULER_RUNNING } from "../../src/scheduler";
-import { startStandInCore, type StandInCore } from "./stand-in-core";
+import { STAND_IN_CORE_VERSION, startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -128,6 +128,7 @@ export async function setUpRouting(): Promise<TestRouting> {
     CONTEXT_KEY: contextKey,
     CORE_URLS: core.url,
     BLOB_ROOT: "/var/lib/family-agenda/blobs",
+    CORE_VERSION: STAND_IN_CORE_VERSION,
   };
 
   let logged = "";

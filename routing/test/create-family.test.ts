@@ -69,7 +69,7 @@ async function stateOf(familyId: string) {
 const expectedState = (familyId: string) => ({
   entry: {
     status: "active",
-    core_version: "0.0.0-stand-in",
+    core_version: "0.0.0",
     blob_location: `/var/lib/family-agenda/blobs/${familyId}`,
     time_zone: "Europe/Berlin",
     has_family_key: true,
@@ -90,7 +90,7 @@ describe("Creating a Family", () => {
 
     expect(stdout).toBe(`https://app.family-agenda.cloud/${familyId}/\n`);
     const [entry] = await routing.directory("SELECT status, core_version FROM family WHERE family_id = $1", [familyId]);
-    expect(entry).toEqual({ status: "active", core_version: "0.0.0-stand-in" });
+    expect(entry).toEqual({ status: "active", core_version: "0.0.0" });
     const operations = routing.core.requests.map(({ method, path }) => `${method} ${path}`);
     expect(operations).toEqual(["POST /operations/prepare-family", "POST /operations/enter-admin"]);
     expect(routing.core.requests[1]?.body).toEqual({ email: EMAIL });

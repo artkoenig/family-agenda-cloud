@@ -11,6 +11,7 @@ import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { isFamilyId, provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
 import { startRouter } from "./router";
+import { rollOut } from "./roll-out";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
 import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
 import { resumeFamily, suspendFamily } from "./family-status";
@@ -43,13 +44,18 @@ const USAGE = `Usage:
     Suspends the Family: its address answers 404 and its schedules are removed; its data stays.
   routing resume --family-id <id>
     Resumes a suspended Family: it is routed to and scheduled again.
+  routing roll-out
+    Prepares every active and suspended Family not yet prepared for CORE_VERSION, the core version
+    the pool runs, oldest first, and names every Family it failed for. Until a Family is prepared
+    its address answers 503 and nothing is triggered for it. Run it again to retry the failed ones.
   routing schedule
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
     once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
     again after a delay that doubles with each failure in a row, up to a quarter of an hour.
   routing families
     Lists every Family with its status and when its due work last ran and how it ended; for
-    due work that keeps failing, how often in a row and when it is tried next.
+    due work that keeps failing, how often in a row and when it is tried next; and why preparing
+    it for a core version failed, until a rollout prepares it.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
@@ -71,6 +77,7 @@ const COMMANDS: Record<string, Command> = {
   serve: (_args, config, io, log) => serve(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
+  "roll-out": (_args, config, io, log) => rollOutCommand(config, io, log),
 };
 
 /** The Operator's command line. Answers the exit code. */
@@ -295,10 +302,24 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
   return 0;
 }
 
+async function rollOutCommand(config: Config, io: Io, log: Log): Promise<number> {
+  const { coreVersion, prepared, failed, newer } = await withDirectory(config, (client) => rollOut(provisioning(config, client, log)));
+  io.stdout.write(`Prepared ${familiesCounted(prepared.length)} for core version ${coreVersion}\n`);
+  if (failed.length > 0) io.stdout.write(`Failed for ${familiesCounted(failed.length)}; run roll-out again to retry:\n`);
+  for (const { familyId, error } of failed) io.stdout.write(`${familyId}\t${error}\n`);
+  if (newer.length > 0) io.stdout.write(`Refused ${familiesCounted(newer.length)}; going back to an older core version needs a restore:\n`);
+  for (const { familyId, coreVersion: newerVersion } of newer) {
+    io.stdout.write(`${familyId}\tprepared for a newer core version ${newerVersion}\n`);
+  }
+  return failed.length + newer.length === 0 ? 0 : 1;
+}
+
+const familiesCounted = (count: number) => `${count} ${count === 1 ? "Family" : "Families"}`;
+
 /** One line per Family: its Family id, its status, and when its due work last ran and how it ended. */
 async function families(config: Config, io: Io): Promise<number> {
   const overview = await withDirectory(config, (client) => directory(client).overview());
-  for (const { familyId, status, dueWork } of overview) {
+  for (const { familyId, status, dueWork, preparationFailure } of overview) {
     const columns = [familyId, status];
     if (!dueWork) columns.push("due work never ran");
     else if (dueWork.outcome === "succeeded") {
@@ -310,6 +331,7 @@ async function families(config: Config, io: Io): Promise<number> {
         `${dueWork.failures} ${dueWork.failures === 1 ? "failure" : "failures"} in a row, next try ${dueWork.retryAt.toISOString()}`,
       );
     }
+    if (preparationFailure) columns.push(`preparing for ${preparationFailure.coreVersion} failed: ${preparationFailure.error}`);
     io.stdout.write(`${columns.join("\t")}\n`);
   }
   return 0;
