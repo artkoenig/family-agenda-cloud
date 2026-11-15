@@ -1,33 +1,27 @@
-import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import pg from "pg";
 import { directoryConnection, type Config } from "./config";
-import { CONTEXT_HEADER } from "./core";
+import { CONTEXT_HEADER } from "./context";
 import { directory as openDirectory, type Directory } from "./directory";
-import { sealedContext, unwrappedFamily, type Family } from "./family-context";
+import { coresFor, isBodiless, takingTurns } from "./failover";
+import { sealedContext, unwrappedFamily } from "./family-context";
 import { reasonOf, type Log } from "./log";
+import { headersFromCore, headersToCore } from "./proxy-headers";
+import { BAD_GATEWAY, routeRequest } from "./request-routing";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
 
-/** A Family id as the first segment of a path, and the rest; a Family id is written in lower case. */
-const FAMILY_PATH = /^\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[/?]|$)(.*)$/s;
-
-/** The headers of one connection, which a proxy does not pass on (RFC 9110, section 7.6.1). */
-const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
-
-/**
- * Headers of the browser's a core never gets: a Context comes from the Router only, and the client
- * is described by the Router's own `X-Forwarded-*` headers, not by a `Forwarded` the browser sent.
- */
-const NOT_FROM_THE_BROWSER = [CONTEXT_HEADER.toLowerCase(), "forwarded", "host"];
-
 /** What the Router works with on every request. */
-type RouterSetup = { config: Config; directory: Directory; log: Log; cores: Cores };
-
-/** The cores of the pool, each request starting at the next; any core may answer any request. */
-type Cores = { inTurn(): URL[] };
+type RouterSetup = {
+  config: Config;
+  directory: Directory;
+  log: Log;
+  /** The cores of the pool, each request starting at the next; any core may answer any request. */
+  inTurn: () => URL[];
+};
 
 /** A request as the Router passes it on to a core. */
 type CoreRequest = {
@@ -50,7 +44,7 @@ export async function startRouter(config: Config, log: Log): Promise<Router> {
   directoryPool.on("error", (error) => {
     log.error("A connection to the Directory failed", { reason: reasonOf(error) });
   });
-  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, cores: inTurn(config.coreUrls) };
+  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, inTurn: takingTurns(config.coreUrls.map((url) => new URL(url))) };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -69,88 +63,24 @@ export async function startRouter(config: Config, log: Log): Promise<Router> {
   };
 }
 
-function inTurn(coreUrls: string[]): Cores {
-  const urls = coreUrls.map((url) => new URL(url));
-  let next = 0;
-  return {
-    inTurn() {
-      const start = next;
-      next = (next + 1) % urls.length;
-      return [...urls.slice(start), ...urls.slice(0, start)];
-    },
-  };
-}
-
 async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const target = incoming.url ?? "/";
-  if (isFamilyIndependent(incoming.method, target)) {
-    passOn(setup, incoming, outgoing, { path: target, routerHeaders: {} });
+  const { config, directory } = setup;
+  const routed = await routeRequest({ method: incoming.method, target: incoming.url ?? "/" }, config.coreVersion, (familyId) => directory.find(familyId));
+  if (routed.to === "refused") {
+    outgoing.writeHead(routed.status, routed.headers).end(routed.body);
     return;
   }
-  const [, familyId = "", rest = ""] = FAMILY_PATH.exec(target) ?? [];
-  const family = await routable(setup, familyId, rest);
-  if (!family) {
-    // The same answer whether the Family is unknown, suspended or deleted, which tells nobody which
-    // Families exist, and for a path to the core's triggered operations (/operations/*), which no
-    // browser may reach.
-    outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found\n");
+  if (routed.to === "core") {
+    passOn(setup, incoming, outgoing, { path: routed.path, routerHeaders: {} });
     return;
   }
-  if (family === NOT_PREPARED) {
-    outgoing
-      .writeHead(503, { "content-type": "text/plain; charset=utf-8", "retry-after": "30", "cache-control": "no-store" })
-      .end("This Family is being updated. Try again in a moment.\n");
-    return;
-  }
+  const { familyId, path, entry } = routed;
+  const family = unwrappedFamily(config, entry);
   // Not the path: an Agenda's id in it is what keeps the Agenda's address private.
   outgoing.on("close", () => {
     setup.log.info("Served a request", { familyId, method: incoming.method, status: outgoing.statusCode });
   });
-  const path = rest.startsWith("/") ? rest : `/${rest}`;
-  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(setup.config, family) } });
-}
-
-/** A Family that is active but not prepared for the running core version. */
-const NOT_PREPARED = Symbol("not prepared");
-
-/**
- * The Family, its secrets unwrapped, if it is active and prepared for the running core version;
- * NOT_PREPARED if it is active but not prepared for it, as after the cores moved to a new release
- * and before a rollout prepared it: a core never opens a database it cannot read. Undefined, without
- * asking the Directory, when the path below the Family's prefix names the triggered operations.
- */
-async function routable({ config, directory }: RouterSetup, familyId: string, rest: string): Promise<Family | typeof NOT_PREPARED | undefined> {
-  if (namesOperations(rest)) return undefined;
-  const entry = familyId ? await directory.find(familyId) : undefined;
-  if (entry?.status !== "active") return undefined;
-  return entry.coreVersion === config.coreVersion ? unwrappedFamily(config, entry) : NOT_PREPARED;
-}
-
-/**
- * Whether the path below a Family's prefix names the core's triggered operations, as a core could
- * read it once it decodes the path and resolves its dot segments. Only the Routing module triggers
- * them, with a Context of its own: passed on from a browser, they would let anyone who knows a
- * Family's address reset its Admin's password.
- */
-function namesOperations(rest: string): boolean {
-  const [pathname = ""] = rest.split("?", 1);
-  let decoded = pathname;
-  try {
-    decoded = decodeURIComponent(pathname);
-  } catch {
-    // Not decodable as a whole: checked as it is, which still resolves its dot segments.
-  }
-  // One slash for many: "//operations" would otherwise be read as a host.
-  const resolved = new URL(`/${decoded}`.replaceAll(/[/\\]+/g, "/"), "https://core.invalid").pathname;
-  const [first = ""] = resolved.split("/").filter(Boolean);
-  return first.toLowerCase() === "operations";
-}
-
-/** Static files and the health check: the same for every Family, so served without one. */
-function isFamilyIndependent(method: string | undefined, target: string): boolean {
-  const [pathname = ""] = target.split("?", 1);
-  if (method !== "GET" && method !== "HEAD") return false;
-  return pathname.startsWith("/static/") || pathname === "/api/health";
+  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(config, family) } });
 }
 
 /**
@@ -159,10 +89,11 @@ function isFamilyIndependent(method: string | undefined, target: string): boolea
  * with a body cannot be sent twice. An answer that breaks off breaks off for the browser too.
  */
 function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse, coreRequest: CoreRequest): void {
-  const { config, log, cores } = setup;
-  const bodiless = incoming.method === "GET" || incoming.method === "HEAD";
+  const { config, log, inTurn } = setup;
+  const bodiless = isBodiless(incoming.method);
   const familyField = coreRequest.familyId === undefined ? {} : { familyId: coreRequest.familyId };
-  const headers = { ...passedOn(incoming.headers), ...forwarded(config, incoming), ...coreRequest.routerHeaders };
+  const browser = { headers: incoming.headers, remoteAddress: incoming.socket.remoteAddress };
+  const headers = { ...headersToCore(browser, config.trustProxy), ...coreRequest.routerHeaders };
   const attempt = ([core, ...others]: URL[]): void => {
     if (!core) {
       log.error("No core answered", familyField);
@@ -174,7 +105,7 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
       { host: core.hostname, port: core.port, method: incoming.method, path: coreRequest.path, headers: { ...headers, host: core.host } },
       (fromCore) => {
         answered = true;
-        outgoing.writeHead(fromCore.statusCode ?? 502, withoutHopByHop(fromCore.rawHeaders));
+        outgoing.writeHead(fromCore.statusCode ?? 502, headersFromCore(fromCore.rawHeaders));
         pipeline(fromCore, outgoing, (error) => {
           if (error) log.error("A core's answer broke off", { ...familyField, core: core.host, reason: reasonOf(error) });
         });
@@ -183,7 +114,7 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
     toCore.on("error", (error) => {
       if (answered) return;
       log.error("A core did not answer", { ...familyField, core: core.host, reason: reasonOf(error) });
-      attempt(bodiless ? others : []);
+      attempt(others);
     });
     // A browser that goes away takes its request to the core with it.
     outgoing.on("close", () => {
@@ -195,7 +126,7 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
       incoming.pipe(toCore);
     }
   };
-  attempt(bodiless ? cores.inTurn() : cores.inTurn().slice(0, 1));
+  attempt(coresFor(incoming.method, inTurn()));
 }
 
 function answerBadGateway(outgoing: ServerResponse): void {
@@ -203,43 +134,5 @@ function answerBadGateway(outgoing: ServerResponse): void {
     outgoing.destroy();
     return;
   }
-  outgoing.writeHead(502, { "content-type": "text/plain; charset=utf-8" }).end("Bad gateway\n");
-}
-
-/**
- * The client, as the core reads it from a trusted proxy: its address as the one entry of
- * `X-Forwarded-For`, and the scheme and host it asked for. Behind Caddy (TRUST_PROXY) that is
- * what Caddy forwarded, the address being the last entry, which Caddy appended; otherwise what
- * the Router itself sees, whatever the request claims.
- */
-function forwarded(config: Config, incoming: IncomingMessage): Record<string, string> {
-  const trusted = config.trustProxy ? incoming.headers : {};
-  return {
-    "x-forwarded-for": entries(trusted["x-forwarded-for"]).at(-1) ?? String(incoming.socket.remoteAddress),
-    "x-forwarded-proto": entries(trusted["x-forwarded-proto"])[0] ?? "http",
-    "x-forwarded-host": entries(trusted["x-forwarded-host"])[0] ?? String(incoming.headers.host),
-  };
-}
-
-/** The entries of a header that lists values separated by commas. */
-const entries = (header: string | string[] | undefined): string[] =>
-  header === undefined ? [] : String(header).split(",").map((entry) => entry.trim());
-
-/** The headers of a connection: the hop-by-hop ones and those its `Connection` header names. */
-const connectionHeaders = (connection: string | string[] | undefined): Set<string> =>
-  new Set([...HOP_BY_HOP, ...entries(connection).map((name) => name.toLowerCase())]);
-
-/** The browser's headers a core gets. */
-function passedOn(headers: IncomingHttpHeaders): IncomingHttpHeaders {
-  const dropped = new Set([...connectionHeaders(headers.connection), ...NOT_FROM_THE_BROWSER]);
-  return Object.fromEntries(Object.entries(headers).filter(([name]) => !dropped.has(name)));
-}
-
-/** The core's headers, as Node reads them (name, value, name, value...), without those of its connection. */
-function withoutHopByHop(rawHeaders: string[]): string[] {
-  const pairs: [string, string][] = [];
-  for (let index = 0; index + 1 < rawHeaders.length; index += 2) pairs.push([rawHeaders[index] ?? "", rawHeaders[index + 1] ?? ""]);
-  const connection = pairs.filter(([name]) => name.toLowerCase() === "connection").map(([, value]) => value);
-  const dropped = connectionHeaders(connection);
-  return pairs.filter(([name]) => !dropped.has(name.toLowerCase())).flat();
+  outgoing.writeHead(BAD_GATEWAY.status, BAD_GATEWAY.headers).end(BAD_GATEWAY.body);
 }

@@ -1,3 +1,6 @@
+import { CONTEXT_HEADER } from "./context";
+import { answerOf, isUnknownAdmin, newPassword, preparedVersion, sourcesPolled, type Answer } from "./core-answers";
+import { neverConnected, notServing, takingTurns } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 
 /** The timers a call to the core is given up by; the system's unless a test moves time by hand. */
@@ -24,9 +27,6 @@ const CALL_TIMEOUT_MS = 30_000;
  * second run beside one the core is still working on.
  */
 export const TRIGGERED_TIMEOUT_MS = 10 * 60_000;
-
-/** The header a core reads the sealed Context from. */
-export const CONTEXT_HEADER = "X-Family-Agenda-Context";
 
 /** The operations a core offers to be triggered from outside, each for the Family its Context names. */
 export type Core = {
@@ -58,18 +58,6 @@ export class CoreError extends Error {}
  */
 type CallOptions = { body?: unknown; accept?: number[]; timeoutMs?: number; failover?: boolean };
 
-/**
- * The errors of a connection that was never made: the call did not arrive at the core. A
- * connection that broke after the call was sent is not among them, as the core may have run it.
- */
-const NOT_CONNECTED = new Set(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
-
-/**
- * What a core answers when it did not run the operation, because it is starting or because a proxy
- * in front of it has no core to pass the call to.
- */
-const NOT_RUN = new Set([502, 503, 504]);
-
 /** A call that provably did not run on the core it was made to, so another core may take it. */
 class NotRun extends CoreError {
   constructor(
@@ -92,18 +80,13 @@ class NotRun extends CoreError {
 export function coreClient(coreUrls: string[], log: Log, timers: Timers = systemTimers): Core {
   const [first] = coreUrls;
   if (!first) throw new CoreError("No core configured in CORE_URLS");
-  let next = 0;
-  const inTurn = () => {
-    const start = next;
-    next = (next + 1) % coreUrls.length;
-    return [...coreUrls.slice(start), ...coreUrls.slice(0, start)];
-  };
+  const inTurn = takingTurns(coreUrls);
   /**
    * Calls the operation and answers its status with its JSON body ({} for none). A status other
    * than 2xx fails the call unless `accept` names it; so does no answer within `timeoutMs`, and,
    * with `failover`, no core of the pool that runs it.
    */
-  const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<{ status: number; answer: Record<string, unknown> }> => {
+  const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<{ status: number; answer: Answer }> => {
     if (!options.failover) return callCore(first, operation, sealedContext, options, timers);
     const notRun: string[] = [];
     for (const url of inTurn()) {
@@ -121,8 +104,8 @@ export function coreClient(coreUrls: string[], log: Log, timers: Timers = system
   const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS, failover: true };
   return {
     async prepareFamily(sealedContext) {
-      const { coreVersion } = (await call("prepare-family", sealedContext)).answer;
-      if (typeof coreVersion !== "string") throw new CoreError("The core answered prepare-family without its version");
+      const coreVersion = preparedVersion((await call("prepare-family", sealedContext)).answer);
+      if (coreVersion === undefined) throw new CoreError("The core answered prepare-family without its version");
       return { coreVersion };
     },
     async enterAdmin(sealedContext, email) {
@@ -131,18 +114,17 @@ export function coreClient(coreUrls: string[], log: Log, timers: Timers = system
     async resetAdminPassword(sealedContext, email) {
       const { status, answer } = await call("reset-admin-password", sealedContext, { body: { email }, accept: [404] });
       if (status === 404) {
-        // A 404 without that error code is a core that does not offer the operation.
-        if (answer.error === "unknown-admin") return undefined;
+        if (isUnknownAdmin(answer)) return undefined;
         throw new CoreError("The core answered reset-admin-password with 404");
       }
-      const { password } = answer;
-      if (typeof password !== "string" || !password) throw new CoreError("The core answered reset-admin-password without a password");
+      const password = newPassword(answer);
+      if (password === undefined) throw new CoreError("The core answered reset-admin-password without a password");
       return password;
     },
     async runDueWork(sealedContext) {
-      const { ran, failed } = (await call("run-due-work", sealedContext, triggered)).answer;
-      if (!Number.isInteger(ran) || !Number.isInteger(failed)) throw new CoreError("The core answered run-due-work without what ran");
-      return { ran: ran as number, failed: failed as number };
+      const polled = sourcesPolled((await call("run-due-work", sealedContext, triggered)).answer);
+      if (!polled) throw new CoreError("The core answered run-due-work without what ran");
+      return polled;
     },
     async purgeMessages(sealedContext) {
       await call("purge-messages", sealedContext, triggered);
@@ -160,7 +142,7 @@ async function callCore(
   sealedContext: string,
   { body, accept = [], timeoutMs = CALL_TIMEOUT_MS }: CallOptions,
   timers: Timers,
-): Promise<{ status: number; answer: Record<string, unknown> }> {
+): Promise<{ status: number; answer: Answer }> {
   const timeout = new AbortController();
   const timer = timers.setTimeout(() => {
     timeout.abort(new Error(`no answer within ${timeoutMs / 1000} seconds`));
@@ -174,27 +156,17 @@ async function callCore(
       signal: timeout.signal,
     }).catch((error: unknown) => {
       const code = reasonOf((error as { cause?: unknown }).cause ?? error);
-      throw NOT_CONNECTED.has(code) ? new NotRun(noAnswer(error).message, code) : noAnswer(error);
+      throw neverConnected(code) ? new NotRun(noAnswer(error).message, code) : noAnswer(error);
     });
     if (!response.ok && !accept.includes(response.status)) {
       const message = `The core answered ${operation} with ${response.status}`;
-      throw NOT_RUN.has(response.status) ? new NotRun(message, String(response.status)) : new CoreError(message);
+      throw notServing(response.status) ? new NotRun(message, String(response.status)) : new CoreError(message);
     }
     const text = await response.text().catch((error: unknown) => {
       throw noAnswer(error);
     });
-    return { status: response.status, answer: parsed(text) };
+    return { status: response.status, answer: answerOf(text) };
   } finally {
     timers.clearTimeout(timer);
-  }
-}
-
-/** A JSON object answered, or {} for an empty body, one that is not JSON or not an object. */
-function parsed(text: string): Record<string, unknown> {
-  try {
-    const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
-  } catch {
-    return {};
   }
 }

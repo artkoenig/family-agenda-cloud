@@ -1,7 +1,8 @@
 import { rm, stat } from "node:fs/promises";
 import type { DirectoryEntry } from "./directory";
 import { dropFamilyDatabase, familyDatabaseNames } from "./family-databases";
-import { blobLocationOf, existingEntry, isFamilyId, ProvisioningError, withFamilyLock, type ScheduledProvisioning } from "./provisioning";
+import { blobLocationOf, isFamilyId } from "./family-id";
+import { existingEntry, ProvisioningError, withFamilyLock, type ScheduledProvisioning } from "./provisioning";
 
 export type DeleteFamilyInput = {
   familyId: string;
