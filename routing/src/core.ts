@@ -1,3 +1,4 @@
+import { CONTEXT_HEADER } from "./context";
 import { notRunReason, takingTurns } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 
@@ -25,9 +26,6 @@ const CALL_TIMEOUT_MS = 30_000;
  * second run beside one the core is still working on.
  */
 export const TRIGGERED_TIMEOUT_MS = 10 * 60_000;
-
-/** The header a core reads the sealed Context from. */
-export const CONTEXT_HEADER = "X-Family-Agenda-Context";
 
 /** The operations a core offers to be triggered from outside, each for the Family its Context names. */
 export type Core = {

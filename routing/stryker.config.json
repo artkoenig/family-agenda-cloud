@@ -16,7 +16,8 @@
     "src/family-context.ts",
     "src/family-id.ts",
     "src/family-readiness.ts",
-    "src/failover.ts"
+    "src/failover.ts",
+    "src/proxy-headers.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

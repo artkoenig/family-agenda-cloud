@@ -1,26 +1,18 @@
-import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import pg from "pg";
 import { directoryConnection, type Config } from "./config";
-import { CONTEXT_HEADER } from "./core";
+import { CONTEXT_HEADER } from "./context";
 import { directory as openDirectory, type Directory } from "./directory";
 import { coresFor, isBodiless, takingTurns } from "./failover";
 import { sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { familyIdInPath } from "./family-id";
 import { reasonOf, type Log } from "./log";
+import { headersFromCore, headersToCore } from "./proxy-headers";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
-
-/** The headers of one connection, which a proxy does not pass on (RFC 9110, section 7.6.1). */
-const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
-
-/**
- * Headers of the browser's a core never gets: a Context comes from the Router only, and the client
- * is described by the Router's own `X-Forwarded-*` headers, not by a `Forwarded` the browser sent.
- */
-const NOT_FROM_THE_BROWSER = [CONTEXT_HEADER.toLowerCase(), "forwarded", "host"];
 
 /** What the Router works with on every request. */
 type RouterSetup = { config: Config; directory: Directory; log: Log; cores: Cores };
@@ -148,7 +140,8 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
   const { config, log, cores } = setup;
   const bodiless = isBodiless(incoming.method);
   const familyField = coreRequest.familyId === undefined ? {} : { familyId: coreRequest.familyId };
-  const headers = { ...passedOn(incoming.headers), ...forwarded(config, incoming), ...coreRequest.routerHeaders };
+  const browser = { headers: incoming.headers, remoteAddress: incoming.socket.remoteAddress };
+  const headers = { ...headersToCore(browser, config.trustProxy), ...coreRequest.routerHeaders };
   const attempt = ([core, ...others]: URL[]): void => {
     if (!core) {
       log.error("No core answered", familyField);
@@ -160,7 +153,7 @@ function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerR
       { host: core.hostname, port: core.port, method: incoming.method, path: coreRequest.path, headers: { ...headers, host: core.host } },
       (fromCore) => {
         answered = true;
-        outgoing.writeHead(fromCore.statusCode ?? 502, withoutHopByHop(fromCore.rawHeaders));
+        outgoing.writeHead(fromCore.statusCode ?? 502, headersFromCore(fromCore.rawHeaders));
         pipeline(fromCore, outgoing, (error) => {
           if (error) log.error("A core's answer broke off", { ...familyField, core: core.host, reason: reasonOf(error) });
         });
@@ -190,42 +183,4 @@ function answerBadGateway(outgoing: ServerResponse): void {
     return;
   }
   outgoing.writeHead(502, { "content-type": "text/plain; charset=utf-8" }).end("Bad gateway\n");
-}
-
-/**
- * The client, as the core reads it from a trusted proxy: its address as the one entry of
- * `X-Forwarded-For`, and the scheme and host it asked for. Behind Caddy (TRUST_PROXY) that is
- * what Caddy forwarded, the address being the last entry, which Caddy appended; otherwise what
- * the Router itself sees, whatever the request claims.
- */
-function forwarded(config: Config, incoming: IncomingMessage): Record<string, string> {
-  const trusted = config.trustProxy ? incoming.headers : {};
-  return {
-    "x-forwarded-for": entries(trusted["x-forwarded-for"]).at(-1) ?? String(incoming.socket.remoteAddress),
-    "x-forwarded-proto": entries(trusted["x-forwarded-proto"])[0] ?? "http",
-    "x-forwarded-host": entries(trusted["x-forwarded-host"])[0] ?? String(incoming.headers.host),
-  };
-}
-
-/** The entries of a header that lists values separated by commas. */
-const entries = (header: string | string[] | undefined): string[] =>
-  header === undefined ? [] : String(header).split(",").map((entry) => entry.trim());
-
-/** The headers of a connection: the hop-by-hop ones and those its `Connection` header names. */
-const connectionHeaders = (connection: string | string[] | undefined): Set<string> =>
-  new Set([...HOP_BY_HOP, ...entries(connection).map((name) => name.toLowerCase())]);
-
-/** The browser's headers a core gets. */
-function passedOn(headers: IncomingHttpHeaders): IncomingHttpHeaders {
-  const dropped = new Set([...connectionHeaders(headers.connection), ...NOT_FROM_THE_BROWSER]);
-  return Object.fromEntries(Object.entries(headers).filter(([name]) => !dropped.has(name)));
-}
-
-/** The core's headers, as Node reads them (name, value, name, value...), without those of its connection. */
-function withoutHopByHop(rawHeaders: string[]): string[] {
-  const pairs: [string, string][] = [];
-  for (let index = 0; index + 1 < rawHeaders.length; index += 2) pairs.push([rawHeaders[index] ?? "", rawHeaders[index + 1] ?? ""]);
-  const connection = pairs.filter(([name]) => name.toLowerCase() === "connection").map(([, value]) => value);
-  const dropped = connectionHeaders(connection);
-  return pairs.filter(([name]) => !dropped.has(name.toLowerCase())).flat();
 }

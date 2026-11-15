@@ -19,6 +19,9 @@ export type ContextClaims = {
   identityProviderSignIn: "known-admins-only";
 };
 
+/** The header a core reads the sealed Context from. */
+export const CONTEXT_HEADER = "X-Family-Agenda-Context";
+
 /** How long a sealed Context opens. */
 export const CONTEXT_LIFETIME_SECONDS = 60;
 
