@@ -6,10 +6,10 @@ import { directoryConnection, type Config } from "./config";
 import { CONTEXT_HEADER } from "./context";
 import { directory as openDirectory, type Directory } from "./directory";
 import { coresFor, isBodiless, takingTurns } from "./failover";
-import { sealedContext, unwrappedFamily, type Family } from "./family-context";
-import { familyIdInPath } from "./family-id";
+import { sealedContext, unwrappedFamily } from "./family-context";
 import { reasonOf, type Log } from "./log";
 import { headersFromCore, headersToCore } from "./proxy-headers";
+import { routeRequest } from "./request-routing";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
@@ -61,74 +61,23 @@ export async function startRouter(config: Config, log: Log): Promise<Router> {
 }
 
 async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const target = incoming.url ?? "/";
-  if (isFamilyIndependent(incoming.method, target)) {
-    passOn(setup, incoming, outgoing, { path: target, routerHeaders: {} });
+  const { config, directory } = setup;
+  const routed = await routeRequest({ method: incoming.method, target: incoming.url ?? "/" }, config.coreVersion, (familyId) => directory.find(familyId));
+  if (routed.to === "refused") {
+    outgoing.writeHead(routed.status, routed.headers).end(routed.body);
     return;
   }
-  const { familyId = "", path = "/" } = familyIdInPath(target) ?? {};
-  const family = await routable(setup, familyId, path);
-  if (!family) {
-    // The same answer whether the Family is unknown, suspended or deleted, which tells nobody which
-    // Families exist, and for a path to the core's triggered operations (/operations/*), which no
-    // browser may reach.
-    outgoing.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("Not found\n");
+  if (routed.to === "core") {
+    passOn(setup, incoming, outgoing, { path: routed.path, routerHeaders: {} });
     return;
   }
-  if (family === NOT_PREPARED) {
-    outgoing
-      .writeHead(503, { "content-type": "text/plain; charset=utf-8", "retry-after": "30", "cache-control": "no-store" })
-      .end("This Family is being updated. Try again in a moment.\n");
-    return;
-  }
+  const { familyId, path, entry } = routed;
+  const family = unwrappedFamily(config, entry);
   // Not the path: an Agenda's id in it is what keeps the Agenda's address private.
   outgoing.on("close", () => {
     setup.log.info("Served a request", { familyId, method: incoming.method, status: outgoing.statusCode });
   });
-  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(setup.config, family) } });
-}
-
-/** A Family that is active but not prepared for the running core version. */
-const NOT_PREPARED = Symbol("not prepared");
-
-/**
- * The Family, its secrets unwrapped, if it is active and prepared for the running core version;
- * NOT_PREPARED if it is active but not prepared for it, as after the cores moved to a new release
- * and before a rollout prepared it: a core never opens a database it cannot read. Undefined, without
- * asking the Directory, when the path below the Family's prefix names the triggered operations.
- */
-async function routable({ config, directory }: RouterSetup, familyId: string, rest: string): Promise<Family | typeof NOT_PREPARED | undefined> {
-  if (namesOperations(rest)) return undefined;
-  const entry = familyId ? await directory.find(familyId) : undefined;
-  if (entry?.status !== "active") return undefined;
-  return entry.coreVersion === config.coreVersion ? unwrappedFamily(config, entry) : NOT_PREPARED;
-}
-
-/**
- * Whether the path below a Family's prefix names the core's triggered operations, as a core could
- * read it once it decodes the path and resolves its dot segments. Only the Routing module triggers
- * them, with a Context of its own: passed on from a browser, they would let anyone who knows a
- * Family's address reset its Admin's password.
- */
-function namesOperations(rest: string): boolean {
-  const [pathname = ""] = rest.split("?", 1);
-  let decoded = pathname;
-  try {
-    decoded = decodeURIComponent(pathname);
-  } catch {
-    // Not decodable as a whole: checked as it is, which still resolves its dot segments.
-  }
-  // One slash for many: "//operations" would otherwise be read as a host.
-  const resolved = new URL(`/${decoded}`.replaceAll(/[/\\]+/g, "/"), "https://core.invalid").pathname;
-  const [first = ""] = resolved.split("/").filter(Boolean);
-  return first.toLowerCase() === "operations";
-}
-
-/** Static files and the health check: the same for every Family, so served without one. */
-function isFamilyIndependent(method: string | undefined, target: string): boolean {
-  const [pathname = ""] = target.split("?", 1);
-  if (method !== "GET" && method !== "HEAD") return false;
-  return pathname.startsWith("/static/") || pathname === "/api/health";
+  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(config, family) } });
 }
 
 /**
