@@ -14,14 +14,11 @@ COPY tsconfig.json ./
 COPY src ./src
 
 # `routing <command>` from anywhere, such as `docker compose exec router routing families`.
-# The blob root is where the core image has it, owned by the same user (uid 1000), so that the
-# shared volume belongs to that user whichever container mounts it first.
 RUN printf '#!/bin/sh\ncd /app && exec node --import tsx src/main.ts "$@"\n' > /usr/local/bin/routing \
-  && chmod +x /usr/local/bin/routing \
-  && mkdir -p /var/lib/family-agenda/blobs \
-  && chown node:node /var/lib/family-agenda/blobs \
-  && chmod 700 /var/lib/family-agenda/blobs
+  && chmod +x /usr/local/bin/routing
 
+# The core image's user (uid 1000), to whom the mounted bucket of the Families' blobs belongs
+# (cube/compose.yaml), so that `routing delete` can remove a Family's blobs.
 USER node
 EXPOSE 8080
 CMD ["routing", "serve"]

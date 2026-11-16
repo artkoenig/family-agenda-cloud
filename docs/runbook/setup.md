@@ -8,6 +8,8 @@ Follows [Decide compute platform and topology](https://github.com/artkoenig/fami
 
 Secrets never go into this repo. Every secret below is stored in the password manager under `family-agenda.cloud`.
 
+Day-to-day work with the Families is in the [Families runbook](families.md).
+
 ## 1. SSH key
 
 On the laptop, one key only for the Cube:
@@ -57,7 +59,9 @@ Check: `dig +short family-agenda.cloud app.family-agenda.cloud auth.family-agend
    after 7 days". No rule that expires current versions. Block Public Access on.
 2. Bucket for Operator backups in **Berlin** (`eu-central-3`, endpoint `s3.eu-central-3.ionoscloud.com`):
    Block Public Access on. Retention (14 days) is done by WAL-G, not by a lifecycle rule.
-3. Generate one Object Storage access key for the service. Store key and secret in the password manager.
+3. Generate one Object Storage access key for the service. Store key and secret in the password manager. They go
+   into the `.env` on the Cube as `BLOB_BUCKET_ACCESS_KEY` and `BLOB_BUCKET_SECRET_KEY`, with the blob bucket's name
+   as `BLOB_BUCKET` ([step 7](#7-host-and-first-deploy)).
 
 Bucket names are global; record the chosen names in the ticket.
 
@@ -90,18 +94,54 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
 ## 7. Host and first deploy
 
 1. `scripts/bootstrap.sh`: Docker, `unattended-upgrades` with a reboot at 04:00, SSH with keys only,
-   `/opt/family-agenda`. Safe to run again.
-2. Create `/opt/family-agenda/.env` on the Cube (root only, mode 600) with the keys of `cube/.env.example` and the
-   values from the password manager.
+   `/opt/family-agenda`, and `/var/lib/family-agenda-blobs`, where the bucket of the Families' blobs is mounted.
+   Safe to run again; run it again on a Cube set up before the blob mount.
+2. Create `/opt/family-agenda/.env` on the Cube (root only, mode 600) with the keys of `cube/.env.example`. Generate
+   each secret once, on the laptop, and store it in the password manager before it goes into the `.env`; the two
+   places are the only ones a secret is kept in.
+
+   | Key | What it is | How to get it |
+   |---|---|---|
+   | `LANDING_BASIC_AUTH_USER`, `LANDING_BASIC_AUTH_HASH` | Basic Auth in front of the landing page | a name and a password of the Operator's choice; the hash from `docker run --rm caddy:2.11.9 caddy hash-password --plaintext '<password>'`, in single quotes |
+   | `OPERATOR_KEY` | wraps every family key and Family database password in the Directory | `openssl rand -base64 32`, exactly that |
+   | `CONTEXT_KEY` | encrypts and signs the Contexts the cores open | `openssl rand -base64 32` |
+   | `TRIGGER_TOKEN` | the bearer token of the cores' trigger port | `openssl rand -base64 32` |
+   | `DIRECTORY_DATABASE_PASSWORD` | the Routing module's role on Postgres | `openssl rand -hex 32` |
+   | `EGRESS_TICKET_KEY` | signs the Tickets the Egress Proxies check | `openssl rand -base64 32` |
+   | `BLOB_BUCKET` | the name of the blob bucket | [step 4](#4-object-storage-contract-owned-buckets) |
+   | `BLOB_BUCKET_ACCESS_KEY`, `BLOB_BUCKET_SECRET_KEY` | the Object Storage key the bucket is mounted with | [step 4](#4-object-storage-contract-owned-buckets) |
+
+   Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped
+   again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` is
+   set on Postgres at every deploy, so changing it in the `.env` and deploying changes it.
 3. `scripts/deploy.sh`: copies `cube/`, `routing/` and `site/` to the Cube, pulls the images, builds the Routing
    module's, brings the services up and reloads Caddy. This is also the way to redeploy, and to bring a
-   [new core version](#8-a-new-core-version) to the Families.
-4. Once: create the Family the smoke check opens, with an address of the Operator's, and store its id in the password
+   [new core version](#8-a-new-core-version) to the Families. What must be up before what, which
+   Compose sees to:
+   1. `postgres`, then `directory-database`, which makes the Routing module's role and the Directory's database and
+      ends. `router` and `scheduler` start after it has ended.
+   2. `blob-mount`, which mounts the blob bucket at `/var/lib/family-agenda-blobs/bucket` on the Cube
+      ([ADR-0002](../adr/0002-the-blob-bucket-is-mounted-with-rclone-as-a-compose-service.md)). It is healthy once
+      the bucket is mounted and its folder `families`, the blob root, is there. With a wrong bucket name or key it
+      starts over and over, and the deploy fails waiting for it: `docker compose logs blob-mount` says why.
+   3. The cores (`core`, two unless [scaled](#9-scaling-the-pool-of-cores)), `router` and `scheduler` start only
+      once `blob-mount` is healthy. A core is healthy only while it sees the blob root.
+
+   The plugins, their Egress Proxies and `caddy` wait for nothing, and the Routing module does not wait for the
+   cores: it finds them at each call. The deploy ends when every service is up and healthy.
+
+   The first deploy with the blob mount: a Family created before it has its old blob location in the Directory,
+   in the Docker volume `family-agenda_blobs`, which no service mounts any more. After the deploy such a Family can
+   neither store blobs nor be deleted (`The Family's blob location is not …; nothing was deleted`). So **before**
+   that deploy delete every Family, the smoke check's included ([Families runbook](families.md)), and create them
+   again after it; then `docker volume rm family-agenda_blobs`.
+4. [Check the blob mount](#checking-the-blob-mount), after the first deploy and after every change to `blob-mount`.
+5. Once: create the Family the smoke check opens, with an address of the Operator's, and store its id in the password
    manager:
    `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --admin-email <address>'`.
-5. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
+6. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
    Basic Auth. It fails when that Family's address does not answer or an unknown Family id does not get 404.
-6. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke
+7. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke
    check again, which must pass; then `docker start family-agenda-core-1`.
 
 The plugins and their Egress Proxies share a network with the cores and can reach the cores' ports 3002 (requests
@@ -109,6 +149,94 @@ with a Context) and 3001 (the Routing module's triggered operations); only the C
 they do not hold, protect them.
 
 The scripts reach the Cube as `root@family-agenda.cloud`; `CUBE_HOST` overrides it.
+
+### Checking the blob mount
+
+None of this has been run on the Cube yet; ADR-0002 lists what was tried on a laptop. Run it on the Cube, in
+`/opt/family-agenda`, before the first Family of somebody else is created (stage (b) of
+[#90](https://github.com/artkoenig/family-agenda-cloud/issues/90)), and write the result and the date of each check into
+[#102](https://github.com/artkoenig/family-agenda-cloud/issues/102). `core-1` and `core-2` stand for
+`family-agenda-core-1` and `-2`.
+
+1. The mount is there, on the Cube and in every core:
+
+   ```bash
+   mountpoint /var/lib/family-agenda-blobs/bucket
+   ```
+
+   ```bash
+   for core in $(docker compose ps -q core); do docker exec "$core" ls -ld /var/lib/family-agenda/blobs/bucket/families; done
+   ```
+
+   Expect `is a mountpoint`, and one line per core with the owner `node`.
+2. A blob written through one core is read through another, and is in the bucket:
+
+   ```bash
+   docker exec family-agenda-core-1 node -e "const fs=require('node:fs');fs.mkdirSync('/var/lib/family-agenda/blobs/bucket/families/mount-check',{recursive:true,mode:0o700});fs.writeFileSync('/var/lib/family-agenda/blobs/bucket/families/mount-check/blob','written by core-1',{mode:0o600,flag:'wx'})"
+   ```
+
+   ```bash
+   docker exec family-agenda-core-2 cat /var/lib/family-agenda/blobs/bucket/families/mount-check/blob
+   ```
+
+   ```bash
+   docker compose exec blob-mount rclone ls "blobs:$(grep '^BLOB_BUCKET=' .env | cut -d= -f2)/families/mount-check"
+   ```
+
+   Expect `written by core-1` and one object `blob`. These are the calls the core's blob store makes.
+3. A rename works (the core in supplied mode does none; the check is from the ticket):
+
+   ```bash
+   docker exec family-agenda-core-2 node -e "require('node:fs').renameSync('/var/lib/family-agenda/blobs/bucket/families/mount-check/blob','/var/lib/family-agenda/blobs/bucket/families/mount-check/renamed')" && docker exec family-agenda-core-1 cat /var/lib/family-agenda/blobs/bucket/families/mount-check/renamed
+   ```
+
+4. With the bucket unreachable, a write fails within seconds. Cut `blob-mount` off, write, and connect it again:
+
+   ```bash
+   docker network disconnect family-agenda_outbound family-agenda-blob-mount-1
+   ```
+
+   ```bash
+   time docker exec family-agenda-core-1 node -e "require('node:fs').writeFileSync('/var/lib/family-agenda/blobs/bucket/families/mount-check/unreachable','x',{flag:'wx'})"
+   ```
+
+   ```bash
+   docker network connect family-agenda_outbound family-agenda-blob-mount-1
+   ```
+
+   Expect an error (`EIO`) after 20 seconds at most, not a write that hangs or seems to work. Afterwards the write
+   of check 2 under a new name works again.
+5. Without the mount no core writes, and the mount comes back to running cores:
+
+   ```bash
+   docker compose stop blob-mount
+   ```
+
+   ```bash
+   docker exec family-agenda-core-1 node -e "require('node:fs').mkdirSync('/var/lib/family-agenda/blobs/bucket/families/unmounted',{recursive:true})"
+   ```
+
+   ```bash
+   docker compose up -d --wait blob-mount && docker exec family-agenda-core-1 cat /var/lib/family-agenda/blobs/bucket/families/mount-check/renamed
+   ```
+
+   Expect the write to fail (`EACCES` or `ENOTCONN`), `ls /var/lib/family-agenda-blobs/bucket` on the Cube to be
+   empty while the service is stopped, and the read after it is back to work without restarting the core. If the
+   read fails, restart the cores (`docker compose restart core`) and note it in the ticket.
+6. Deleting a Family removes its folder from the bucket: create a Family, put a file into its folder, delete it
+   ([Families runbook](families.md)), and list the bucket:
+
+   ```bash
+   docker exec family-agenda-core-1 node -e "const fs=require('node:fs');fs.mkdirSync('/var/lib/family-agenda/blobs/bucket/families/<id>',{recursive:true,mode:0o700});fs.writeFileSync('/var/lib/family-agenda/blobs/bucket/families/<id>/blob','x')"
+   ```
+
+   ```bash
+   docker compose exec blob-mount rclone lsf "blobs:$(grep '^BLOB_BUCKET=' .env | cut -d= -f2)/families/"
+   ```
+
+   Expect the Family's id in the list before `routing delete` and not after it.
+
+Clean up: `docker exec family-agenda-core-1 rm -r /var/lib/family-agenda/blobs/bucket/families/mount-check`.
 
 ## 8. A new core version
 

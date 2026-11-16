@@ -13,6 +13,10 @@ cube_ssh "test -f $CUBE_DIR/.env" || {
 	echo "Missing $CUBE_DIR/.env on the Cube. See cube/.env.example." >&2
 	exit 1
 }
+cube_ssh "test -d /var/lib/family-agenda-blobs" || {
+	echo "Missing /var/lib/family-agenda-blobs on the Cube. Run scripts/bootstrap.sh." >&2
+	exit 1
+}
 
 # --inplace keeps the inode of the Caddyfile, which is mounted as a single file.
 rsync -rlt --delete --inplace -e "$RSYNC_SSH" \
