@@ -46,7 +46,7 @@ export async function deleteFamily(provisioning: ScheduledProvisioning, input: D
     log.info("The Family's schedules are removed", { familyId });
   });
 
-  await dropFamilyDatabase(client, entry);
+  await dropFamilyDatabase(client, entry, config.familyDatabaseCloseTimeoutMs);
   log.info("The Family's database and role are dropped", { familyId });
 
   await removeBlobs(config.blobRoot, entry.blobLocation);

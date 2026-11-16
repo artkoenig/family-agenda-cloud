@@ -32,6 +32,7 @@ describe("readConfig", () => {
       coreVersion: "0.3.1",
       familyDatabaseHost: "db.internal",
       familyDatabasePort: 6543,
+      familyDatabaseCloseTimeoutMs: 30_000,
       blobRoot: "/srv/blobs",
       publicUrl: "https://app.family-agenda.cloud",
       defaultTimeZone: "Europe/Berlin",
@@ -47,6 +48,7 @@ describe("readConfig", () => {
       ...minimal,
       FAMILY_DATABASE_HOST: "families.internal",
       FAMILY_DATABASE_PORT: "7000",
+      FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS: "5",
       PUBLIC_URL: "https://agenda.example//",
       TIME_ZONE: "America/New_York",
       LISTEN_HOST: "127.0.0.1",
@@ -60,6 +62,7 @@ describe("readConfig", () => {
     expect(config).toMatchObject({
       familyDatabaseHost: "families.internal",
       familyDatabasePort: 7000,
+      familyDatabaseCloseTimeoutMs: 5000,
       publicUrl: "https://agenda.example",
       defaultTimeZone: "America/New_York",
       listenHost: "127.0.0.1",
@@ -133,6 +136,16 @@ describe("readConfig", () => {
 
   it.each(["65536", "-1", "80a", "123456", "", " 80"])("refuses PORT %j", (port) => {
     expect(() => readConfig({ ...minimal, PORT: port })).toThrow(new ConfigError("PORT must be a port number, 0 to 65535"));
+  });
+
+  it.each(["0", "10000", "-1", "1.5", "5s", "", " 5"])("refuses FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS %j", (seconds) => {
+    expect(() => readConfig({ ...minimal, FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS: seconds })).toThrow(
+      new ConfigError("FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS must be a whole number of seconds, 1 to 9999"),
+    );
+  });
+
+  it.each([["1", 1000], ["9999", 9_999_000]])("takes FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS %s", (seconds, ms) => {
+    expect(readConfig({ ...minimal, FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS: seconds }).familyDatabaseCloseTimeoutMs).toBe(ms);
   });
 
   it("accepts the highest port", () => {

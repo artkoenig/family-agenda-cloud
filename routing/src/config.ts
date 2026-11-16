@@ -26,6 +26,8 @@ export type Config = {
   /** Where the cores reach the Families' databases; the Directory's server unless set. */
   familyDatabaseHost: string;
   familyDatabasePort: number;
+  /** How long deleting a Family waits for the cores to close their connections to its database. */
+  familyDatabaseCloseTimeoutMs: number;
   /** The directory, as the cores see it, that holds one blob location per Family. */
   blobRoot: string;
   /** The origin all Families are served from. */
@@ -61,6 +63,7 @@ export function readConfig(env: Env): Config {
     coreVersion: coreVersion(env),
     familyDatabaseHost: env.FAMILY_DATABASE_HOST ?? directoryDatabaseUrl.hostname,
     familyDatabasePort: Number(env.FAMILY_DATABASE_PORT ?? (directoryDatabaseUrl.port || "5432")),
+    familyDatabaseCloseTimeoutMs: closeTimeoutMs(env),
     blobRoot: withoutTrailingSlash(required(env, "BLOB_ROOT")),
     publicUrl: withoutTrailingSlash(env.PUBLIC_URL ?? "https://app.family-agenda.cloud"),
     defaultTimeZone: env.TIME_ZONE ?? "Europe/Berlin",
@@ -87,6 +90,15 @@ function coreVersion(env: Env): string {
   const version = required(env, "CORE_VERSION");
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new ConfigError("CORE_VERSION must be an exact release such as 0.3.1, the core image's tag");
   return version;
+}
+
+/** FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS, whole seconds; 30 unless set, three times a core's idle timeout. */
+function closeTimeoutMs(env: Env): number {
+  const seconds = env.FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS ?? "30";
+  if (!/^\d{1,4}$/.test(seconds) || Number(seconds) === 0) {
+    throw new ConfigError("FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS must be a whole number of seconds, 1 to 9999");
+  }
+  return Number(seconds) * 1000;
 }
 
 /** Where and how the Router listens. */
