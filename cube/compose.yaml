@@ -14,9 +14,12 @@
 # ports too: only the Context key and the trigger token, which they do not hold, guard them.
 name: family-agenda
 
-# The core image of the pool: CORE_VERSION is an exact release, the one the Routing module
-# prepares the Families for, so that the cores and the Routing module change release together.
-x-core-image: &core-image ghcr.io/artkoenig/family-agenda:${CORE_VERSION:?set CORE_VERSION in .env}
+# The core image of the pool, pinned here as every other image is. A new core version is this line
+# changed and deployed: its cores prepare each Family when they first open it, and the Routing
+# module tries another core while one of the release before still refuses a Family (docs/runbook).
+# Until the core release that prepares a Family on opening it (artkoenig/family-agenda#405) is
+# out, this is the build of the commit on main that does; then it is that release's tag and digest.
+x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
 
 # A core of the pool, run from the released image unmodified. It serves whichever Family the
@@ -36,7 +39,7 @@ x-core: &core
     CONTEXT_MODE: supplied
     CONTEXT_KEY: ${CONTEXT_KEY:?}
     CALLER_PORT: "3002"
-    # The triggered operations (prepare, due work, Admin passwords) of the Routing module.
+    # The triggered operations (due work, Admin passwords) of the Routing module.
     TRIGGER_TOKEN: ${TRIGGER_TOKEN:?}
     TRIGGER_PORT: "3001"
     EGRESS_TICKET_KEY: ${EGRESS_TICKET_KEY:?}
@@ -75,7 +78,6 @@ x-routing: &routing
     TRIGGER_TOKEN: ${TRIGGER_TOKEN:?}
     CORE_URLS: http://core-1:3002,http://core-2:3002
     CORE_TRIGGER_URLS: http://core-1:3001,http://core-2:3001
-    CORE_VERSION: ${CORE_VERSION:?}
     BLOB_ROOT: /var/lib/family-agenda/blobs
     PUBLIC_URL: https://app.family-agenda.cloud
     TRUST_PROXY: "true"

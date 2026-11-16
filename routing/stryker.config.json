@@ -16,7 +16,6 @@
     "src/family-context.ts",
     "src/family-id.ts",
     "src/family-readiness.ts",
-    "src/core-version.ts",
     "src/due-work.ts",
     "src/failover.ts",
     "src/core-answers.ts",

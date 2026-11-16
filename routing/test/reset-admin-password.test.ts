@@ -35,6 +35,62 @@ describe("Resetting an Admin's password", () => {
     expect(routing.core.requests.slice(since)).toEqual([]);
   });
 
+  it("is tried on the next core when a core refuses to open the Family, and draws one password only", async () => {
+    const familyId = await createFamily();
+    const older = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    try {
+      older.refuseFamily(familyId, "migrated-by-newer-release");
+      const since = routing.core.requests.length;
+
+      const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], poolOf(older, routing.core));
+
+      expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+      expect(older.requests.map(({ path }) => path)).toEqual(["/operations/reset-admin-password"]);
+      expect(routing.core.requests.slice(since).map(({ path }) => path)).toEqual(["/operations/reset-admin-password"]);
+      expect(older.password(familyId, ADMIN)).toBeUndefined();
+      expect(result.stdout).toContain(`New password for ${ADMIN}: ${routing.core.password(familyId, ADMIN)}\n`);
+    } finally {
+      await older.close();
+    }
+  });
+
+  it("fails with what each core answered when every core refuses to open the Family, and prints no password", async () => {
+    const familyId = await createFamily();
+    const older = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    try {
+      older.refuseFamily(familyId, "migrated-by-newer-release");
+      routing.core.refuseFamily(familyId, "migrating");
+
+      const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], poolOf(older, routing.core));
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+      const [olderHost, preparingHost] = [older, routing.core].map(({ triggerUrl }) => new URL(triggerUrl).host);
+      expect(result.stderr).toContain(`No core ran reset-admin-password: ${olderHost} 409 migrated-by-newer-release, ${preparingHost} 503 migrating`);
+      expect(older.requests).toHaveLength(1);
+      expect(routing.core.password(familyId, ADMIN)).toBeUndefined();
+    } finally {
+      await older.close();
+    }
+  });
+
+  it("is not tried on another core after a 503 that does not say the core refused the Family, so that no second password is drawn", async () => {
+    const familyId = await createFamily();
+    const other = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    try {
+      routing.core.failNext("reset-admin-password", 503);
+
+      const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], poolOf(routing.core, other));
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("The core answered reset-admin-password with 503");
+      expect(other.requests).toEqual([]);
+    } finally {
+      await other.close();
+    }
+  });
+
   it("has the core reset the named Admin's password with that Family's Context, and prints the new password once", async () => {
     const familyId = await createFamily();
     const contextOfCreate = routing.core.requests[0]!.context!;

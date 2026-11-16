@@ -50,9 +50,9 @@ jobs:
       - run: pnpm crap
 
   real-core:
-    # The walk-through against the released core in supplied mode (test/real-core), which the
-    # stand-in core of the other tests mirrors. The core reaches the Families' databases on the
-    # postgres service by its name; the tests reach both on localhost.
+    # The walk-through against the core in supplied mode (test/real-core), which the stand-in core
+    # of the other tests mirrors: the image cube/compose.yaml pins. The core reaches the Families'
+    # databases on the postgres service by its name; the tests reach both on localhost.
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -67,7 +67,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       core:
-        image: ghcr.io/artkoenig/family-agenda:0.7.0@sha256:9fdeab8b66cc65da04cfa0413d7c0521d6b80b5454313074a2ff42ebb151e16e
+        image: ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
         env:
           CONTEXT_MODE: supplied
           CONTEXT_KEY: ci-walk-through-context-key-of-32-characters
@@ -88,7 +88,6 @@ jobs:
       REAL_CORE_TRIGGER_URL: http://localhost:3001
       REAL_CORE_CONTEXT_KEY: ci-walk-through-context-key-of-32-characters
       REAL_CORE_TRIGGER_TOKEN: ci-walk-through-trigger-token-of-32-characters
-      REAL_CORE_VERSION: 0.7.0
       REAL_CORE_DATABASE_HOST: postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,6 +131,6 @@ jobs:
       - run: docker build routing
       - name: Resolve the compose project
         run: |
-          sed -E -e 's/^([A-Z_]+)=.*/\1=placeholder/' -e 's/^CORE_VERSION=.*/CORE_VERSION=0.0.0/' cube/.env.example > "$RUNNER_TEMP/cube.env"
+          sed -E -e 's/^([A-Z_]+)=.*/\1=placeholder/' cube/.env.example > "$RUNNER_TEMP/cube.env"
           docker compose -f cube/compose.yaml --env-file "$RUNNER_TEMP/cube.env" config -q
       - run: shellcheck -x -P SCRIPTDIR scripts/bootstrap.sh scripts/deploy.sh scripts/smoke.sh

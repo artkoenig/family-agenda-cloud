@@ -4,7 +4,7 @@ import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
 import { parseCreate, parseDelete, parseFamilyId, parseReset, UsageError } from "./cli-arguments";
-import { familyLine, rollOutReport } from "./cli-reports";
+import { familyLine } from "./cli-reports";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { coreClient } from "./core";
@@ -13,7 +13,6 @@ import { createLog, type Log } from "./log";
 import { isFamilyId } from "./family-id";
 import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
 import { startRouter } from "./router";
-import { rollOut } from "./roll-out";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
 import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
 import { resumeFamily, suspendFamily } from "./family-status";
@@ -46,23 +45,21 @@ const USAGE = `Usage:
     Suspends the Family: its address answers 404 and its schedules are removed; its data stays.
   routing resume --family-id <id>
     Resumes a suspended Family: it is routed to and scheduled again.
-  routing roll-out
-    Prepares every active and suspended Family not yet prepared for CORE_VERSION, the core version
-    the pool runs, oldest first, and names every Family it failed for. Until a Family is prepared
-    its address answers 503 and nothing is triggered for it. Run it again to retry the failed ones.
   routing schedule
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
     once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
     again after a delay that doubles with each failure in a row, up to a quarter of an hour.
   routing families
     Lists every Family with its status and when its due work last ran and how it ended; for
-    due work that keeps failing, how often in a row and when it is tried next; and why preparing
-    it for a core version failed, until a rollout prepares it.
+    due work that keeps failing, how often in a row and when it is tried next.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
     Runs the Router on LISTEN_HOST:PORT until SIGTERM or SIGINT, passing each Family's requests
-    on to the cores in CORE_URLS.`;
+    on to the cores in CORE_URLS.
+
+A core prepares a Family's database when it first opens it, so a new core version needs no
+command: a request or operation that a core of an older release refuses is tried on another core.`;
 
 type Command = (args: string[], config: Config, io: Io, log: Log) => Promise<number>;
 
@@ -77,7 +74,6 @@ const COMMANDS: Record<string, Command> = {
   serve: (_args, config, io, log) => serve(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
-  "roll-out": (_args, config, io, log) => rollOutCommand(config, io, log),
 };
 
 /** The Operator's command line. Answers the exit code. */
@@ -229,12 +225,6 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
     runScheduler({ config, client, directory: directory(client), core: coreClient(config, log, clock), log, clock, signal: stop.signal }),
   );
   return 0;
-}
-
-async function rollOutCommand(config: Config, io: Io, log: Log): Promise<number> {
-  const { text, exitCode } = rollOutReport(await withDirectory(config, (client) => rollOut(provisioning(config, client, log))));
-  io.stdout.write(text);
-  return exitCode;
 }
 
 /** One line per Family: its Family id, its status, and when its due work last ran and how it ended. */

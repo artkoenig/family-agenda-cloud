@@ -27,7 +27,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "real-core",
-          // Against the released core in supplied mode; skipped unless REAL_CORE_URL names one (test/real-core).
+          // Against the core in supplied mode; skipped unless REAL_CORE_URL names one (test/real-core).
           include: ["test/real-core/**/*.test.ts"],
           globalSetup: ["test/support/postgres-server.ts"],
           testTimeout: 60_000,

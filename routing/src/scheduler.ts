@@ -161,9 +161,8 @@ export async function runScheduler(dependencies: SchedulerDependencies): Promise
   await boss.start();
   try {
     const schedules = await familySchedules(boss);
-    const unprepared = new Set<string>();
     for (const [name, occasion] of Object.entries(OCCASIONS)) {
-      const give = giving(occasion, { ...dependencies, clock, schedules, unprepared });
+      const give = giving(occasion, { ...dependencies, clock, schedules });
       // One worker per Family at a time, several at once, so that a slow Family holds up no other.
       await boss.work<ScheduledFamily>(name, { pollingIntervalSeconds: 5, localConcurrency: CONCURRENCY }, async ([job]) => {
         if (job) await give(name, job.data.familyId);
@@ -185,30 +184,19 @@ async function stopped(signal: AbortSignal | undefined): Promise<void> {
 /**
  * Gives the Family's core the occasion, if the Family is active. A deleted Family loses its
  * schedules; how due work ended is recorded, and the job ends with the call either way. A Family
- * whose due work failed is left out until its retry is due, so that it does not burn the pool. A
- * Family not prepared for the running core version (CORE_VERSION) keeps its schedules and gets
- * nothing; that is logged once per Family and version it is prepared for, which `unprepared`
- * remembers.
+ * whose due work failed is left out until its retry is due, so that it does not burn the pool; so
+ * is one that no core of the pool opens, which fails the run as any other failure does.
  */
 function giving(
   occasion: Occasion,
-  dependencies: SchedulerDependencies & { clock: Clock; schedules: FamilySchedules; unprepared: Set<string> },
+  dependencies: SchedulerDependencies & { clock: Clock; schedules: FamilySchedules },
 ) {
-  const { config, directory, core, log, clock, schedules, unprepared } = dependencies;
+  const { config, directory, core, log, clock, schedules } = dependencies;
   return async (name: string, familyId: string): Promise<void> => {
-    const { readiness, entry } = readinessOf(await directory.find(familyId), config.coreVersion);
-    if (readiness === "gone" || readiness === "withheld") {
+    const { readiness, entry } = readinessOf(await directory.find(familyId));
+    if (readiness !== "served") {
       log.info("The Family is not active; nothing is triggered", { familyId, occasion: name, status: entry?.status ?? "unknown" });
       if (readiness === "gone") await schedules.remove(familyId);
-      return;
-    }
-    // A core never opens a database it cannot read: the Family waits for a rollout to prepare it.
-    if (readiness === "awaiting-rollout") {
-      const noted = `${familyId} ${entry.coreVersion}`;
-      if (!unprepared.has(noted)) {
-        unprepared.add(noted);
-        log.info("The Family is not prepared for the running core version; nothing is triggered", { familyId, coreVersion: entry.coreVersion });
-      }
       return;
     }
     const last = occasion.recorded ? await directory.lastDueWork(familyId) : null;

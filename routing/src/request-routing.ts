@@ -18,7 +18,7 @@ export type Refusal = { to: "refused"; status: number; headers: Record<string, s
 export type Route<E> =
   /** The health check: the one path a core answers without a Context. */
   | { to: "core"; path: string }
-  /** A request for an active Family prepared for the running core version, with the path after its Family id. */
+  /** A request for an active Family, with the path after its Family id. */
   | { to: "family"; familyId: string; path: string; entry: E }
   | Refusal;
 
@@ -35,26 +35,25 @@ const NOT_FOUND: Refusal = { to: "refused", status: 404, headers: TEXT, body: "N
 export const BAD_GATEWAY: Refusal = { to: "refused", status: 502, headers: TEXT, body: "Bad gateway\n" };
 
 /**
- * For an active Family not prepared for the running core version, as after the cores moved to a
- * new release and before a rollout prepared it: a core never opens a database it cannot read.
+ * For a request every core that answered refused, because none opens the Family now: each runs an
+ * older release than the one that migrated the Family's database, is still preparing it, or cannot
+ * reach it. It did not run, so the browser may ask again.
  */
-const BEING_UPDATED: Refusal = {
+export const UNAVAILABLE: Refusal = {
   to: "refused",
   status: 503,
   headers: { ...TEXT, "retry-after": "30", "cache-control": "no-store" },
-  body: "This Family is being updated. Try again in a moment.\n",
+  body: "Not available right now. Try again in a moment.\n",
 };
 
-export async function routeRequest<E extends Pick<DirectoryEntry, "status" | "coreVersion">>(
+export async function routeRequest<E extends Pick<DirectoryEntry, "status">>(
   { method, target }: BrowserTarget,
-  coreVersion: string,
   find: (familyId: string) => Promise<E | undefined>,
 ): Promise<Route<E>> {
   if (isFamilyIndependent(method, target)) return { to: "core", path: target };
   const inPath = familyIdInPath(target);
   if (!inPath || namesOperations(inPath.path)) return NOT_FOUND;
-  const { readiness, entry } = readinessOf(await find(inPath.familyId), coreVersion);
-  if (readiness === "awaiting-rollout") return BEING_UPDATED;
+  const { readiness, entry } = readinessOf(await find(inPath.familyId));
   if (readiness !== "served") return NOT_FOUND;
   return { to: "family", ...inPath, entry };
 }

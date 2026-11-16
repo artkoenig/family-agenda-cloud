@@ -1,6 +1,7 @@
 /**
  * Failover across the pool of cores: the order the cores are tried in, and when a call or a
- * request may go on to the next core. Any core may serve any Family. No I/O.
+ * request may go on to the next core. Any core may serve any Family. What a core's refusal to open
+ * a Family says is read in core-answers.ts. No I/O.
  */
 
 /**
@@ -41,7 +42,7 @@ export const notServing = (status: number): boolean => NOT_RUN.has(status);
 export const isBodiless = (method: string | undefined): boolean => method === "GET" || method === "HEAD";
 
 /**
- * The cores a browser's request is tried on, in order, given the pool's cores in turn: each of
- * them for a request without a body, the first only for one with a body, which cannot be sent twice.
+ * Whether an answer with this `status` may be a core's refusal to open the Family, which its
+ * body then tells (see `openingRefusal`): any other status is the Family's own answer.
  */
-export const coresFor = <T>(method: string | undefined, inTurn: T[]): T[] => (isBodiless(method) ? inTurn : inTurn.slice(0, 1));
+export const mayRefuseOpening = (status: number): boolean => status === 409 || status === 503;

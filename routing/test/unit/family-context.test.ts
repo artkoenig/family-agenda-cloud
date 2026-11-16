@@ -17,7 +17,6 @@ const config: Config = readConfig({
   CORE_URLS: "http://core-1:3000",
   CORE_TRIGGER_URLS: "http://core-1:3001",
   BLOB_ROOT: "/srv/blobs",
-  CORE_VERSION: "0.3.1",
   FAMILY_DATABASE_HOST: "families.internal",
   FAMILY_DATABASE_PORT: "6432",
   PUBLIC_URL: "https://agenda.example",
@@ -38,7 +37,6 @@ const entry: DirectoryEntry = {
   timeZone: "Europe/Vienna",
   wrappedFamilyKey: wrapper.wrap("family-key", "the family key"),
   wrappedDatabasePassword: wrapper.wrap("database-password", "the database password"),
-  coreVersion: null,
   createdAt: new Date("2026-05-01T10:00:00.000Z"),
   deletedAt: null,
 };

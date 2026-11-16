@@ -1,4 +1,5 @@
-import { get, request, type IncomingMessage } from "node:http";
+import { createServer, get, request, type IncomingMessage } from "node:http";
+import type { AddressInfo } from "node:net";
 import { Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/cli";
@@ -64,9 +65,9 @@ describe("a Family's request", () => {
     expect(toFirst!.database.name).not.toBe(toSecond!.database.name);
     expect(toFirst!.database.password).not.toBe(toSecond!.database.password);
     expect(toFirst!.familyKey).not.toBe(toSecond!.familyKey);
-    // The Context the Router builds is the one Provisioning prepared the Family with.
-    const prepared = routing.core.requests.find(({ path, context }) => path === "/operations/prepare-family" && context?.familyId === first);
-    expect({ ...toFirst, expiresAt: 0 }).toEqual({ ...prepared?.context, expiresAt: 0 });
+    // The Context the Router builds is the one Provisioning had the Family's first Admin entered with.
+    const entered = routing.core.requests.find(({ path, context }) => path === "/operations/enter-admin" && context?.familyId === first);
+    expect({ ...toFirst, expiresAt: 0 }).toEqual({ ...entered?.context, expiresAt: 0 });
   });
 
   it("at the Family's address itself arrives at the core's root", async () => {
@@ -332,6 +333,235 @@ describe("a pool of several cores", () => {
   });
 });
 
+describe("a core that refuses to open the Family", () => {
+  let older: StandInCore;
+  let throughPool: Router;
+  let familyId: string;
+  beforeEach(async () => {
+    familyId = await createFamily();
+    // A core of an older release than the one that migrated the Family's database, asked first.
+    older = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    older.refuseFamily(familyId, "migrated-by-newer-release");
+    throughPool = await routing.startRouter(poolOf(older, routing.core));
+  });
+  afterEach(async () => {
+    await older.close();
+  });
+
+  const hostOf = (core: StandInCore) => new URL(core.url).host;
+
+  it("has a page served by the next core of the pool, and the browser sees only that core's answer", async () => {
+    const since = routing.core.requests.length;
+
+    const response = await fetch(`${throughPool.url}/${familyId}/agendas/7?day=2026-11-16`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ familyId, path: "/agendas/7" });
+    expect(older.requests.map(({ path }) => path)).toEqual(["/agendas/7"]);
+    expect(arrived(since).map(({ path, search }) => `${path}${search}`)).toEqual(["/agendas/7?day=2026-11-16"]);
+    expect(routing.log()).toContain(
+      `"message":"A core refused to open the Family; the next one of the pool is tried","familyId":"${familyId}","core":"${hostOf(older)}","reason":"409 migrated-by-newer-release"`,
+    );
+  });
+
+  it.each(["migrating", "unavailable"] as const)("because it is %s has a page served by the next core too", async (problem) => {
+    older.refuseFamily(familyId, problem);
+
+    const response = await fetch(`${throughPool.url}/${familyId}/agendas/7`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ familyId, path: "/agendas/7" });
+    expect(older.requests).toHaveLength(1);
+  });
+
+  it("has a request with a body served by the next core, with the same method, headers and body", async () => {
+    const since = routing.core.requests.length;
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin/agendas`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: "session=abc" },
+      body: JSON.stringify({ name: "Kitchen" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ familyId, path: "/admin/agendas" });
+    const sent = { method: "POST", path: "/admin/agendas", body: { name: "Kitchen" }, headers: { cookie: "session=abc", "content-length": "18" } };
+    expect(older.requests).toMatchObject([sent]);
+    expect(arrived(since)).toMatchObject([sent]);
+  });
+
+  it("is asked once per request: every core of the pool is tried at most once", async () => {
+    const third = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    try {
+      third.refuseFamily(familyId, "migrated-by-newer-release");
+      routing.core.refuseFamily(familyId, "migrating");
+      const pool = [older, third, routing.core];
+      const through = await routing.startRouter(poolOf(...pool));
+      const sinces = pool.map((core) => core.requests.length);
+
+      const response = await fetch(`${through.url}/${familyId}/admin`, { method: "POST", body: "name=Kitchen" });
+
+      expect(response.status).toBe(503);
+      expect(pool.map((core, index) => core.requests.length - sinces[index]!)).toEqual([1, 1, 1]);
+    } finally {
+      await third.close();
+    }
+  });
+
+  it("on every core of the pool gets the browser a 503 to try again, which says nothing of the cores, and the log what each core answered", async () => {
+    routing.core.refuseFamily(familyId, "migrating");
+
+    const response = await fetch(`${throughPool.url}/${familyId}/agendas/7`);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("30");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.text()).toBe("Not available right now. Try again in a moment.\n");
+    expect(routing.log()).toContain(
+      `"message":"Every core that answered refused to open the Family","familyId":"${familyId}","refused":"${hostOf(older)} 409 migrated-by-newer-release, ${hostOf(routing.core)} 503 migrating"`,
+    );
+    // Preparing is done: the browser's next try is served.
+    routing.core.refuseFamily(familyId, undefined);
+    expect((await fetch(`${throughPool.url}/${familyId}/agendas/7`)).status).toBe(200);
+  });
+
+  it("does not stand in the way of a 409 or 503 that is the Family's own answer, which reaches the browser unchanged", async () => {
+    older.refuseFamily(familyId, undefined);
+    const since = routing.core.requests.length;
+    const conflict = Buffer.from("old-data-model: the database the Context names holds the data model from before its rebuild.");
+    older.answerNext({ status: 409, headers: [["content-type", "text/plain; charset=utf-8"], ["x-core-says", "conflict"]], body: conflict });
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin/agendas`, { method: "POST", body: "name=Kitchen" });
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("x-core-says")).toBe("conflict");
+    expect(await response.text()).toBe(conflict.toString());
+    expect(arrived(since)).toEqual([]);
+  });
+
+  it("does not send a request with a body to another core after a 503 that does not say the core refused the Family", async () => {
+    older.refuseFamily(familyId, undefined);
+    const since = routing.core.requests.length;
+    older.answerNext({ status: 503, headers: [["content-type", "text/plain; charset=utf-8"]], body: Buffer.from("The mail server is busy.") });
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin/agendas`, { method: "POST", body: "name=Kitchen" });
+
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe("The mail server is busy.");
+    expect(arrived(since)).toEqual([]);
+  });
+
+  it("has a page served by the next core after any 503, as a page may always be asked again", async () => {
+    older.refuseFamily(familyId, undefined);
+    older.answerNext({ status: 503, headers: [], body: Buffer.from("Service unavailable") });
+
+    const response = await fetch(`${throughPool.url}/${familyId}/agendas/7`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ familyId, path: "/agendas/7" });
+  });
+
+  it("has a HEAD request, whose refusal has no body to say why, served by the next core", async () => {
+    const since = routing.core.requests.length;
+
+    const response = await fetch(`${throughPool.url}/${familyId}/agendas/7`, { method: "HEAD" });
+
+    expect(response.status).toBe(200);
+    expect(older.requests.map(({ method }) => method)).toEqual(["HEAD"]);
+    expect(arrived(since).map(({ method, path }) => `${method} ${path}`)).toEqual(["HEAD /agendas/7"]);
+  });
+
+  it("passes on a 409 longer than any refusal unchanged, even one that begins like a refusal", async () => {
+    older.refuseFamily(familyId, undefined);
+    const long = Buffer.from(`migrated-by-newer-release: ${"x".repeat(5000)}`);
+    older.answerNext({ status: 409, headers: [["content-type", "text/plain; charset=utf-8"]], body: long });
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin`);
+
+    expect(response.status).toBe(409);
+    expect(await response.text()).toBe(long.toString());
+  });
+
+  it("gets a body longer than the Router holds, which cannot be sent twice, a 503 from the one core it was sent to", async () => {
+    const since = routing.core.requests.length;
+    const upload = Buffer.alloc(3 * 1024 * 1024, "u");
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin/upload`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: upload });
+
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe("Not available right now. Try again in a moment.\n");
+    expect(older.requests.map(({ path, headers }) => [path, headers["content-length"]])).toEqual([["/admin/upload", String(upload.length)]]);
+    expect(arrived(since)).toEqual([]);
+  });
+});
+
+describe("a core whose 409 breaks off before its body arrived", () => {
+  it("gets the browser a 502, and the Router serves on", async () => {
+    const familyId = await createFamily();
+    const dying = createServer((_incoming, outgoing) => {
+      outgoing.writeHead(409, { "content-type": "text/plain", "content-length": "100" });
+      outgoing.flushHeaders();
+      outgoing.socket?.destroy();
+    });
+    await new Promise<void>((resolve) => dying.listen(0, "127.0.0.1", resolve));
+    try {
+      const throughPool = await routing.startRouter({ CORE_URLS: `http://127.0.0.1:${(dying.address() as AddressInfo).port},${routing.core.url}` });
+      const since = routing.core.requests.length;
+
+      // A request with a body: the core may have run it, so no other core is asked.
+      const response = await fetch(`${throughPool.url}/${familyId}/admin`, { method: "POST", body: "name=Kitchen" });
+
+      expect(response.status).toBe(502);
+      expect(arrived(since)).toEqual([]);
+      expect(routing.log()).toContain(`"message":"A core's answer broke off","familyId":"${familyId}"`);
+      expect((await fetch(`${throughPool.url}/${familyId}/admin`)).status).toBe(200);
+    } finally {
+      dying.closeAllConnections();
+      await new Promise((resolve) => dying.close(resolve));
+    }
+  });
+});
+
+describe("a request with a body", () => {
+  it.each([
+    ["shorter than the Router holds", 64 * 1024],
+    ["longer than the Router holds", 3 * 1024 * 1024],
+  ])("%s arrives at a core whole", async (_case, length) => {
+    const familyId = await createFamily();
+    const echo = await startEcho();
+    try {
+      const throughEcho = await routing.startRouter({ CORE_URLS: echo.url });
+      const upload = Buffer.from(Array.from({ length }, (_, index) => index % 251));
+
+      const response = await fetch(`${throughEcho.url}/${familyId}/admin/upload`, { method: "POST", body: upload });
+
+      expect(response.status).toBe(200);
+      expect(Buffer.from(await response.arrayBuffer()).equals(upload)).toBe(true);
+    } finally {
+      await echo.close();
+    }
+  });
+});
+
+/** A core that answers every request with the body it was sent. */
+async function startEcho(): Promise<{ url: string; close(): Promise<void> }> {
+  const server = createServer((incoming, outgoing) => {
+    outgoing.writeHead(200, { "content-type": "application/octet-stream" });
+    incoming.pipe(outgoing);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => {
+          resolve();
+        });
+      }),
+  };
+}
+
 describe("the client's address and scheme", () => {
   /** A request as Caddy passes it on: it appends the address it saw to what the browser sent. */
   const throughCaddy = (url: string) =>
@@ -446,7 +676,7 @@ describe("a path that names no active Family", () => {
     const since = routing.core.requests.length;
     const unknown = await answerTo(`/${crypto.randomUUID()}`);
 
-    const spellings = ["/operations", "/operations/reset-admin-password", "//operations/due-work", "/OPERATIONS/prepare-family"];
+    const spellings = ["/operations", "/operations/reset-admin-password", "//operations/due-work", "/OPERATIONS/enter-admin"];
     const disguised = ["/x/../operations/enter-admin", "/./operations/purge", "/%6Fperations/sweep-secrets", "/%2e/operations/x", "/%zz/../operations/x"];
     for (const path of [...spellings, ...disguised]) {
       expect(await answerTo(`/${familyId}${path}`), path).toEqual(unknown);

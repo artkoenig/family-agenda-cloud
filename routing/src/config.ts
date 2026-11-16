@@ -16,17 +16,10 @@ export type Config = {
   contextKey: string;
   /** The cores of the pool, each where it serves the pages: its `CALLER_PORT`. */
   coreUrls: string[];
-  /** The same cores, in the same order, where each serves the triggered operations: its `TRIGGER_PORT`. */
+  /** The cores of the pool, each where it serves the triggered operations: its `TRIGGER_PORT`. */
   coreTriggerUrls: string[];
   /** The token the cores' triggered operations require, as `Authorization: Bearer`; shared with the cores. */
   triggerToken: string;
-  /**
-   * The core version the pool runs, the exact release its image was built from, such as `0.3.1`:
-   * only a Family prepared for it is routed to and scheduled, and a rollout prepares every Family
-   * for it. The intended setup: the Cube's compose project names the core image's tag from
-   * CORE_VERSION in its `.env`, so that the pool and the Routing module change release together.
-   */
-  coreVersion: string;
   /** Where the cores reach the Families' databases; the Directory's server unless set. */
   familyDatabaseHost: string;
   familyDatabasePort: number;
@@ -63,9 +56,9 @@ export function readConfig(env: Env): Config {
     directoryDatabasePassword: required(env, "DIRECTORY_DATABASE_PASSWORD"),
     operatorKey: key(env, "OPERATOR_KEY"),
     contextKey: secret(env, "CONTEXT_KEY"),
-    ...cores(env),
+    coreUrls: urls(env, "CORE_URLS"),
+    coreTriggerUrls: urls(env, "CORE_TRIGGER_URLS"),
     triggerToken: secret(env, "TRIGGER_TOKEN"),
-    coreVersion: coreVersion(env),
     familyDatabaseHost: env.FAMILY_DATABASE_HOST ?? directoryDatabaseUrl.hostname,
     familyDatabasePort: Number(env.FAMILY_DATABASE_PORT ?? (directoryDatabaseUrl.port || "5432")),
     familyDatabaseCloseTimeoutMs: closeTimeoutMs(env),
@@ -77,16 +70,7 @@ export function readConfig(env: Env): Config {
   };
 }
 
-/** The cores of the pool, separated by commas, at least one; and where each serves the triggered operations, in the same order. */
-function cores(env: Env): Pick<Config, "coreUrls" | "coreTriggerUrls"> {
-  const coreUrls = urls(env, "CORE_URLS");
-  const coreTriggerUrls = urls(env, "CORE_TRIGGER_URLS");
-  if (coreTriggerUrls.length !== coreUrls.length) {
-    throw new ConfigError("CORE_TRIGGER_URLS must name the cores of CORE_URLS, in the same order: one trigger address per core");
-  }
-  return { coreUrls, coreTriggerUrls };
-}
-
+/** The cores of the pool as `name` lists them, separated by commas, at least one. */
 function urls(env: Env, name: string): string[] {
   const urls = required(env, name)
     .split(",")
@@ -94,16 +78,6 @@ function urls(env: Env, name: string): string[] {
     .filter(Boolean);
   if (urls.length === 0) throw new ConfigError(`${name} must name at least one core`);
   return urls;
-}
-
-/**
- * An exact release, `major.minor.patch`: a tag such as `latest` or `0.3` names no version a
- * Family could be prepared for, and would have the Router answer every Family 503.
- */
-function coreVersion(env: Env): string {
-  const version = required(env, "CORE_VERSION");
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new ConfigError("CORE_VERSION must be an exact release such as 0.3.1, the core image's tag");
-  return version;
 }
 
 /** FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS, whole seconds; 30 unless set, three times a core's idle timeout. */

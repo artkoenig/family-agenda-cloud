@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coresFor, isBodiless, neverConnected, notServing, takingTurns } from "../../src/failover";
+import { isBodiless, mayRefuseOpening, neverConnected, notServing, takingTurns } from "../../src/failover";
 
 describe("takingTurns", () => {
   it("starts each round at the next item, and wraps around", () => {
@@ -65,12 +65,12 @@ describe("isBodiless", () => {
   });
 });
 
-describe("coresFor", () => {
-  it.each(["GET", "HEAD"])("tries every core in turn for a %s", (method) => {
-    expect(coresFor(method, ["b", "c", "a"])).toEqual(["b", "c", "a"]);
+describe("mayRefuseOpening", () => {
+  it.each([409, 503])("takes %i for an answer that may be a core's refusal to open the Family", (status) => {
+    expect(mayRefuseOpening(status)).toBe(true);
   });
 
-  it.each(["POST", "PUT", "DELETE", undefined])("tries the first core only for a %s, whose body cannot be sent twice", (method) => {
-    expect(coresFor(method, ["b", "c", "a"])).toEqual(["b"]);
+  it.each([200, 302, 400, 401, 403, 404, 408, 410, 500, 502, 504])("takes %i for the Family's own answer", (status) => {
+    expect(mayRefuseOpening(status)).toBe(false);
   });
 });

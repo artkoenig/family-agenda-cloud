@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerOf, isUnknownAdmin, newPassword, runningVersion, dueWorkOf } from "../../src/core-answers";
+import { answerOf, isUnknownAdmin, newPassword, openingRefusal, pageErrorCode, dueWorkOf } from "../../src/core-answers";
 
 describe("answerOf", () => {
   it("reads a JSON object", () => {
@@ -21,13 +21,52 @@ describe("answerOf", () => {
   });
 });
 
-describe("runningVersion", () => {
-  it("is the release /api/health answers", () => {
-    expect(runningVersion({ status: "ok", version: "0.7.0" })).toBe("0.7.0");
+describe("openingRefusal", () => {
+  it("is a 409 that says a newer release migrated the Family's database", () => {
+    expect(openingRefusal(409, "migrated-by-newer-release")).toBe("409 migrated-by-newer-release");
   });
 
-  it.each([{}, { version: 12 }, { version: null }, { version: "" }])("is none for %j", (answer) => {
-    expect(runningVersion(answer)).toBeUndefined();
+  it.each(["old-data-model", "family-id-differs", "conflict", "", undefined, null, 409])("is not a 409 with the error %j, which another core would answer alike", (error) => {
+    expect(openingRefusal(409, error)).toBeUndefined();
+  });
+
+  it.each(["migrating", "unavailable"])("is a 503 that says %s, and names it", (error) => {
+    expect(openingRefusal(503, error)).toBe(`503 ${error}`);
+  });
+
+  it.each(["failed", "old-data-model", "migrated-by-newer-release", "", undefined, null, 503])("is not a 503 with the error %j, which may be the Family's own answer", (error) => {
+    expect(openingRefusal(503, error)).toBeUndefined();
+  });
+
+  it.each([200, 400, 401, 403, 404, 500, 502, 504])("is not a %i, whatever its error", (status) => {
+    expect(openingRefusal(status, "migrated-by-newer-release")).toBeUndefined();
+    expect(openingRefusal(status, "migrating")).toBeUndefined();
+  });
+});
+
+describe("pageErrorCode", () => {
+  it.each([
+    ["migrated-by-newer-release: a newer release migrated the database the Context names; another core may serve it.", "migrated-by-newer-release"],
+    ["migrating: the Family's database is being prepared; try again shortly.", "migrating"],
+    ["a: b", "a"],
+  ])("reads the code the refusal %j begins with", (text, code) => {
+    expect(pageErrorCode(text)).toBe(code);
+  });
+
+  it.each([
+    "The Family cannot be opened now.",
+    "",
+    "migrating",
+    "migrating:",
+    "migrating:the Family's database",
+    " migrating: the Family's database",
+    "Migrating: the Family's database",
+    "-migrating: the Family's database",
+    "two words: the Family's database",
+    "<p>migrating: the Family's database</p>",
+    "Conflict\nmigrating: the Family's database",
+  ])("reads none from the text %j", (text) => {
+    expect(pageErrorCode(text)).toBeUndefined();
   });
 });
 

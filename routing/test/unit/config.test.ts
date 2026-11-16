@@ -15,7 +15,6 @@ const minimal = {
   CORE_URLS: "http://core-1:3000",
   CORE_TRIGGER_URLS: "http://core-1:3001",
   BLOB_ROOT: "/srv/blobs",
-  CORE_VERSION: "0.3.1",
 };
 
 const without = (name: keyof typeof minimal) => {
@@ -34,7 +33,6 @@ describe("readConfig", () => {
       coreUrls: ["http://core-1:3000"],
       coreTriggerUrls: ["http://core-1:3001"],
       triggerToken,
-      coreVersion: "0.3.1",
       familyDatabaseHost: "db.internal",
       familyDatabasePort: 6543,
       familyDatabaseCloseTimeoutMs: 30_000,
@@ -125,14 +123,18 @@ describe("readConfig", () => {
     expect(readConfig({ ...minimal, CONTEXT_KEY: "c2hvcnQ= but long enough for the core" }).contextKey).toBe("c2hvcnQ= but long enough for the core");
   });
 
-  it("pairs the cores' trigger addresses with their pages', in order", () => {
+  it("reads the cores' trigger addresses as it reads their pages'", () => {
     const config = readConfig({ ...minimal, CORE_URLS: "http://core-1:3000, http://core-2:3000/", CORE_TRIGGER_URLS: "http://core-1:3001,http://core-2:3001" });
     expect(config.coreUrls).toEqual(["http://core-1:3000", "http://core-2:3000"]);
     expect(config.coreTriggerUrls).toEqual(["http://core-1:3001", "http://core-2:3001"]);
   });
 
-  it.each([["http://core-1:3001,http://core-2:3001"], [" , "]])("refuses CORE_TRIGGER_URLS %j that do not name each core once", (urls) => {
-    expect(() => readConfig({ ...minimal, CORE_TRIGGER_URLS: urls })).toThrow(ConfigError);
+  it("takes a core's trigger address without its pages' address in the same place: the two lists need not pair", () => {
+    expect(readConfig({ ...minimal, CORE_TRIGGER_URLS: "http://core-2:3001,http://core-1:3001" }).coreTriggerUrls).toEqual(["http://core-2:3001", "http://core-1:3001"]);
+  });
+
+  it("is not asked for a core version", () => {
+    expect(readConfig(minimal)).not.toHaveProperty("coreVersion");
   });
 
   it.each(["OPERATOR_KEY"])("refuses a %s that is not 32 bytes", (name) => {
@@ -146,19 +148,6 @@ describe("readConfig", () => {
   it("refuses CORE_URLS that name no core", () => {
     expect(() => readConfig({ ...minimal, CORE_URLS: " , ," })).toThrow(new ConfigError("CORE_URLS must name at least one core"));
   });
-
-  it.each(["0.0.0", "10.20.30"])("takes CORE_VERSION %s, an exact release", (version) => {
-    expect(readConfig({ ...minimal, CORE_VERSION: version }).coreVersion).toBe(version);
-  });
-
-  it.each(["latest", "main", "0.3", "v0.3.1", "0.3.1-rc.1", " 0.3.1", "0.3.1 ", "0.3.1.4", "a.b.c"])(
-    "refuses CORE_VERSION %j, which is no exact release",
-    (version) => {
-      expect(() => readConfig({ ...minimal, CORE_VERSION: version })).toThrow(
-        new ConfigError("CORE_VERSION must be an exact release such as 0.3.1, the core image's tag"),
-      );
-    },
-  );
 
   it.each(["65536", "-1", "80a", "123456", "", " 80"])("refuses PORT %j", (port) => {
     expect(() => readConfig({ ...minimal, PORT: port })).toThrow(new ConfigError("PORT must be a port number, 0 to 65535"));

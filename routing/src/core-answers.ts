@@ -16,8 +16,29 @@ export function answerOf(text: string): Answer {
   }
 }
 
-/** The release a core runs, as its /api/health answers it, such as `0.7.0`. */
-export const runningVersion = ({ version }: Answer): string | undefined => (typeof version === "string" && version ? version : undefined);
+/** What a core answers for a database a newer release migrated: another core, of that release, may open it. */
+const MIGRATED_BY_NEWER_RELEASE = "migrated-by-newer-release";
+
+/** Why a core answers 503 instead of opening a Family: it is preparing its database, or cannot reach it. */
+const NOT_OPENED_NOW = new Set<unknown>(["migrating", "unavailable"]);
+
+/**
+ * Why a core did not open the Family, if its answer says that it did not: `409
+ * migrated-by-newer-release` from a core of an older release than the one that migrated the
+ * Family's database, `503 migrating` from one that is preparing it, `503 unavailable` from one that
+ * cannot reach it. Undefined for every other answer, a 409 or 503 without such an error among
+ * them. A core that refuses so has changed nothing, so another core of the pool may be asked the
+ * same, whatever the request or operation.
+ *
+ * `error` is the answer's error code: a triggered operation's `error`, a page's `pageErrorCode`.
+ */
+export function openingRefusal(status: number, error: unknown): string | undefined {
+  if (status === 503) return NOT_OPENED_NOW.has(error) ? `503 ${String(error)}` : undefined;
+  return status === 409 && error === MIGRATED_BY_NEWER_RELEASE ? `409 ${MIGRATED_BY_NEWER_RELEASE}` : undefined;
+}
+
+/** The error code a page's refusal begins with, as in `migrating: the Family's database is being prepared`. */
+export const pageErrorCode = (text: string): string | undefined => /^([a-z][a-z-]*): /.exec(text)?.[1];
 
 /**
  * Whether reset-admin-password's 404 says that the Family has no Admin with that email. A 404
