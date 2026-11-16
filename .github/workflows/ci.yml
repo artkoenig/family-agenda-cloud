@@ -77,6 +77,8 @@ jobs:
       REAL_CORE_TRIGGER_URL: http://localhost:3001
       REAL_CORE_CONTEXT_KEY: ci-walk-through-context-key-of-32-characters
       REAL_CORE_TRIGGER_TOKEN: ci-walk-through-trigger-token-of-32-characters
+      # The core refuses PLUGIN_URLS without it; no Egress Proxy runs here.
+      REAL_CORE_EGRESS_TICKET_KEY: Y2ktd2Fsay10aHJvdWdoLWVncmVzcy10aWNrZXQta2V5
       REAL_CORE_DATABASE_HOST: postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,7 +100,7 @@ jobs:
           docker run -d --name core --network "$NETWORK" -p 3001:3001 -p 3002:3002 \
             -e CONTEXT_MODE=supplied -e CONTEXT_KEY="$REAL_CORE_CONTEXT_KEY" -e CALLER_PORT=3002 \
             -e TRIGGER_TOKEN="$REAL_CORE_TRIGGER_TOKEN" -e TRIGGER_PORT=3001 -e TRUST_PROXY=true \
-            -e PLUGIN_URLS=demo=http://plugin-demo:8080 \
+            -e PLUGIN_URLS=demo=http://plugin-demo:8080 -e EGRESS_TICKET_KEY="$REAL_CORE_EGRESS_TICKET_KEY" \
             --health-cmd "node -e \"fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))\"" \
             --health-interval 2s "$CORE_IMAGE"
           for _ in $(seq 60); do
