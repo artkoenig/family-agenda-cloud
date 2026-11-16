@@ -1,7 +1,7 @@
 import { PgBoss, TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import { poolOf, startStandInCore, type OpeningProblem, type RecordedRequest, type StandInCore } from "./support/stand-in-core";
+import { poolOf, scalePool, startStandInCore, type OpeningProblem, type RecordedRequest, type StandInCore } from "./support/stand-in-core";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 const MINUTE = 60_000;
@@ -511,3 +511,28 @@ describe("A core that refuses to open the Family", () => {
   });
 });
 
+describe("A pool that is scaled while the Scheduler runs", () => {
+  it("takes a core it was scaled up by into the turns at the Families' due work, and asks nothing of one it was scaled down by, without a restart", async () => {
+    const familyId = await createFamily();
+    const added = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    const pool = poolOf(routing.core);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, pool);
+    const dueWorkOn = (core: StandInCore) => core.requests.filter(({ path }) => path === "/operations/due-work").length;
+    const tick = async (calls: [number, number]) => {
+      await clock.tick(MINUTE);
+      await expect.poll(() => [dueWorkOn(routing.core), dueWorkOn(added)]).toEqual(calls);
+    };
+    await tick([1, 0]);
+
+    scalePool(pool, routing.core, added);
+    await tick([1, 1]);
+    await tick([2, 1]);
+
+    scalePool(pool, added);
+    await tick([2, 2]);
+    await tick([2, 3]);
+    expect(callsOf("due-work", familyId)).toHaveLength(2);
+    await added.close();
+  });
+});

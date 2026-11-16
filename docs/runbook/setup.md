@@ -101,8 +101,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --admin-email <address>'`.
 5. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
    Basic Auth. It fails when that Family's address does not answer or an unknown Family id does not get 404.
-6. Check by hand that the pool survives losing a core: on the Cube, `docker compose stop core-1`; run the smoke check
-   again, which must pass; then `docker compose start core-1`.
+6. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke
+   check again, which must pass; then `docker start family-agenda-core-1`.
 
 The plugins and their Egress Proxies share a network with the cores and can reach the cores' ports 3002 (requests
 with a Context) and 3001 (the Routing module's triggered operations); only the Context key and the trigger token, which
@@ -137,3 +137,27 @@ Check afterwards: `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`, and `routing fami
 
 Going back to the release before means restoring the backup of step 1: its cores refuse every Family the new
 release has opened.
+
+## 9. Scaling the pool of cores
+
+The cores are one Compose service, `core`, and the pool is its replicas: two unless `CORE_REPLICAS` in the `.env` on
+the Cube says otherwise. The Routing module is told the pool by one name alone, `cores`, which every replica carries
+on the `pool` network (`CORE_URL`, `CORE_TRIGGER_URL` in `cube/compose.yaml`), and asks at each call which cores the
+name stands for, so it is neither reconfigured nor restarted.
+
+1. On the Cube, set the number in `/opt/family-agenda/.env`, for example `CORE_REPLICAS=4`. The next deploy keeps it.
+2. `cd /opt/family-agenda && docker compose up -d --wait core`. Compose starts or removes cores until that many run,
+   and touches no other service.
+
+What happens then, without the Operator:
+
+- A new core takes its turn at requests and due work from the first call after it has started. A call that reaches it
+  a moment before it listens goes on to the next core.
+- A core that is removed is asked nothing from the next call on. What it was working on then is lost: a page being
+  served breaks off, and a run of due work fails and is retried with its usual delay. Scale down when little is going
+  on.
+- With no core left, every Family's address answers `502`, and the Router's log says that the pool's name stands for
+  no core or did not resolve.
+
+Check afterwards: `docker compose ps core` lists that many cores as healthy, `docker compose exec router getent ahosts
+cores` lists one address for each of them, and `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh` passes.

@@ -3,6 +3,7 @@ import type { Config } from "./config";
 import { coreClient, type Core } from "./core";
 import { directory, type Directory, type DirectoryEntry } from "./directory";
 import type { Log } from "./log";
+import type { Resolve } from "./pool";
 import type { FamilySchedules } from "./scheduler";
 
 /** What Provisioning's commands work with. */
@@ -16,8 +17,8 @@ export type Provisioning = {
 };
 
 /** What Provisioning works with, on the Directory's connection. */
-export function provisioning(config: Config, client: pg.ClientBase, log: Log): Provisioning {
-  return { config, client, directory: directory(client), core: coreClient(config, log), log };
+export function provisioning(config: Config, client: pg.ClientBase, log: Log, resolve?: Resolve): Provisioning {
+  return { config, client, directory: directory(client), core: coreClient(config, log, { resolve }), log };
 }
 
 /** What the commands that change a Family's schedules work with. */

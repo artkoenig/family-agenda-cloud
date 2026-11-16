@@ -18,6 +18,7 @@
     "src/family-readiness.ts",
     "src/due-work.ts",
     "src/failover.ts",
+    "src/pool.ts",
     "src/core-answers.ts",
     "src/proxy-headers.ts",
     "src/request-routing.ts",

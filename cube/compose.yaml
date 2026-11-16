@@ -22,9 +22,10 @@ name: family-agenda
 x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
 
-# A core of the pool, run from the released image unmodified. It serves whichever Family the
-# Context of a request names: no DATABASE_URL and no master key of its own, so that a core that
-# does not run in Context mode fails to start instead of serving a database of its own.
+# A core of the pool, run from the released image unmodified: the `core` service, whose replicas
+# are the pool. It serves whichever Family the Context of a request names: no DATABASE_URL and no
+# master key of its own, so that a core that does not run in Context mode fails to start instead
+# of serving a database of its own.
 #
 # Adding a plugin (from the public core's plugins.yml) takes, in this file:
 #   1. its entry in PLUGIN_URLS below, and its plugin-<id> network in the cores' networks;
@@ -51,7 +52,11 @@ x-core: &core
     - blobs:/var/lib/family-agenda/blobs
     - tessdata:/var/lib/family-agenda/tessdata
   networks:
+    # `cores` is the pool's name, and stands for every replica's address on this network alone. The
+    # service's own name, `core`, would do so on every network the caller shares with the cores,
+    # the `directory` network among them.
     pool:
+      aliases: [cores]
     directory:
     # The identity providers of the Families' Contexts.
     outbound:
@@ -76,8 +81,11 @@ x-routing: &routing
     OPERATOR_KEY: ${OPERATOR_KEY:?}
     CONTEXT_KEY: ${CONTEXT_KEY:?}
     TRIGGER_TOKEN: ${TRIGGER_TOKEN:?}
-    CORE_URLS: http://core-1:3002,http://core-2:3002
-    CORE_TRIGGER_URLS: http://core-1:3001,http://core-2:3001
+    # The pool by the name the cores share on the `pool` network, which stands for every replica
+    # running now: the Routing module resolves it at each call, so scaling the cores needs no
+    # restart of it.
+    CORE_URL: http://cores:3002
+    CORE_TRIGGER_URL: http://cores:3001
     BLOB_ROOT: /var/lib/family-agenda/blobs
     PUBLIC_URL: https://app.family-agenda.cloud
     TRUST_PROXY: "true"
@@ -149,10 +157,12 @@ services:
     command: ["routing", "schedule"]
     networks: [pool, directory]
 
-  core-1:
+  # The pool: as many cores as CORE_REPLICAS of the .env says, two unless it does. Scaling it is
+  # that number changed and `docker compose up -d --wait core` (docs/runbook/setup.md).
+  core:
     <<: *core
-  core-2:
-    <<: *core
+    deploy:
+      replicas: ${CORE_REPLICAS:-2}
 
   postgres:
     image: *postgres-image

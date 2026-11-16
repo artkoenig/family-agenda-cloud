@@ -8,7 +8,7 @@ import { readConfig } from "../../src/config";
 import { createLog } from "../../src/log";
 import { startRouter, type Router } from "../../src/router";
 import { SCHEDULER_RUNNING } from "../../src/scheduler";
-import { poolOf, startStandInCore, type StandInCore } from "./stand-in-core";
+import { poolOf, resolveStandIns, startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -161,6 +161,7 @@ export async function setUpRouting(): Promise<TestRouting> {
         });
       const exitCode = await run(args, {
         env: withOverrides(overrides),
+        resolve: resolveStandIns,
         ...options,
         stdout: sink((text) => (stdout += text)),
         stderr: sink((text) => {
@@ -172,7 +173,7 @@ export async function setUpRouting(): Promise<TestRouting> {
       return { exitCode, stdout, stderr };
     },
     async startRouter(overrides = {}) {
-      const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()));
+      const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()), resolveStandIns);
       routers.push(router);
       return router;
     },

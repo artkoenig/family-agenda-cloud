@@ -62,6 +62,8 @@ import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import { Hono } from "hono";
 import type { ContextClaims } from "../../src/context";
 import type { SourcesPolled } from "../../src/core";
+import type { Resolve } from "../../src/pool";
+import { systemResolve } from "../../src/resolve";
 import { openContext } from "./core-context";
 
 export const CONTEXT_HEADER = "x-family-context";
@@ -168,11 +170,39 @@ export type StandInCore = {
 };
 
 
-/** The pool of stand-in cores as the Routing module is told it: their pages and their triggered operations, in the same order. */
-export const poolOf = (...cores: Pick<StandInCore, "url" | "triggerUrl">[]): { CORE_URLS: string; CORE_TRIGGER_URLS: string } => ({
-  CORE_URLS: cores.map(({ url }) => url).join(","),
-  CORE_TRIGGER_URLS: cores.map(({ triggerUrl }) => triggerUrl).join(","),
-});
+/** A core as a pool names it: where it serves its pages, and where its triggered operations. */
+type PoolMember = Pick<StandInCore, "url" | "triggerUrl">;
+
+/** The pool as the Routing module is told it: one name for the cores' pages, the same one for their triggered operations. */
+export type PoolAddresses = { CORE_URL: string; CORE_TRIGGER_URL: string };
+
+/** The cores each pool's name stands for now, as the Cube's name service knows the replicas of the cores' service. */
+const pools = new Map<string, PoolMember[]>();
+
+/**
+ * A pool of these cores, in this order, as the Routing module is told it: by one name, which
+ * {@link resolveStandIns} resolves to the cores it stands for at that moment.
+ */
+export const poolOf = (...cores: PoolMember[]): PoolAddresses => {
+  const name = `pool-${pools.size + 1}.test`;
+  pools.set(name, cores);
+  return { CORE_URL: `http://${name}:3002`, CORE_TRIGGER_URL: `http://${name}:3001` };
+};
+
+/** Scales the pool: from now on its name stands for these cores, as after `docker compose up --scale`. */
+export const scalePool = ({ CORE_URL }: PoolAddresses, ...cores: PoolMember[]): void => {
+  pools.set(new URL(CORE_URL).hostname, cores);
+};
+
+/**
+ * Resolves a pool's name to its stand-in cores, which listen on ports of their own on localhost
+ * where the replicas of a service share one port; any other address as the system does.
+ */
+export const resolveStandIns: Resolve = async (address) => {
+  const cores = pools.get(address.hostname);
+  if (!cores) return systemResolve(address);
+  return cores.map(({ url, triggerUrl }) => new URL(address.port === "3001" ? triggerUrl : url));
+};
 
 /** The due-work answer of the core for a run that polled `ran` due Sources, `failed` of which failed. */
 function dueWorkAnswer({ ran, failed }: SourcesPolled): object {

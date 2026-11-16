@@ -25,8 +25,8 @@ const OTHER_EMAIL = "other.admin@example.org";
 
 /** The Routing module's environment with the real core as its one-core pool. */
 const withRealCore = (): Record<string, string> => ({
-  CORE_URLS: real.url!,
-  CORE_TRIGGER_URLS: real.triggerUrl!,
+  CORE_URL: real.url!,
+  CORE_TRIGGER_URL: real.triggerUrl!,
   CONTEXT_KEY: real.contextKey!,
   TRIGGER_TOKEN: real.triggerToken!,
   FAMILY_DATABASE_HOST: real.databaseHost!,

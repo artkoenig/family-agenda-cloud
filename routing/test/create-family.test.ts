@@ -349,7 +349,7 @@ describe("Running create again", () => {
   });
 
   it("after the core did not answer ends as an undisturbed run", async () => {
-    const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL], { CORE_URLS: "http://127.0.0.1:9", CORE_TRIGGER_URLS: "http://127.0.0.1:9" })).stderr)!;
+    const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL], { CORE_URL: "http://127.0.0.1:9", CORE_TRIGGER_URL: "http://127.0.0.1:9" })).stderr)!;
     await createFamily(EMAIL, ["--family-id", familyId]);
 
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));

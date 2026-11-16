@@ -12,8 +12,8 @@ const minimal = {
   OPERATOR_KEY: operatorKey.toString("base64"),
   CONTEXT_KEY: contextKey,
   TRIGGER_TOKEN: triggerToken,
-  CORE_URLS: "http://core-1:3000",
-  CORE_TRIGGER_URLS: "http://core-1:3001",
+  CORE_URL: "http://core:3002",
+  CORE_TRIGGER_URL: "http://core:3001",
   BLOB_ROOT: "/srv/blobs",
 };
 
@@ -30,8 +30,8 @@ describe("readConfig", () => {
       directoryDatabasePassword: "directory-password",
       operatorKey,
       contextKey,
-      coreUrls: ["http://core-1:3000"],
-      coreTriggerUrls: ["http://core-1:3001"],
+      coreUrl: "http://core:3002",
+      coreTriggerUrl: "http://core:3001",
       triggerToken,
       familyDatabaseHost: "db.internal",
       familyDatabasePort: 6543,
@@ -83,13 +83,6 @@ describe("readConfig", () => {
     expect(readConfig({ ...minimal, TRUST_PROXY: "yes" }).trustProxy).toBe(false);
   });
 
-  it("splits CORE_URLS at commas, trimmed, without trailing slashes or empty entries", () => {
-    expect(readConfig({ ...minimal, CORE_URLS: " http://core-1:3000/ ,, http://core-2:3000// ,", CORE_TRIGGER_URLS: "http://core-1:3001,http://core-2:3001" }).coreUrls).toEqual([
-      "http://core-1:3000",
-      "http://core-2:3000",
-    ]);
-  });
-
   it("drops the trailing slashes of BLOB_ROOT", () => {
     expect(readConfig({ ...minimal, BLOB_ROOT: "/srv/blobs//" }).blobRoot).toBe("/srv/blobs");
   });
@@ -123,14 +116,21 @@ describe("readConfig", () => {
     expect(readConfig({ ...minimal, CONTEXT_KEY: "c2hvcnQ= but long enough for the core" }).contextKey).toBe("c2hvcnQ= but long enough for the core");
   });
 
-  it("reads the cores' trigger addresses as it reads their pages'", () => {
-    const config = readConfig({ ...minimal, CORE_URLS: "http://core-1:3000, http://core-2:3000/", CORE_TRIGGER_URLS: "http://core-1:3001,http://core-2:3001" });
-    expect(config.coreUrls).toEqual(["http://core-1:3000", "http://core-2:3000"]);
-    expect(config.coreTriggerUrls).toEqual(["http://core-1:3001", "http://core-2:3001"]);
+  it("names the pool by one address for the pages and one for the triggered operations, without trailing slashes", () => {
+    const config = readConfig({ ...minimal, CORE_URL: " http://core:3002// ", CORE_TRIGGER_URL: "http://core:3001/" });
+    expect(config.coreUrl).toBe("http://core:3002");
+    expect(config.coreTriggerUrl).toBe("http://core:3001");
+    expect(readConfig({ ...minimal, CORE_URL: "http://core" }).coreUrl).toBe("http://core");
+    expect(config).not.toHaveProperty("coreUrls");
+    expect(config).not.toHaveProperty("coreTriggerUrls");
   });
 
-  it("takes a core's trigger address without its pages' address in the same place: the two lists need not pair", () => {
-    expect(readConfig({ ...minimal, CORE_TRIGGER_URLS: "http://core-2:3001,http://core-1:3001" }).coreTriggerUrls).toEqual(["http://core-2:3001", "http://core-1:3001"]);
+  it.each(["CORE_URL", "CORE_TRIGGER_URL"])("refuses a %s that lists several cores, or is no http address", (name) => {
+    for (const value of ["http://core-1:3002,http://core-2:3002", "core:3002", "https://core:3002", "http://core:3002/below", "http://core:3002?x", "http://core:3002#x", "http://user@core:3002", "http://core:port", "http://", "x http://core:3002", " "]) {
+      expect(() => readConfig({ ...minimal, [name]: value }), value).toThrow(
+        new ConfigError(`${name} must be one http address without a path, the cores' service and port, such as http://core:3002`),
+      );
+    }
   });
 
   it("is not asked for a core version", () => {
@@ -143,10 +143,6 @@ describe("readConfig", () => {
         new ConfigError(`${name} must be 32 bytes in base64 (openssl rand -base64 32)`),
       );
     }
-  });
-
-  it("refuses CORE_URLS that name no core", () => {
-    expect(() => readConfig({ ...minimal, CORE_URLS: " , ," })).toThrow(new ConfigError("CORE_URLS must name at least one core"));
   });
 
   it.each(["65536", "-1", "80a", "123456", "", " 80"])("refuses PORT %j", (port) => {

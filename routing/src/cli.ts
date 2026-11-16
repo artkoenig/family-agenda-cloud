@@ -11,6 +11,7 @@ import { coreClient } from "./core";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { isFamilyId } from "./family-id";
+import type { Resolve } from "./pool";
 import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
 import { startRouter } from "./router";
 import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
@@ -28,6 +29,8 @@ export type Io = {
   until?: Promise<unknown>;
   /** The clock the Scheduler fires by; the system's unless a test moves one by hand. */
   clock?: Clock;
+  /** Finds the cores the pool's name stands for; the system's name resolution unless a test stands in for it. */
+  resolve?: Resolve;
 };
 
 const USAGE = `Usage:
@@ -56,7 +59,7 @@ const USAGE = `Usage:
     Brings the Directory's schema up to date (every command does this first).
   routing serve
     Runs the Router on LISTEN_HOST:PORT until SIGTERM or SIGINT, passing each Family's requests
-    on to the cores in CORE_URLS.
+    on to the cores CORE_URL names.
 
 A core prepares a Family's database when it first opens it, so a new core version needs no
 command: a request or operation that a core of an older release refuses is tried on another core.`;
@@ -102,7 +105,7 @@ export async function run(args: string[], io: Io): Promise<number> {
 async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log): Promise<number> {
   try {
     const address = await withDirectory(config, (client) =>
-      withSchedules(config, (schedules) => createFamily({ ...provisioning(config, client, log), schedules }, input)),
+      withSchedules(config, (schedules) => createFamily({ ...provisioning(config, client, log, io.resolve), schedules }, input)),
     );
     io.stdout.write(`${address}\n`);
     return 0;
@@ -119,7 +122,7 @@ async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log
 
 async function serve(config: Config, io: Io, log: Log): Promise<number> {
   await migrate(config);
-  const router = await startRouter(config, log);
+  const router = await startRouter(config, log, io.resolve);
   log.info("The Router listens", { url: router.url });
   await (io.until ?? stopSignal());
   await router.close();
@@ -145,7 +148,7 @@ async function migrate(config: Config): Promise<void> {
 
 async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log: Log): Promise<number> {
   try {
-    const password = await withDirectory(config, (client) => resetAdminPassword(provisioning(config, client, log), input));
+    const password = await withDirectory(config, (client) => resetAdminPassword(provisioning(config, client, log, io.resolve), input));
     // The one place the new password is given out: on the Operator's output, never in the log.
     io.stdout.write(`New password for ${input.adminEmail}: ${password}\nThe Admin's sessions have ended. Sign in with this password.\n`);
     return 0;
@@ -176,7 +179,7 @@ async function runFamilyCommand(config: Config, command: FamilyCommand, io: Io, 
   const { familyId } = command;
   try {
     await withDirectory(config, (client) =>
-      withSchedules(config, (schedules) => command.work({ ...provisioning(config, client, log), schedules })),
+      withSchedules(config, (schedules) => command.work({ ...provisioning(config, client, log, io.resolve), schedules })),
     );
     io.stdout.write(`The Family ${familyId} ${command.done}\n`);
     return 0;
@@ -222,7 +225,7 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
     stop.abort();
   });
   await withDirectory(config, (client) =>
-    runScheduler({ config, client, directory: directory(client), core: coreClient(config, log, clock), log, clock, signal: stop.signal }),
+    runScheduler({ config, client, directory: directory(client), core: coreClient(config, log, { timers: clock, resolve: io.resolve }), log, clock, signal: stop.signal }),
   );
   return 0;
 }
