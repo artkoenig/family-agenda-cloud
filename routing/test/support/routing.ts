@@ -39,6 +39,8 @@ export type TestRouting = {
   directory(sql: string, values?: unknown[]): Promise<Record<string, unknown>[]>;
   /** Runs SQL as a superuser on the server's maintenance database. */
   server(sql: string, values?: unknown[]): Promise<Record<string, unknown>[]>;
+  /** Runs SQL as a superuser on the Family's own database, as the Directory names it. */
+  family(familyId: string, sql: string, values?: unknown[]): Promise<Record<string, unknown>[]>;
   /** The role the Routing module opens the Directory with. */
   routingRole: string;
   close(): Promise<void>;
@@ -208,6 +210,11 @@ export async function setUpRouting(): Promise<TestRouting> {
     log: () => logged,
     directory: (sql, values) => query(directoryName, sql, values),
     server: (sql, values) => query(maintenance, sql, values),
+    async family(familyId, sql, values) {
+      const [row] = await query(directoryName, "SELECT database_name FROM family WHERE family_id = $1", [familyId]);
+      if (!row) throw new Error(`The Directory has no Family ${familyId}`);
+      return query(String(row.database_name), sql, values);
+    },
     async close() {
       for (const router of routers) await router.close();
       // A run held under way would keep its Scheduler from stopping.
