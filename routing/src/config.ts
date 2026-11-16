@@ -12,10 +12,14 @@ export type Config = {
   directoryDatabasePassword: string;
   /** Wraps every family key and Family database password stored in the Directory. */
   operatorKey: Buffer;
-  /** Encrypts and signs the Contexts the cores open; shared with the cores. */
-  contextKey: Buffer;
-  /** The cores of the pool. */
+  /** Encrypts and signs the Contexts the cores open; shared with the cores, 32 characters or more. */
+  contextKey: string;
+  /** The cores of the pool, each where it serves the pages: its `CALLER_PORT`. */
   coreUrls: string[];
+  /** The same cores, in the same order, where each serves the triggered operations: its `TRIGGER_PORT`. */
+  coreTriggerUrls: string[];
+  /** The token the cores' triggered operations require, as `Authorization: Bearer`; shared with the cores. */
+  triggerToken: string;
   /**
    * The core version the pool runs, the exact release its image was built from, such as `0.3.1`:
    * only a Family prepared for it is routed to and scheduled, and a rollout prepares every Family
@@ -58,8 +62,9 @@ export function readConfig(env: Env): Config {
     directoryDatabaseUrl: directoryDatabaseUrl.toString(),
     directoryDatabasePassword: required(env, "DIRECTORY_DATABASE_PASSWORD"),
     operatorKey: key(env, "OPERATOR_KEY"),
-    contextKey: key(env, "CONTEXT_KEY"),
-    coreUrls: coreUrls(env),
+    contextKey: secret(env, "CONTEXT_KEY"),
+    ...cores(env),
+    triggerToken: secret(env, "TRIGGER_TOKEN"),
     coreVersion: coreVersion(env),
     familyDatabaseHost: env.FAMILY_DATABASE_HOST ?? directoryDatabaseUrl.hostname,
     familyDatabasePort: Number(env.FAMILY_DATABASE_PORT ?? (directoryDatabaseUrl.port || "5432")),
@@ -72,13 +77,22 @@ export function readConfig(env: Env): Config {
   };
 }
 
-/** The cores of the pool, separated by commas; at least one. */
-function coreUrls(env: Env): string[] {
-  const urls = required(env, "CORE_URLS")
+/** The cores of the pool, separated by commas, at least one; and where each serves the triggered operations, in the same order. */
+function cores(env: Env): Pick<Config, "coreUrls" | "coreTriggerUrls"> {
+  const coreUrls = urls(env, "CORE_URLS");
+  const coreTriggerUrls = urls(env, "CORE_TRIGGER_URLS");
+  if (coreTriggerUrls.length !== coreUrls.length) {
+    throw new ConfigError("CORE_TRIGGER_URLS must name the cores of CORE_URLS, in the same order: one trigger address per core");
+  }
+  return { coreUrls, coreTriggerUrls };
+}
+
+function urls(env: Env, name: string): string[] {
+  const urls = required(env, name)
     .split(",")
     .map((url) => withoutTrailingSlash(url.trim()))
     .filter(Boolean);
-  if (urls.length === 0) throw new ConfigError("CORE_URLS must name at least one core");
+  if (urls.length === 0) throw new ConfigError(`${name} must name at least one core`);
   return urls;
 }
 
@@ -141,6 +155,13 @@ function required(env: Env, name: string): string {
 function key(env: Env, name: string): Buffer {
   const value = Buffer.from(required(env, name), "base64");
   if (value.length !== 32) throw new ConfigError(`${name} must be 32 bytes in base64 (openssl rand -base64 32)`);
+  return value;
+}
+
+/** A secret shared with the cores: 32 characters or more, as the core requires (`openssl rand -base64 32`). */
+function secret(env: Env, name: string): string {
+  const value = required(env, name);
+  if (value.length < 32) throw new ConfigError(`${name} must be 32 characters or more (openssl rand -base64 32)`);
   return value;
 }
 

@@ -52,10 +52,10 @@ export async function createFamily(provisioning: Provisioning & { schedules: Fam
   });
   log.info("The Family is in the Directory, being prepared", { familyId });
 
-  const { coreVersion } = await core.prepareFamily(await sealedContext(config, family));
+  const { coreVersion } = await core.prepareFamily(sealedContext(config, family));
   log.info("The core prepared the Family", { familyId, coreVersion });
 
-  await core.enterAdmin(await sealedContext(config, family), input.adminEmail);
+  await core.enterAdmin(sealedContext(config, family), input.adminEmail);
   log.info("The core entered the first Admin", { familyId });
 
   // Before it is active, so that an active Family always has them; a Family that is not active is skipped.

@@ -92,10 +92,10 @@ describe("Suspending a Family", () => {
     const clock = new TestClock("2026-11-16T02:28:10Z");
     await routing.startScheduler(clock);
     await minutes(clock, 3);
-    await expect.poll(() => scheduledCallsOf(other)).toContain("/operations/sweep-secrets");
+    await expect.poll(() => scheduledCallsOf(other)).toContain("/operations/secret-sweep");
     await clock.setTime("2026-11-16T02:58:10Z");
     await minutes(clock, 3);
-    await expect.poll(() => scheduledCallsOf(other)).toContain("/operations/purge-messages");
+    await expect.poll(() => scheduledCallsOf(other)).toContain("/operations/purge");
     expect(scheduledCallsOf(familyId)).toEqual([]);
   });
 
@@ -129,9 +129,9 @@ describe("Resuming a Family", () => {
     const clock = new TestClock("2026-11-16T08:01:10Z");
     await routing.startScheduler(clock);
     await minutes(clock, 1);
-    await expect.poll(() => scheduledCallsOf(familyId)).toEqual(["/operations/run-due-work"]);
+    await expect.poll(() => scheduledCallsOf(familyId)).toEqual(["/operations/due-work"]);
     await minutes(clock, 2);
-    await expect.poll(() => scheduledCallsOf(familyId)).toEqual(Array(3).fill("/operations/run-due-work"));
+    await expect.poll(() => scheduledCallsOf(familyId)).toEqual(Array(3).fill("/operations/due-work"));
   });
 
   it("brings back its schedules as creating it made them, in its own time zone", async () => {

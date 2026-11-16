@@ -17,7 +17,7 @@ export type Provisioning = {
 
 /** What Provisioning works with, on the Directory's connection. */
 export function provisioning(config: Config, client: pg.ClientBase, log: Log): Provisioning {
-  return { config, client, directory: directory(client), core: coreClient(config.coreUrls, log), log };
+  return { config, client, directory: directory(client), core: coreClient(config, log), log };
 }
 
 /** What the commands that change a Family's schedules work with. */

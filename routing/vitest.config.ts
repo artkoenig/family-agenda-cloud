@@ -18,9 +18,19 @@ export default defineConfig({
         test: {
           name: "integration",
           include: ["test/**/*.test.ts"],
-          exclude: ["test/unit/**"],
+          exclude: ["test/unit/**", "test/real-core/**"],
           // Checks that TEST_DATABASE_URL names a Postgres server the tests may create databases and roles on.
           globalSetup: ["test/support/postgres-server.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "real-core",
+          // Against the released core in supplied mode; skipped unless REAL_CORE_URL names one (test/real-core).
+          include: ["test/real-core/**/*.test.ts"],
+          globalSetup: ["test/support/postgres-server.ts"],
+          testTimeout: 60_000,
         },
       },
     ],

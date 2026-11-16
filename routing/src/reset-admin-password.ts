@@ -26,7 +26,7 @@ export async function resetAdminPassword(
   const entry = await existingEntry(directory, familyId);
   if (entry.status !== "active") throw new ProvisioningError(`The Family ${familyId} is ${entry.status.replaceAll("_", " ")}, not active`);
   const family = unwrappedFamily(config, entry);
-  const password = await core.resetAdminPassword(await sealedContext(config, family), adminEmail);
+  const password = await core.resetAdminPassword(sealedContext(config, family), adminEmail);
   if (password === undefined) throw new UnknownAdminError(familyId, adminEmail);
   log.info("The core reset an Admin's password and ended their sessions", { familyId });
   return password;

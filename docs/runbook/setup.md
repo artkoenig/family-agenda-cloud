@@ -104,7 +104,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
 6. Check by hand that the pool survives losing a core: on the Cube, `docker compose stop core-1`; run the smoke check
    again, which must pass; then `docker compose start core-1`.
 
-The plugins and their Egress Proxies share a network with the cores and can reach the cores' port 3000; only the
-Context key, which they do not hold, protects that interface.
+The plugins and their Egress Proxies share a network with the cores and can reach the cores' ports 3002 (requests
+with a Context) and 3001 (the Routing module's triggered operations); only the Context key and the trigger token, which
+they do not hold, protect them.
 
 The scripts reach the Cube as `root@family-agenda.cloud`; `CUBE_HOST` overrides it.

@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
 import { openContext, type Context } from "./support/stand-in-core";
 
+/** The core's triggered operations the Routing module called: its health checks aside. */
+const triggered = () => routing.core.requests.filter(({ on }) => on === "trigger");
+
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 const EMAIL = "first.admin@example.org";
 
@@ -25,7 +28,7 @@ async function createFamily(email = EMAIL, args: string[] = [], env: Record<stri
 
 /** The Contexts that arrived at the stand-in core for a Family, opened. */
 const contextsOf = (familyId: string): Context[] =>
-  routing.core.requests.flatMap(({ context }) => (context?.familyId === familyId ? [context] : []));
+  triggered().flatMap(({ context }) => (context?.familyId === familyId ? [context] : []));
 
 /** Connects to a database with the credentials a Context names. */
 async function connect(database: Context["database"], name = database.name) {
@@ -91,9 +94,9 @@ describe("Creating a Family", () => {
     expect(stdout).toBe(`https://app.family-agenda.cloud/${familyId}/\n`);
     const [entry] = await routing.directory("SELECT status, core_version FROM family WHERE family_id = $1", [familyId]);
     expect(entry).toEqual({ status: "active", core_version: "0.0.0" });
-    const operations = routing.core.requests.map(({ method, path }) => `${method} ${path}`);
+    const operations = triggered().map(({ method, path }) => `${method} ${path}`);
     expect(operations).toEqual(["POST /operations/prepare-family", "POST /operations/enter-admin"]);
-    expect(routing.core.requests[1]?.body).toEqual({ email: EMAIL });
+    expect(triggered()[1]?.body).toEqual({ email: EMAIL });
     expect(routing.core.admins(familyId)).toEqual([EMAIL]);
   });
 
@@ -114,14 +117,12 @@ describe("Creating a Family", () => {
     expect(prepare).toMatchObject({
       familyId,
       database: { host: "postgres", port: 6543, name, user: name },
-      blobLocation: `/var/lib/family-agenda/blobs/${familyId}`,
+      blobDirectory: "/var/lib/family-agenda/blobs",
       timeZone: "America/New_York",
       publicUrl: `https://app.family-agenda.cloud/${familyId}`,
-      pathPrefix: `/${familyId}`,
-      identityProvider: null,
-      identityProviderSignIn: "known-admins-only",
     });
-    expect(Buffer.from(prepare!.familyKey, "base64")).toHaveLength(32);
+    expect(prepare).not.toHaveProperty("identityProvider");
+    expect(Buffer.from(prepare!.familyKey, "base64url")).toHaveLength(32);
     expect(enterAdmin).toMatchObject({ familyKey: prepare!.familyKey, database: prepare!.database });
     const [entry] = await routing.directory("SELECT time_zone FROM family WHERE family_id = $1", [familyId]);
     expect(entry).toEqual({ time_zone: "America/New_York" });
@@ -141,8 +142,8 @@ describe("Creating a Family", () => {
         clientId: "family-agenda",
         clientSecret: "client-secret",
         requiredGroup: "family-agenda-admins",
+        knownAdminsOnly: true,
       },
-      identityProviderSignIn: "known-admins-only",
     });
   });
 
@@ -160,21 +161,21 @@ describe("The Context", () => {
   it("cannot be read without the Context key and shows none of its secrets", async () => {
     const { familyId } = await createFamily();
 
-    const [{ sealedContext }] = routing.core.requests as unknown as [{ sealedContext: string }];
+    const [{ sealedContext }] = triggered() as unknown as [{ sealedContext: string }];
     const [context] = contextsOf(familyId);
-    await expect(openContext(sealedContext, randomBytes(32).toString("base64"))).rejects.toThrow();
+    expect(() => openContext(sealedContext, randomBytes(32).toString("base64"))).toThrow();
     expect(sealedContext).not.toContain(context!.familyKey);
     expect(sealedContext).not.toContain(context!.database.password);
-    expect(Buffer.from(sealedContext.split(".")[0]!, "base64url").toString()).toBe('{"alg":"dir","enc":"A256GCM"}');
+    expect(sealedContext).toMatch(/^v1\./);
   });
 
   it("is rejected after its short lifetime", async () => {
     const issuedBefore = Date.now();
     await createFamily();
 
-    const [{ sealedContext }] = routing.core.requests as unknown as [{ sealedContext: string }];
-    await expect(openContext(sealedContext, routing.env.CONTEXT_KEY!, new Date(issuedBefore + 30_000))).resolves.toBeDefined();
-    await expect(openContext(sealedContext, routing.env.CONTEXT_KEY!, new Date(Date.now() + 61_000))).rejects.toThrow(/exp/);
+    const [{ sealedContext }] = triggered() as unknown as [{ sealedContext: string }];
+    expect(() => openContext(sealedContext, routing.env.CONTEXT_KEY!, new Date(issuedBefore + 30_000))).not.toThrow();
+    expect(() => openContext(sealedContext, routing.env.CONTEXT_KEY!, new Date(Date.now() + 91_000))).toThrow("expired");
   });
 });
 
@@ -261,7 +262,7 @@ describe("Running create again", () => {
     const other = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyId, "--time-zone", "Europe/Berlin"]);
     expect(other.exitCode).toBe(1);
     expect(other.stderr).toContain("begun with the time zone Europe/Vienna, not Europe/Berlin");
-    expect(routing.core.requests).toHaveLength(2);
+    expect(triggered()).toHaveLength(2);
 
     await createFamily(EMAIL, ["--family-id", familyId, "--time-zone", "Europe/Vienna"]);
     expect(await stateOf(familyId)).toMatchObject({ entry: { status: "active", time_zone: "Europe/Vienna" } });
@@ -270,13 +271,13 @@ describe("Running create again", () => {
   it("without --family-id is refused while a Family is being prepared, and names it", async () => {
     routing.core.failNext("prepare-family");
     const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL])).stderr)!;
-    const calls = routing.core.requests.length;
+    const calls = triggered().length;
 
     const careless = await routing.run(["create", "--admin-email", EMAIL]);
 
     expect(careless.exitCode).toBe(1);
     expect(careless.stderr).toContain(`The Family ${familyId} is still being prepared; finish it first with create --family-id ${familyId}`);
-    expect(routing.core.requests).toHaveLength(calls);
+    expect(triggered()).toHaveLength(calls);
     expect((await routing.directory("SELECT family_id FROM family")).map(({ family_id }) => family_id)).toEqual([familyId]);
     await createFamily(EMAIL, ["--family-id", familyId]);
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
@@ -289,7 +290,7 @@ describe("Running create again", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain(`Nothing of the Family ${familyId} was created`);
-    expect(routing.core.requests).toEqual([]);
+    expect(triggered()).toEqual([]);
     expect(await routing.directory("SELECT count(*)::int AS count FROM family")).toEqual([{ count: 0 }]);
     expect(await routing.server("SELECT count(*)::int AS count FROM pg_roles WHERE rolname = $1", [`family_${familyId.replaceAll("-", "")}`])).toEqual([
       { count: 0 },
@@ -315,12 +316,12 @@ describe("Running create again", () => {
     });
 
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
-    const keys = new Set(routing.core.requests.map(({ context }) => context?.familyKey));
+    const keys = new Set(triggered().map(({ context }) => context?.familyKey));
     expect(keys.size).toBe(1);
   });
 
   it("after the core did not answer ends as an undisturbed run", async () => {
-    const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL], { CORE_URLS: "http://127.0.0.1:9" })).stderr)!;
+    const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL], { CORE_URLS: "http://127.0.0.1:9", CORE_TRIGGER_URLS: "http://127.0.0.1:9" })).stderr)!;
     await createFamily(EMAIL, ["--family-id", familyId]);
 
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
@@ -346,12 +347,12 @@ describe("Running create again", () => {
 
   it("for an active Family changes nothing and prints its address", async () => {
     const { familyId } = await createFamily();
-    const calls = routing.core.requests.length;
+    const calls = triggered().length;
 
     const again = await createFamily(EMAIL, ["--family-id", familyId]);
 
     expect(again.stdout).toBe(`https://app.family-agenda.cloud/${familyId}/\n`);
-    expect(routing.core.requests).toHaveLength(calls);
+    expect(triggered()).toHaveLength(calls);
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
   });
 });
@@ -363,7 +364,7 @@ describe("Secrets", () => {
     const familyId = /"familyId":"([0-9a-f-]{36})"/.exec(failed.stderr)![1]!;
     await createFamily(EMAIL, ["--family-id", familyId]);
 
-    const secrets = routing.core.requests.flatMap(({ sealedContext, context }) => [
+    const secrets = triggered().flatMap(({ sealedContext, context }) => [
       sealedContext!,
       context!.familyKey,
       Buffer.from(context!.familyKey, "base64").toString("hex"),
@@ -393,7 +394,7 @@ describe("Secrets", () => {
 
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain(`${name} is not set`);
-    expect(routing.core.requests).toEqual([]);
+    expect(triggered()).toEqual([]);
     expect(await routing.directory("SELECT to_regclass('family') IS NULL AS empty")).toEqual([{ empty: true }]);
   });
 
@@ -407,14 +408,14 @@ describe("Secrets", () => {
     expect(inUrl.exitCode).toBe(2);
     expect(inUrl.stderr).toContain("must not contain a password");
     expect(inUrl.stderr).not.toContain(routing.env.DIRECTORY_DATABASE_PASSWORD);
-    expect(routing.core.requests).toEqual([]);
+    expect(triggered()).toEqual([]);
   });
 
   it("refuses a key that is not 32 bytes", async () => {
     const result = await routing.run(["create", "--admin-email", EMAIL], { CONTEXT_KEY: "c2hvcnQ=" });
 
     expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain("CONTEXT_KEY must be 32 bytes");
+    expect(result.stderr).toContain("CONTEXT_KEY must be 32 characters or more");
   });
 });
 
@@ -432,7 +433,7 @@ describe("The command line", () => {
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain(message);
     expect(result.stderr).toContain("Usage:");
-    expect(routing.core.requests).toEqual([]);
+    expect(triggered()).toEqual([]);
   });
 
   it("refuses to create a Family again that is not being prepared", async () => {

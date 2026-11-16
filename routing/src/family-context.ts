@@ -1,5 +1,6 @@
+import { posix } from "node:path";
 import type { Config } from "./config";
-import { sealContext, type ContextClaims } from "./context";
+import { sealContext } from "./context";
 import type { DirectoryEntry } from "./directory";
 import { wrapperFor } from "./secrets";
 
@@ -39,23 +40,32 @@ export function unwrappedFamily(config: Config, entry: DirectoryEntry): Family {
 }
 
 /** The Context a core opens the Family with, sealed for one call or request. */
-export function sealedContext(config: Config, family: Family): Promise<string> {
-  const claims: ContextClaims = {
+export function sealedContext(config: Config, family: Family): string {
+  return sealContext(config.contextKey, {
     familyId: family.familyId,
-    database: {
-      host: config.familyDatabaseHost,
-      port: config.familyDatabasePort,
-      name: family.databaseName,
-      user: family.databaseRole,
-      password: family.databasePassword,
-    },
-    familyKey: family.familyKey,
-    blobLocation: family.blobLocation,
+    databaseUrl: databaseUrlOf(config, family),
+    // Drawn as base64; the core takes base64url, which is the same 32 bytes.
+    familyKey: Buffer.from(family.familyKey, "base64").toString("base64url"),
+    blobDirectory: blobDirectoryOf(family),
     timeZone: family.timeZone,
     publicUrl: familyUrl(config, family.familyId),
-    pathPrefix: `/${family.familyId}`,
-    identityProvider: config.identityProvider,
-    identityProviderSignIn: "known-admins-only",
-  };
-  return sealContext(config.contextKey, claims);
+    ...(config.identityProvider ? { identityProvider: { ...config.identityProvider, knownAdminsOnly: true as const } } : {}),
+  });
+}
+
+/** The core keeps the Family's blobs in <blobDirectory>/<familyId>, so the blob location must end in the Family id. */
+function blobDirectoryOf({ familyId, blobLocation }: Family): string {
+  if (posix.basename(blobLocation) !== familyId) throw new Error(`The blob location ${blobLocation} of the Family ${familyId} is not named by its Family id`);
+  return posix.dirname(blobLocation);
+}
+
+/** The Family's database as a Postgres connection string, with the Family's role and its password. */
+function databaseUrlOf(config: Config, family: Family): string {
+  const url = new URL("postgres://placeholder");
+  url.hostname = config.familyDatabaseHost;
+  url.port = String(config.familyDatabasePort);
+  url.username = encodeURIComponent(family.databaseRole);
+  url.password = encodeURIComponent(family.databasePassword);
+  url.pathname = `/${encodeURIComponent(family.databaseName)}`;
+  return url.toString();
 }

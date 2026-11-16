@@ -91,6 +91,29 @@ describe("A rollout", () => {
     expect(families.find((line) => line.startsWith(second))).not.toContain("preparing");
   });
 
+  it("fails for a Family whose core prepared it but answered its health check with an error", async () => {
+    const familyId = await createFamily();
+    upgradeCores();
+    routing.core.answerNext({ status: 503, headers: [], body: new Uint8Array() });
+
+    const result = await routing.run(["roll-out"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain(`${familyId}\tThe core answered /api/health with 503\n`);
+    expect(await coreVersionOf(familyId)).toBe(STAND_IN_CORE_VERSION);
+  });
+
+  it("fails for a Family whose core's pages cannot be reached for the version", async () => {
+    const familyId = await createFamily();
+    upgradeCores();
+
+    const result = await routing.run(["roll-out"], { CORE_URLS: "http://127.0.0.1:9" });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatch(new RegExp(`^${familyId}\tThe core did not answer /api/health: `, "m"));
+    expect(await coreVersionOf(familyId)).toBe(STAND_IN_CORE_VERSION);
+  });
+
   it("run again prepares only the Families still behind and forgets their failure", async () => {
     const [first, second] = [await createFamily(), await createFamily()];
     upgradeCores();
@@ -267,24 +290,24 @@ describe("A Family not prepared for the running core version", () => {
     await routing.startScheduler(clock);
 
     await minutes(clock, 3);
-    await expect.poll(() => callsOf("sweep-secrets", other).length).toBe(1);
+    await expect.poll(() => callsOf("secret-sweep", other).length).toBe(1);
     await clock.setTime("2026-11-16T02:57:10Z");
     await minutes(clock, 4);
-    await expect.poll(() => callsOf("purge-messages", other).length).toBe(1);
-    await expect.poll(() => callsOf("run-due-work", other).length).toBeGreaterThan(1);
+    await expect.poll(() => callsOf("purge", other).length).toBe(1);
+    await expect.poll(() => callsOf("due-work", other).length).toBeGreaterThan(1);
     await expect
       .poll(() => routing.log())
       .toContain(`"message":"The Family is not prepared for the running core version; nothing is triggered","familyId":"${behind}"`);
-    expect(callsOf("run-due-work", behind)).toEqual([]);
-    expect(callsOf("purge-messages", behind)).toEqual([]);
-    expect(callsOf("sweep-secrets", behind)).toEqual([]);
+    expect(callsOf("due-work", behind)).toEqual([]);
+    expect(callsOf("purge", behind)).toEqual([]);
+    expect(callsOf("secret-sweep", behind)).toEqual([]);
     // Once, not every minute and occasion.
     const skipped = `"message":"The Family is not prepared for the running core version; nothing is triggered","familyId":"${behind}","coreVersion":"${STAND_IN_CORE_VERSION}"`;
     expect(routing.log().split(skipped)).toHaveLength(2);
 
     expect((await routing.run(["roll-out"])).exitCode).toBe(0);
     await minutes(clock, 1);
-    await expect.poll(() => callsOf("run-due-work", behind).length).toBe(1);
+    await expect.poll(() => callsOf("due-work", behind).length).toBe(1);
   });
 
   it("that is deleted or still being prepared is left alone by the rollout", async () => {

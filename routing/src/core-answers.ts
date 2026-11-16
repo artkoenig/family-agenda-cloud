@@ -16,8 +16,8 @@ export function answerOf(text: string): Answer {
   }
 }
 
-/** The core version prepare-family answers, the one the Family's database is now prepared for. */
-export const preparedVersion = ({ coreVersion }: Answer): string | undefined => (typeof coreVersion === "string" ? coreVersion : undefined);
+/** The release a core runs, as its /api/health answers it, such as `0.7.0`. */
+export const runningVersion = ({ version }: Answer): string | undefined => (typeof version === "string" && version ? version : undefined);
 
 /**
  * Whether reset-admin-password's 404 says that the Family has no Admin with that email. A 404
@@ -26,9 +26,35 @@ export const preparedVersion = ({ coreVersion }: Answer): string | undefined => 
 export const isUnknownAdmin = ({ error }: Answer): boolean => error === "unknown-admin";
 
 /** The new password reset-admin-password answers. */
-export const newPassword = ({ password }: Answer): string | undefined => (typeof password === "string" && password ? password : undefined);
+export const newPassword = ({ newPassword }: Answer): string | undefined => (typeof newPassword === "string" && newPassword ? newPassword : undefined);
 
-/** How many due Sources run-due-work polled, and of those how many failed. */
-export function sourcesPolled({ ran, failed }: Answer): { ran: number; failed: number } | undefined {
-  return Number.isInteger(ran) && Number.isInteger(failed) ? { ran: ran as number, failed: failed as number } : undefined;
+/** How many due Sources a run of due work polled, and of those how many failed. */
+export type SourcesPolled = { ran: number; failed: number };
+
+/** What due-work answers: the Sources it polled, or why a step of it failed. */
+export type DueWork = SourcesPolled | { error: string };
+
+/**
+ * How many due Sources due-work polled, and of those how many failed; or why a step of it failed:
+ * polling the Sources, or extracting the messages after. The core answers `{ polled, extracted }`,
+ * each `{ ok: true, report }` or `{ ok: false, error }`, the report of polling naming the Sources
+ * that `ran` and those that `failed`.
+ */
+export function dueWorkOf({ polled, extracted }: Answer): DueWork | undefined {
+  const polling = stepOf(polled);
+  const extraction = stepOf(extracted);
+  if (polling === undefined || extraction === undefined) return undefined;
+  if ("error" in polling) return { error: `polling the Sources: ${polling.error}` };
+  if ("error" in extraction) return { error: `extracting the messages: ${extraction.error}` };
+  const { ran, failed } = polling.report;
+  if (!Array.isArray(ran) || !Array.isArray(failed)) return undefined;
+  return { ran: ran.length + failed.length, failed: failed.length };
+}
+
+/** A step's report, or the error it failed with; undefined for anything else. */
+function stepOf(step: unknown): { report: Answer } | { error: string } | undefined {
+  if (typeof step !== "object" || step === null) return undefined;
+  const { ok, report, error } = step as Answer;
+  if (ok === false) return { error: typeof error === "string" ? error : "no reason given" };
+  return ok === true && typeof report === "object" && report !== null ? { report: report as Answer } : undefined;
 }

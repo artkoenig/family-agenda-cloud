@@ -1,77 +1,51 @@
 /**
- * The stand-in core, and with it the contract between the Routing module and the public core.
+ * The stand-in core: the public core 0.7.0 in supplied mode, as far as the Routing module uses it.
+ * It follows the core's documentation (docs/configuration.md of the core, "Supplied mode" and
+ * "Triggered operations"), and the walk-through against the real core image
+ * (test/real-core/walk-through.test.ts) shows any difference, which is then fixed here.
  *
- * The core's side (artkoenig/family-agenda#362) is not released, so its documentation of the
- * Context and of the triggered operations does not exist yet. Until it does, this module is where
- * that contract is written down: the Routing module's tests expect exactly what this stand-in
- * accepts. When the core documents its side, this module follows the documentation, and the
- * walk-through against the real core image (#101) shows any difference.
+ * ## Two ports
+ *
+ * - Its pages on `CALLER_PORT` ({@link StandInCore.url}), the only port a core in supplied mode
+ *   serves them on, for the Router alone.
+ * - Its triggered operations on `TRIGGER_PORT` ({@link StandInCore.triggerUrl}), each requiring
+ *   `Authorization: Bearer <TRIGGER_TOKEN>` (401 `{ "error": "unauthorized" }` otherwise, checked
+ *   first) and the Context of the Family it acts on.
  *
  * ## The Context
  *
- * - Sent in the request header `X-Family-Agenda-Context`.
- * - A JWT encrypted as a compact JWE (RFC 7516) with `alg: "dir"` and `enc: "A256GCM"`: the
- *   Context key itself is the content key, so the Context is both encrypted and authenticated
- *   ("signed") with it. The Context key is 32 bytes, given to both sides as standard base64.
- * - Claims: `iat` and `exp` (seconds; a short lifetime), and the ones in {@link Context}.
- * - A Context that does not decrypt with the Context key, or whose `exp` has passed, is rejected
- *   with 401 and opens nothing.
+ * - Sent in the request header `X-Family-Context`, sealed as `v1.<iv>.<ciphertext>.<tag>` with
+ *   AES-256-GCM under a key derived from `CONTEXT_KEY` (see test/support/core-context.ts).
+ * - One that does not open, or has expired, is refused with 401 and opens nothing.
+ * - A Context for a database that holds no prepared Family is refused with 409
+ *   `family-not-prepared`, by every page and operation but `prepare-family`.
  *
- * ## Triggered operations
+ * ## Triggered operations (`POST /operations/<name>`)
  *
- * - `POST /operations/prepare-family`: brings the database the Context names up to date and
- *   writes the Family id into it. Safe to call again. Answers 200 `{ "coreVersion": "<version>" }`.
- * - `POST /operations/enter-admin` with JSON `{ "email": "<address>" }`: enters an Admin with that
- *   email address and no password, which closes the setup page. Needs a prepared Family (409
- *   otherwise). Answers 201 when the Admin is new and 200 when one with that address exists.
- * - `POST /operations/reset-admin-password` with JSON `{ "email": "<address>" }`: draws a new
- *   password for the Admin with that email address, sets it and ends their sessions, as the core's
- *   `family-agenda reset-admin-password <email>` does inside an Instance. Answers 200
- *   `{ "password": "<new password>" }`, the only place the password is ever given out; 404
- *   `{ "error": "unknown-admin" }` when the Family has no Admin with that address (a 404 without
- *   that error code is no answer of this operation); 409 for a Family that is not prepared.
- * - `POST /operations/run-due-work`: polls each of the Family's Sources that is due, as the core
- *   decides; the caller only gives it the occasion. Needs a prepared Family (409 otherwise).
- *   Answers 200 `{ "ran": <Sources polled>, "failed": <of those, Sources that failed> }` once the
- *   run has ended.
- * - `POST /operations/purge-messages`: deletes the Family's messages past their retention.
- *   Needs a prepared Family (409 otherwise). Answers 200 `{ "purged": <n>, "deleted": <n> }`.
- * - `POST /operations/sweep-secrets`: removes the Family's secrets no Source refers to any more.
- *   Needs a prepared Family (409 otherwise). Answers 200 `{ "removed": <n> }`. It is triggered
- *   per Family like the others, not once for all: the secrets are in each Family's own database,
- *   which the core opens only with that Family's Context.
+ * - `prepare-family`: prepares the database the Context names with its Family id. Safe to call
+ *   again. Answers `{ "familyId" }`; a body `{ "familyId" }` naming another Family is refused 400.
+ *   It answers no version: the core's `GET /api/health` answers `{ "status": "ok", "version" }`.
+ * - `enter-admin` with `{ "email" }`: enters an Admin without a password. Answers
+ *   `{ "email", "outcome": "first" | "added" | "exists" }`.
+ * - `reset-admin-password` with `{ "email" }`: draws and sets a new password, ending the Admin's
+ *   sessions. Answers `{ "email", "newPassword" }`, or 404 `{ "error": "unknown-admin" }`.
+ * - `due-work`: polls the Family's due Sources, then extracts its messages. Answers
+ *   `{ "polled": <step>, "extracted": <step> }`, each step `{ "ok": true, "report" }` or
+ *   `{ "ok": false, "error" }`; the report of polling names the Sources that `ran` and those that
+ *   `failed`.
+ * - `purge`: answers `{ "purged", "deleted" }`. `secret-sweep`: answers `{ "removed" }`.
+ * - Any other name: 404. A failure: 500 `{ "error": "failed" }`.
  *
- * A triggered operation answers once it has ended, however long that takes; the Routing module
- * gives a call up after a long timeout of its own.
- *
- * ## The core version
- *
- * - The version a core answers `prepare-family` with is the release its image was built from,
- *   the same text its `GET /api/health` answers as `version` (docs/upgrading.md: "Check the running
- *   version ... at `/api/health`"), such as `0.3.1`.
- * - The Routing module does not ask the cores which version they run. It is told, as
- *   `CORE_VERSION`, an exact release (`0.3.1`, never `latest`). The intended setup is that the
- *   Cube's compose project names the core image's tag from the same `CORE_VERSION` of its `.env`,
- *   so that the pool and the Routing module change release together. Asking the pool instead would put a health check on every request and
- *   every scheduled run, and leaves open which answer counts while the pool is half upgraded.
- * - A Family is prepared for the running version when its Directory entry notes `CORE_VERSION`.
- *   Until then the Router answers it 503 and the Scheduler triggers nothing for it, so that a core
- *   never opens a database it has not migrated. `routing roll-out` prepares it; a core that
- *   answers another version than `CORE_VERSION` fails the Family's preparation.
- * - `prepare-family` is idempotent: a rollout run again calls it again for a Family whose earlier
- *   call failed, and for one whose call succeeded but was not noted.
+ * A triggered operation answers once it has ended, however long that takes.
  *
  * ## Requests from browsers
  *
  * - The Router passes a Family's request on below the root, its Family id removed from the path
- *   (`/<family id>/agendas/1` arrives as `/agendas/1`), with that Family's Context. The core emits
- *   its addresses below the Context's `pathPrefix`.
- * - Static files (`/static/...`) and the health check (`GET /api/health`) are the same for every
- *   Family: they are served without a Context.
- * - The core runs with `TRUST_PROXY=true` and takes the client from the Router's headers, as its
- *   documentation (docs/configuration.md, `TRUST_PROXY`) says: the scheme from the first entry of
- *   `X-Forwarded-Proto`, the host from `X-Forwarded-Host`, and the client's address from the last
- *   entry of `X-Forwarded-For`.
+ *   (`/<family id>/agendas/1` arrives as `/agendas/1`), with that Family's Context; static files
+ *   too. Only `GET /api/health` is answered without a Context.
+ * - The core runs with `TRUST_PROXY=true` and takes the client from the Router's headers: the
+ *   scheme from the first entry of `X-Forwarded-Proto`, the host from `X-Forwarded-Host`, and the
+ *   client's address from the last entry of `X-Forwarded-For`.
  */
 import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -79,54 +53,19 @@ import type { AddressInfo } from "node:net";
 import { serve, type HttpBindings } from "@hono/node-server";
 import { RESPONSE_ALREADY_SENT } from "@hono/node-server/utils/response";
 import { Hono } from "hono";
-import { jwtDecrypt } from "jose";
+import type { ContextClaims } from "../../src/context";
 import type { SourcesPolled } from "../../src/core";
+import { openContext } from "./core-context";
 
-export const CONTEXT_HEADER = "x-family-agenda-context";
+export const CONTEXT_HEADER = "x-family-context";
 
 /** The version the stand-in runs, and answers "prepare the Family" with, until told otherwise. */
 export const STAND_IN_CORE_VERSION = "0.0.0";
 
-/** What a Context tells the core about the Family a request or operation is for. */
-export type Context = {
-  familyId: string;
-  /** The Family's own database, and the role to open it with. */
-  database: { host: string; port: number; name: string; user: string; password: string };
-  /** The key the core encrypts the Family's Source credentials with: 32 bytes, base64. */
-  familyKey: string;
-  /** The directory the core keeps the Family's blobs in. */
-  blobLocation: string;
-  /** IANA time zone, where the Family's days start. */
-  timeZone: string;
-  /**
-   * The Family's public address, with the path prefix and without a trailing slash:
-   * `https://app.family-agenda.cloud/<family id>`. The core emits its addresses below it; the
-   * address the Operator hands out is this with a trailing slash.
-   */
-  publicUrl: string;
-  /** The path prefix the core emits its addresses below: `/<family id>`. */
-  pathPrefix: string;
-  /** The Identity Provider, as the core's `OIDC_*` settings name it; null when there is none. */
-  identityProvider: { issuerUrl: string; clientId: string; clientSecret: string; requiredGroup: string } | null;
-  /**
-   * Who may sign in through the Identity Provider: `known-admins-only` signs in a person only if
-   * an Admin with their verified email address exists, and never makes anyone an Admin.
-   */
-  identityProviderSignIn: "known-admins-only";
-  iat: number;
-  exp: number;
-};
+/** A Context as the stand-in opened it, with its database read from `databaseUrl` as the core reads it. */
+export type Context = ContextClaims & { database: { host: string; port: number; name: string; user: string; password: string } };
 
-/** Opens a Context with the Context key, as the core does; throws if it cannot or it has expired. */
-export async function openContext(token: string, contextKey: string, at: Date = new Date()): Promise<Context> {
-  const { payload } = await jwtDecrypt(token, Buffer.from(contextKey, "base64"), {
-    keyManagementAlgorithms: ["dir"],
-    contentEncryptionAlgorithms: ["A256GCM"],
-    currentDate: at,
-    requiredClaims: ["exp", "iat"],
-  });
-  return payload as unknown as Context;
-}
+export { openContext };
 
 /** The client of a request as a core with `TRUST_PROXY=true` takes it from the headers. */
 export function clientOf({ headers }: RecordedRequest): { address: string | undefined; scheme: "https" | "http"; host: string | undefined } {
@@ -138,6 +77,8 @@ export function clientOf({ headers }: RecordedRequest): { address: string | unde
 }
 
 export type RecordedRequest = {
+  /** The port it arrived at: the pages' or the triggered operations'. */
+  on: "caller" | "trigger";
   method: string;
   path: string;
   /** The query string with its `?`, or "" when there was none. */
@@ -151,17 +92,16 @@ export type RecordedRequest = {
   body: unknown;
 };
 
-type Operation = "prepare-family" | "enter-admin" | "reset-admin-password" | "run-due-work" | "purge-messages" | "sweep-secrets";
+type Operation = "prepare-family" | "enter-admin" | "reset-admin-password" | "due-work" | "purge" | "secret-sweep";
 
 /** An answer the stand-in gives as it is, to show that it reaches the browser unchanged. */
 export type CannedAnswer = { status: number; headers: [string, string][]; body: Uint8Array };
 
-/** What a core serves the same for every Family, without a Context. */
-const isFamilyIndependent = (method: string, path: string) =>
-  path.startsWith("/static/") || (method === "GET" && path === "/api/health");
-
 export type StandInCore = {
+  /** Where it serves the pages: its CALLER_PORT. */
   url: string;
+  /** Where it serves the triggered operations: its TRIGGER_PORT. */
+  triggerUrl: string;
   /** Every request that arrived, in order. */
   requests: RecordedRequest[];
   /** The Admins entered per Family id. */
@@ -177,7 +117,7 @@ export type StandInCore = {
    * without an answer, as by a core that dies while at work on it.
    */
   dropNextCall(operation: Operation): void;
-  /** The next page, static file or health check is answered with this, whatever was asked. */
+  /** The next page or health check is answered with this, whatever was asked. */
   answerNext(answer: CannedAnswer): void;
   /** The next page of a Family begins its answer and then drops the connection. */
   dropNext(): void;
@@ -192,7 +132,7 @@ export type StandInCore = {
   holdDueWork(familyId: string): () => void;
   /** Ends every run held under way. */
   releaseAll(): void;
-  /** Stops listening, as a core that is restarted does: a call to it finds nobody there. */
+  /** Stops listening on both ports, as a core that is restarted does: a call to it finds nobody there. */
   goDown(): Promise<void>;
   /** Listens again on the same address, with everything it knew before. */
   comeBack(): Promise<void>;
@@ -201,10 +141,58 @@ export type StandInCore = {
   close(): Promise<void>;
 };
 
-/** Starts the stand-in core on a free port of localhost. */
-export async function startStandInCore(contextKey: string): Promise<StandInCore> {
+
+/** The pool of stand-in cores as the Routing module is told it: their pages and their triggered operations, in the same order. */
+export const poolOf = (...cores: Pick<StandInCore, "url" | "triggerUrl">[]): { CORE_URLS: string; CORE_TRIGGER_URLS: string } => ({
+  CORE_URLS: cores.map(({ url }) => url).join(","),
+  CORE_TRIGGER_URLS: cores.map(({ triggerUrl }) => triggerUrl).join(","),
+});
+
+/** The due-work answer of the core for a run that polled `ran` due Sources, `failed` of which failed. */
+function dueWorkAnswer({ ran, failed }: SourcesPolled): object {
+  const sourceIds = Array.from({ length: ran }, (_, index) => `source-${index + 1}`);
+  const report = {
+    ran: sourceIds.slice(failed),
+    failed: sourceIds.slice(0, failed).map((sourceId) => ({ sourceId, kind: "temporary", message: "the Source did not answer" })),
+    invalid: [],
+    refused: [],
+    lost: [],
+  };
+  return { polled: { ok: true, report }, extracted: { ok: true, report: { extracted: 0 } } };
+}
+
+/** The Context opened, or null if it does not open. */
+function openedOrNull(sealedContext: string, contextKey: string): Context | null {
+  try {
+    const context = openContext(sealedContext, contextKey);
+    const url = new URL(context.databaseUrl);
+    const database = {
+      host: url.hostname,
+      port: Number(url.port || "5432"),
+      name: decodeURIComponent(url.pathname.slice(1)),
+      user: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+    };
+    return { ...context, database };
+  } catch {
+    return null;
+  }
+}
+
+type Variables = { Variables: { context: Context } };
+
+/**
+ * The Families prepared, shared by every stand-in core: a core keeps that in the Family's
+ * database, which all cores of a pool open, so a Family one core prepared is prepared for all.
+ */
+const prepared = new Set<string>();
+
+/** A refusal a triggered operation answers with, as the core does: the status and `{ "error" }`. */
+type Refusal = { refused: 400 | 404; error: string };
+
+/** Starts the stand-in core on two free ports of localhost: its pages', and its triggered operations'. */
+export async function startStandInCore(contextKey: string, triggerToken: string): Promise<StandInCore> {
   const requests: RecordedRequest[] = [];
-  const prepared = new Set<string>();
   const admins = new Map<string, string[]>();
   const faults = new Map<Operation, number>();
   const drops = new Set<Operation>();
@@ -224,78 +212,86 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
 
   let version = STAND_IN_CORE_VERSION;
 
-  const app = new Hono<{ Variables: { context: Context } }>();
-  app.use(async (c, next) => {
-    const sealedContext = c.req.header(CONTEXT_HEADER) ?? null;
-    const context = sealedContext ? await openContext(sealedContext, contextKey).catch(() => null) : null;
-    const body: unknown = c.req.header("content-type")?.startsWith("application/json") ? await c.req.json() : null;
-    const search = new URL(c.req.url).search;
-    requests.push({ method: c.req.method, path: c.req.path, search, headers: c.req.header(), sealedContext, context, body });
-    if (isFamilyIndependent(c.req.method, c.req.path)) return cannedAnswer() ?? c.json({ familyIndependent: c.req.path });
-    if (!context) return c.json({ error: "no valid Context" }, 401);
-    c.set("context", context);
-    await next();
-  });
+  /** Records the request, and opens its Context; the Context of a Family not prepared is refused, but by prepare-family. */
+  const recording = (on: RecordedRequest["on"], app: Hono<Variables>) =>
+    app.use(async (c, next) => {
+      const sealedContext = c.req.header(CONTEXT_HEADER) ?? null;
+      const context = sealedContext ? openedOrNull(sealedContext, contextKey) : null;
+      const body: unknown = c.req.header("content-type")?.startsWith("application/json") ? await c.req.json() : null;
+      const search = new URL(c.req.url).search;
+      requests.push({ on, method: c.req.method, path: c.req.path, search, headers: c.req.header(), sealedContext, context, body });
+      if (on === "trigger" && c.req.header("authorization") !== `Bearer ${triggerToken}`) return c.json({ error: "unauthorized" }, 401);
+      if (on === "caller" && c.req.method === "GET" && c.req.path === "/api/health") return cannedAnswer() ?? c.json({ status: "ok", version });
+      if (!context) return c.text("A valid Context is required.", 401);
+      if (!prepared.has(context.familyId) && c.req.path !== "/operations/prepare-family") {
+        return c.text("family-not-prepared: the database the Context names holds no prepared Family.", 409);
+      }
+      c.set("context", context);
+      await next();
+    });
+
+  const pages = new Hono<Variables>();
+  recording("caller", pages);
+  const operations = new Hono<Variables>();
+  recording("trigger", operations);
+
   const fault = (operation: Operation) => {
     const status = faults.get(operation);
     faults.delete(operation);
     return status;
   };
 
-  app.post("/operations/prepare-family", (c) => {
-    const status = fault("prepare-family");
-    if (status) return c.json({ error: "fault" }, status as 500);
-    prepared.add(c.get("context").familyId);
-    return c.json({ coreVersion: version });
-  });
-  app.post("/operations/enter-admin", async (c) => {
-    const status = fault("enter-admin");
-    if (status) return c.json({ error: "fault" }, status as 500);
-    const { familyId } = c.get("context");
-    if (!prepared.has(familyId)) return c.json({ error: "Family not prepared" }, 409);
-    const { email } = await c.req.json<{ email: string }>();
-    const entered = admins.get(familyId) ?? [];
-    if (entered.includes(email)) return c.json({ created: false }, 200);
-    admins.set(familyId, [...entered, email]);
-    return c.json({ created: true }, 201);
-  });
-  app.post("/operations/reset-admin-password", async (c) => {
-    const status = fault("reset-admin-password");
-    if (status) return c.json({ error: "fault" }, status as 500);
-    const { familyId } = c.get("context");
-    if (!prepared.has(familyId)) return c.json({ error: "Family not prepared" }, 409);
-    const { email } = await c.req.json<{ email: string }>();
-    if (!(admins.get(familyId) ?? []).includes(email)) return c.json({ error: "unknown-admin" }, 404);
-    const password = randomBytes(12).toString("base64url");
-    passwords.set(passwordKey(familyId, email), password);
-    return c.json({ password });
-  });
-
-  /** A triggered operation on a prepared Family, which answers what `answer` gives: a body, or a failing status. */
-  const triggered = (operation: Operation, answer: (familyId: string) => Promise<object | number>) => {
-    app.post(`/operations/${operation}`, async (c) => {
+  /** A triggered operation, which answers what `answer` gives: a body, or a failing status. */
+  const triggered = (operation: Operation, answer: (context: Context, body: Record<string, unknown>) => Promise<object | number> | object | number) => {
+    operations.post(`/operations/${operation}`, async (c) => {
       const status = fault(operation);
-      if (status) return c.json({ error: "fault" }, status as 500);
+      if (status) return c.json({ error: "failed" }, status as 500);
       if (drops.delete(operation)) {
         (c.env as HttpBindings).outgoing.socket?.destroy();
         return RESPONSE_ALREADY_SENT;
       }
-      const { familyId } = c.get("context");
-      if (!prepared.has(familyId)) return c.json({ error: "Family not prepared" }, 409);
-      const answered = await answer(familyId);
-      return typeof answered === "number" ? c.json({ error: "fault" }, answered as 500) : c.json(answered);
+      const body = (requests.at(-1)?.body ?? {}) as Record<string, unknown>;
+      const answered = await answer(c.get("context"), body);
+      if (typeof answered === "number") return c.json({ error: "failed" }, answered as 500);
+      if ("refused" in answered) return c.json({ error: (answered as Refusal).error }, (answered as Refusal).refused);
+      return c.json(answered);
     });
   };
-  triggered("run-due-work", async (familyId) => {
+  operations.post("/operations/prepare-family", (c, next) => {
+    const body = requests.at(-1)?.body as { familyId?: unknown } | null;
+    if (body?.familyId !== undefined && body.familyId !== c.get("context").familyId) return c.json({ error: "family-id-not-the-contexts" }, 400);
+    return next();
+  });
+  triggered("prepare-family", ({ familyId }) => {
+    prepared.add(familyId);
+    return { familyId };
+  });
+  triggered("enter-admin", ({ familyId }, { email }) => {
+    const address = String(email);
+    const entered = admins.get(familyId) ?? [];
+    if (entered.includes(address)) return { email: address, outcome: "exists" };
+    admins.set(familyId, [...entered, address]);
+    return { email: address, outcome: entered.length === 0 ? "first" : "added" };
+  });
+  triggered("reset-admin-password", ({ familyId }, { email }) => {
+    const address = String(email);
+    if (!(admins.get(familyId) ?? []).includes(address)) return { refused: 404, error: "unknown-admin" } satisfies Refusal;
+    const newPassword = randomBytes(12).toString("base64url");
+    passwords.set(passwordKey(familyId, address), newPassword);
+    return { email: address, newPassword };
+  });
+  triggered("due-work", async ({ familyId }) => {
     // Held until released; the hold stays in place for releaseAll() while the run waits.
     await held.get(familyId)?.until;
-    return dueWork.get(familyId) ?? { ran: 0, failed: 0 };
+    const answer = dueWork.get(familyId) ?? { ran: 0, failed: 0 };
+    return typeof answer === "number" ? answer : dueWorkAnswer(answer);
   });
-  triggered("purge-messages", () => Promise.resolve({ purged: 0, deleted: 0 }));
-  triggered("sweep-secrets", () => Promise.resolve({ removed: 0 }));
+  triggered("purge", () => ({ purged: 0, deleted: 0 }));
+  triggered("secret-sweep", () => ({ removed: 0 }));
+  operations.notFound((c) => c.json({ error: "unknown-operation" }, 404));
 
-  // Every other page of the Family: says which Family and page it served.
-  app.all("*", (c) => {
+  // Every other page of the Family, static files included: says which Family and page it served.
+  pages.all("*", (c) => {
     if (dropping) {
       // Begins the answer, then drops the connection, as a core that dies mid-answer does.
       dropping = false;
@@ -307,14 +303,33 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     return cannedAnswer() ?? c.json({ familyId: c.get("context").familyId, path: c.req.path });
   });
 
-  const server = await new Promise<Server>((resolve) => {
-    const started = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1", createServer }, () => {
-      resolve(started as Server);
+  const listen = (app: Hono<Variables>) =>
+    new Promise<Server>((resolve) => {
+      const started = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1", createServer }, () => {
+        resolve(started as Server);
+      });
     });
-  });
-  const { port } = server.address() as AddressInfo;
+  const servers = [await listen(pages), await listen(operations)] as const;
+  const [port, triggerPort] = servers.map((server) => (server.address() as AddressInfo).port) as [number, number];
+  const closing = (server: Server, all: boolean) =>
+    new Promise<void>((resolve, reject) => {
+      if (!server.listening) {
+        resolve();
+        return;
+      }
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+      if (all) server.closeAllConnections();
+    });
+  const reopening = (server: Server, at: number) =>
+    new Promise<void>((resolve) => {
+      server.listen(at, "127.0.0.1", resolve);
+    });
   return {
     url: `http://127.0.0.1:${port}`,
+    triggerUrl: `http://127.0.0.1:${triggerPort}`,
     requests,
     admins: (familyId) => admins.get(familyId) ?? [],
     password: (familyId, email) => passwords.get(passwordKey(familyId, email)),
@@ -344,31 +359,17 @@ export async function startStandInCore(contextKey: string): Promise<StandInCore>
     releaseAll() {
       for (const { release } of held.values()) release();
     },
-    goDown: () =>
-      new Promise((resolve, reject) => {
-        server.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-        server.closeAllConnections();
-      }),
-    comeBack: () =>
-      new Promise((resolve) => {
-        server.listen(port, "127.0.0.1", resolve);
-      }),
+    goDown: async () => {
+      await Promise.all(servers.map((server) => closing(server, true)));
+    },
+    comeBack: async () => {
+      await Promise.all([reopening(servers[0], port), reopening(servers[1], triggerPort)]);
+    },
     runVersion(next) {
       version = next;
     },
-    close: () =>
-      new Promise((resolve, reject) => {
-        if (!server.listening) {
-          resolve();
-          return;
-        }
-        server.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      }),
+    close: async () => {
+      await Promise.all(servers.map((server) => closing(server, false)));
+    },
   };
 }

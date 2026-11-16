@@ -15,8 +15,12 @@ The one server the hosted service runs on.
 _Avoid_: Server, host, VM, node
 
 **Core**:
-One container of the public Family Agenda image, unmodified, in a pool of identical ones; it keeps no data of its own and serves whichever Family the Context it is given names.
+One container of the public Family Agenda image, unmodified, in a pool of identical ones; it keeps no data of its own and serves whichever Family the Context it is given names. It answers browser requests, each with a Context, on its caller port, and operations triggered from outside, such as due work, purge and preparation, on its trigger port.
 _Avoid_: Instance (one installation for one Family), backend, worker
+
+**Supplied mode**:
+The core's mode in which it opens no Family of its own but is handed one Context per request or triggered operation.
+_Avoid_: Multi-tenant mode, cloud mode
 
 ### Routing module
 
@@ -29,7 +33,7 @@ The Routing module's entrance for web requests, which finds a request's Family b
 _Avoid_: Load balancer, front door
 
 **Directory**:
-The one list of every Family, holding per Family its Family id, status (being prepared, active, suspended, deleted), database and role, wrapped family key and database password, blob location, time zone, the core version it was last prepared for, and how its due work last ended.
+The one list of every Family, holding per Family its Family id, status (being prepared, active, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, the core version it was last prepared for, and how its due work last ended.
 _Avoid_: Registry, tenant table, control database
 
 **Scheduler**:
@@ -51,7 +55,7 @@ The key, one per Family, that encrypts that Family's Source credentials; a leake
 _Avoid_: Tenant key
 
 **Context**:
-What a core is given to serve one Family for one request or run: its Family id, database, family key, blob location, time zone, public address with the path prefix, and Identity Provider settings.
+What a core is given to serve one Family for one request or run: its Family id, database, family key, the blob directory (the folder its blob location lies in, named by the Family id), time zone, public address with the path prefix, and Identity Provider settings.
 _Avoid_: Tenant config, session, request context
 
 **Operator key**:
@@ -61,3 +65,7 @@ _Avoid_: KMS key
 **Context key**:
 The key, shared by the Routing module and the cores, that protects every Context.
 _Avoid_: Shared secret, Ticket key
+
+**Trigger token**:
+The bearer token, shared by the Routing module and the cores, that a call to a core's trigger port must carry.
+_Avoid_: API key, operations secret

@@ -25,7 +25,7 @@ type RouterSetup = {
 
 /** A request as the Router passes it on to a core. */
 type CoreRequest = {
-  /** The Family the request is for; none for static files and the health check. */
+  /** The Family the request is for; none for the health check, the one path a core answers without a Context. */
   familyId?: string;
   /** Where the request goes on the core. */
   path: string;
@@ -80,7 +80,7 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
   outgoing.on("close", () => {
     setup.log.info("Served a request", { familyId, method: incoming.method, status: outgoing.statusCode });
   });
-  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(config, family) } });
+  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: sealedContext(config, family) } });
 }
 
 /**

@@ -8,7 +8,7 @@ import { readConfig } from "../../src/config";
 import { createLog } from "../../src/log";
 import { startRouter, type Router } from "../../src/router";
 import { SCHEDULER_RUNNING } from "../../src/scheduler";
-import { STAND_IN_CORE_VERSION, startStandInCore, type StandInCore } from "./stand-in-core";
+import { STAND_IN_CORE_VERSION, poolOf, startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -116,7 +116,8 @@ export async function setUpRouting(): Promise<TestRouting> {
   const { routingRole, directoryName, directoryPassword } = await sharedDirectory(server);
 
   const contextKey = key();
-  const core = await startStandInCore(contextKey);
+  const triggerToken = key();
+  const core = await startStandInCore(contextKey, triggerToken);
   const directoryUrl = new URL(superuserUrl);
   directoryUrl.username = routingRole;
   directoryUrl.password = "";
@@ -126,7 +127,8 @@ export async function setUpRouting(): Promise<TestRouting> {
     DIRECTORY_DATABASE_PASSWORD: directoryPassword,
     OPERATOR_KEY: key(),
     CONTEXT_KEY: contextKey,
-    CORE_URLS: core.url,
+    TRIGGER_TOKEN: triggerToken,
+    ...poolOf(core),
     BLOB_ROOT: "/var/lib/family-agenda/blobs",
     CORE_VERSION: STAND_IN_CORE_VERSION,
   };
@@ -225,7 +227,7 @@ export async function setUpRouting(): Promise<TestRouting> {
         "SELECT datname FROM pg_database WHERE datdba IN (SELECT oid FROM pg_roles WHERE rolname = ANY($1))",
         [roles.map(({ rolname }) => rolname)],
       );
-      for (const { datname } of databases) await query(maintenance, `DROP DATABASE IF EXISTS "${String(datname)}"`);
+      for (const { datname } of databases) await query(maintenance, `DROP DATABASE IF EXISTS "${String(datname)}" WITH (FORCE)`);
       for (const { rolname } of roles) await query(maintenance, `DROP ROLE IF EXISTS "${String(rolname)}"`);
       // Empties the Directory for the next test: everything the Routing module made in it is its role's.
       await query(directoryName, `DROP OWNED BY ${routingRole}`);
