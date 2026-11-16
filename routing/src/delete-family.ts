@@ -71,8 +71,8 @@ function refuseForeign(entry: DirectoryEntry, blobLocation: string): void {
 }
 
 /**
- * Removes the blob location with all in it. A blob root that is not there, such as a shared volume
- * that is not mounted, fails the step, so that blobs it cannot see are not reported gone.
+ * Removes the blob location with all in it. A blob root that is not there, such as the bucket
+ * while it is not mounted, fails the step, so that blobs it cannot see are not reported gone.
  */
 async function removeBlobs(blobRoot: string, blobLocation: string): Promise<void> {
   const root = await stat(blobRoot).catch(() => undefined);

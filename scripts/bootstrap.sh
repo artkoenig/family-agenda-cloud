@@ -41,6 +41,9 @@ sshd -t
 systemctl reload ssh
 
 install -m 0700 -d /opt/family-agenda
+# Where the blob-mount service mounts the bucket of the Families' blobs (cube/compose.yaml). Root's,
+# so that a core cannot write blobs onto the Cube's disk while the bucket is not mounted.
+install -m 0755 -d /var/lib/family-agenda-blobs
 
 docker --version
 docker compose version

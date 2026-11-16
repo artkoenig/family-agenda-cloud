@@ -7,7 +7,7 @@
 #   edge       Caddy and the Router.
 #   pool       the Routing module (Router, Scheduler) and the cores: the cores' Context interface.
 #   directory  Postgres, the Routing module and the cores, which open their Family's database.
-#   outbound   the cores and the Egress Proxies, which reach the internet.
+#   outbound   the cores, the Egress Proxies and the blob mount, which reach the internet.
 #   plugin-<id>         the cores and that plugin.
 #   plugin-<id>-egress  that plugin and its Egress Proxy alone.
 # The plugins and the Egress Proxies share a network with the cores, so they can reach the cores'
@@ -21,6 +21,19 @@ name: family-agenda
 # out, this is the build of the commit on main that does; then it is that release's tag and digest.
 x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+
+# Every Family's blobs lie in the Object Storage bucket, which the `blob-mount` service mounts as
+# a file system at /var/lib/family-agenda-blobs/bucket on the Cube (docs/adr/0002). The cores and
+# the Routing module see that directory of the Cube, and through it the mount whenever it comes
+# (rslave). While the bucket is not mounted, `bucket` is an empty directory of root's: the cores
+# cannot write into it, and `families`, the blob root, is not there.
+x-blobs: &blobs
+  type: bind
+  source: /var/lib/family-agenda-blobs
+  target: /var/lib/family-agenda/blobs
+  bind:
+    propagation: rslave
+    create_host_path: false
 
 # A core of the pool, run from the released image unmodified: the `core` service, whose replicas
 # are the pool. It serves whichever Family the Context of a request names: no DATABASE_URL and no
@@ -36,7 +49,8 @@ x-core: &core
   restart: unless-stopped
   environment:
     # Supplied mode: each request's Context names the Family's database, key, blob location
-    # (under BLOB_ROOT of the Routing module) and address; the core listens on CALLER_PORT only.
+    # (under BLOB_ROOT of the Routing module, in the mounted bucket) and address; the core listens
+    # on CALLER_PORT only.
     CONTEXT_MODE: supplied
     CONTEXT_KEY: ${CONTEXT_KEY:?}
     CALLER_PORT: "3002"
@@ -49,8 +63,11 @@ x-core: &core
     TESSDATA_DIRECTORY: /var/lib/family-agenda/tessdata
     PLUGIN_URLS: ics=http://plugin-ics:8080,imap=http://plugin-imap:8080,webuntis=http://plugin-webuntis:8080
   volumes:
-    - blobs:/var/lib/family-agenda/blobs
+    - *blobs
     - tessdata:/var/lib/family-agenda/tessdata
+  depends_on:
+    blob-mount:
+      condition: service_healthy
   networks:
     # `cores` is the pool's name, and stands for every replica's address on this network alone. The
     # service's own name, `core`, would do so on every network the caller shares with the cores,
@@ -64,9 +81,12 @@ x-core: &core
     plugin-imap:
     plugin-webuntis:
   healthcheck:
-    test: ["CMD", "node", "-e", "fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+    # Healthy only while it answers and sees the blob root, which is there only in the mounted
+    # bucket. Nothing acts on it but `up --wait`, which a deploy ends with: the Router asks an
+    # unhealthy core all the same, and its blob writes fail.
+    test: ["CMD", "node", "-e", "require('node:fs').accessSync('/var/lib/family-agenda/blobs/bucket/families'); fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
     interval: 30s
-    timeout: 5s
+    timeout: 10s
     start_period: 20s
 
 # The Routing module's image, built from routing/; the Router, the Scheduler and the Operator's
@@ -86,15 +106,18 @@ x-routing: &routing
     # restart of it.
     CORE_URL: http://cores:3002
     CORE_TRIGGER_URL: http://cores:3001
-    BLOB_ROOT: /var/lib/family-agenda/blobs
+    # In the mounted bucket: `families` is made by the blob mount, in the bucket alone.
+    BLOB_ROOT: /var/lib/family-agenda/blobs/bucket/families
     PUBLIC_URL: https://app.family-agenda.cloud
     TRUST_PROXY: "true"
   volumes:
     # Holds one blob location per Family; `routing delete` removes a Family's.
-    - blobs:/var/lib/family-agenda/blobs
+    - *blobs
   depends_on:
     directory-database:
       condition: service_completed_successfully
+    blob-mount:
+      condition: service_healthy
 
 # A plugin container from the public core's plugins.yml. It reaches the internet only through its
 # Egress Proxy, which is `egress` on the plugin's own plugin-<id>-egress network.
@@ -163,6 +186,64 @@ services:
     <<: *core
     deploy:
       replicas: ${CORE_REPLICAS:-2}
+
+  # Mounts the bucket of the Families' blobs as a file system, with rclone (docs/adr/0002): the
+  # cores keep writing files, and each Family's blob location is a folder below `families` in the
+  # bucket. The cores and the Routing module start only once it is healthy. Mounting needs the
+  # Cube's /dev/fuse and the right to mount, which no other service has.
+  #
+  # Nothing is kept on the Cube (--vfs-cache-mode off): a blob is in the bucket when its write
+  # returns, and a write to a bucket that does not answer fails instead of being held back. The
+  # mount shows every Family's blobs as the cores' user's (uid 1000), to that user alone.
+  blob-mount:
+    image: rclone/rclone:1.76.0@sha256:7cbeec24a44f206067597c0368be4de90ae19a64d5113c7d1938bd737a81e466
+    restart: unless-stopped
+    devices: [/dev/fuse]
+    cap_add: [SYS_ADMIN]
+    security_opt: ["apparmor:unconfined"]
+    environment:
+      RCLONE_CONFIG_BLOBS_TYPE: s3
+      RCLONE_CONFIG_BLOBS_PROVIDER: IONOS
+      RCLONE_CONFIG_BLOBS_ENDPOINT: s3.eu-central-4.ionoscloud.com
+      RCLONE_CONFIG_BLOBS_REGION: eu-central-4
+      RCLONE_CONFIG_BLOBS_ACCESS_KEY_ID: ${BLOB_BUCKET_ACCESS_KEY:?}
+      RCLONE_CONFIG_BLOBS_SECRET_ACCESS_KEY: ${BLOB_BUCKET_SECRET_KEY:?}
+      # A folder is an object of its own in the bucket, so `families` and an empty Family's folder
+      # are still there after the mount comes anew.
+      RCLONE_S3_DIRECTORY_MARKERS: "true"
+      # Never makes the bucket: one that is not there is a wrong name, not a bucket to create.
+      RCLONE_S3_NO_CHECK_BUCKET: "true"
+      # A bucket that does not answer fails a call within seconds instead of holding it.
+      RCLONE_CONTIMEOUT: 5s
+      RCLONE_TIMEOUT: 5s
+      RCLONE_RETRIES: "1"
+      RCLONE_LOW_LEVEL_RETRIES: "1"
+      BLOB_BUCKET: ${BLOB_BUCKET:?}
+    # A mount that an rclone killed before left behind is taken away first. Listing the bucket
+    # fails, and the container starts anew, while the bucket's name or its credentials are wrong.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        fusermount3 -uz /mnt/bucket 2>/dev/null
+        mkdir -p /mnt/bucket && rclone lsf --max-depth 1 "blobs:$$BLOB_BUCKET" > /dev/null \
+          && rclone mkdir "blobs:$$BLOB_BUCKET/families" && exec rclone mount "blobs:$$BLOB_BUCKET" /mnt/bucket \
+          --allow-other --default-permissions --uid 1000 --gid 1000 --umask 077 --vfs-cache-mode off
+    volumes:
+      # rshared: the mount made in here shows on the Cube, and from there in the other services.
+      - type: bind
+        source: /var/lib/family-agenda-blobs
+        target: /mnt
+        bind:
+          propagation: rshared
+          create_host_path: false
+    networks: [outbound]
+    healthcheck:
+      test: ["CMD-SHELL", "mountpoint -q /mnt/bucket && test -d /mnt/bucket/families"]
+      interval: 10s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
 
   postgres:
     image: *postgres-image
@@ -268,6 +349,4 @@ volumes:
   postgres-data:
   # Only Postgres and directory-database mount it: the superuser has no password and no network.
   postgres-socket:
-  # Every Family's blobs, one location each, shared by the cores and the Routing module.
-  blobs:
   tessdata:
