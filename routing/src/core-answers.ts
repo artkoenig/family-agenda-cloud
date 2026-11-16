@@ -28,8 +28,11 @@ export const isUnknownAdmin = ({ error }: Answer): boolean => error === "unknown
 /** The new password reset-admin-password answers. */
 export const newPassword = ({ newPassword }: Answer): string | undefined => (typeof newPassword === "string" && newPassword ? newPassword : undefined);
 
-/** What due-work answers: how many due Sources were polled and how many of those failed, or why a step of it failed. */
-export type DueWork = { ran: number; failed: number } | { error: string };
+/** How many due Sources a run of due work polled, and of those how many failed. */
+export type SourcesPolled = { ran: number; failed: number };
+
+/** What due-work answers: the Sources it polled, or why a step of it failed. */
+export type DueWork = SourcesPolled | { error: string };
 
 /**
  * How many due Sources due-work polled, and of those how many failed; or why a step of it failed:
@@ -37,7 +40,7 @@ export type DueWork = { ran: number; failed: number } | { error: string };
  * each `{ ok: true, report }` or `{ ok: false, error }`, the report of polling naming the Sources
  * that `ran` and those that `failed`.
  */
-export function sourcesPolled({ polled, extracted }: Answer): DueWork | undefined {
+export function dueWorkOf({ polled, extracted }: Answer): DueWork | undefined {
   const polling = stepOf(polled);
   const extraction = stepOf(extracted);
   if (polling === undefined || extraction === undefined) return undefined;

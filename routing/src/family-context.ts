@@ -46,12 +46,17 @@ export function sealedContext(config: Config, family: Family): string {
     databaseUrl: databaseUrlOf(config, family),
     // Drawn as base64; the core takes base64url, which is the same 32 bytes.
     familyKey: Buffer.from(family.familyKey, "base64").toString("base64url"),
-    // The core keeps the Family's blobs in <blobDirectory>/<familyId>, which is its blob location.
-    blobDirectory: posix.dirname(family.blobLocation),
+    blobDirectory: blobDirectoryOf(family),
     timeZone: family.timeZone,
     publicUrl: familyUrl(config, family.familyId),
     ...(config.identityProvider ? { identityProvider: { ...config.identityProvider, knownAdminsOnly: true as const } } : {}),
   });
+}
+
+/** The core keeps the Family's blobs in <blobDirectory>/<familyId>, so the blob location must end in the Family id. */
+function blobDirectoryOf({ familyId, blobLocation }: Family): string {
+  if (posix.basename(blobLocation) !== familyId) throw new Error(`The blob location ${blobLocation} of the Family ${familyId} is not named by its Family id`);
+  return posix.dirname(blobLocation);
 }
 
 /** The Family's database as a Postgres connection string, with the Family's role and its password. */

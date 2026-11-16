@@ -1,6 +1,6 @@
 import { CONTEXT_HEADER } from "./context";
 import type { Config } from "./config";
-import { answerOf, isUnknownAdmin, newPassword, runningVersion, sourcesPolled, type Answer } from "./core-answers";
+import { answerOf, dueWorkOf, isUnknownAdmin, newPassword, runningVersion, type Answer, type SourcesPolled } from "./core-answers";
 import { neverConnected, notServing, takingTurns } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 
@@ -48,8 +48,7 @@ export type Core = {
   sweepSecrets(sealedContext: string): Promise<void>;
 };
 
-/** What a run of due work answers: how many due Sources the core polled, and of those how many failed. */
-export type SourcesPolled = { ran: number; failed: number };
+export type { SourcesPolled } from "./core-answers";
 
 export class CoreError extends Error {}
 
@@ -82,24 +81,25 @@ class NotRun extends CoreError {
  * given up then instead of being made a second time beside it, which could double a run.
  */
 export function coreClient({ coreUrls, coreTriggerUrls, triggerToken }: Pool, log: Log, timers: Timers = systemTimers): Core {
-  const cores = coreUrls.map((url, index) => ({ url, triggerUrl: coreTriggerUrls[index] ?? url, triggerToken }));
-  const [first] = cores;
-  if (!first) throw new CoreError("No core configured in CORE_URLS");
-  const inTurn = takingTurns(cores);
+  // Config pairs CORE_TRIGGER_URLS with CORE_URLS one to one, in the same order.
+  const [first] = coreTriggerUrls;
+  const [firstPages] = coreUrls;
+  if (!first || !firstPages) throw new CoreError("No core configured in CORE_URLS");
+  const inTurn = takingTurns(coreTriggerUrls);
   /**
    * Calls the operation and answers its status with its JSON body ({} for none). A status other
    * than 2xx fails the call unless `accept` names it; so does no answer within `timeoutMs`, and,
    * with `failover`, no core of the pool that runs it.
    */
   const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<{ status: number; answer: Answer }> => {
-    if (!options.failover) return callCore(first, operation, sealedContext, options, timers);
+    if (!options.failover) return callCore(first, triggerToken, operation, sealedContext, options, timers);
     const notRun: string[] = [];
     for (const target of inTurn()) {
       try {
-        return await callCore(target, operation, sealedContext, options, timers);
+        return await callCore(target, triggerToken, operation, sealedContext, options, timers);
       } catch (error) {
         if (!(error instanceof NotRun)) throw error;
-        const core = new URL(target.triggerUrl).host;
+        const core = new URL(target).host;
         notRun.push(`${core} ${error.reason}`);
         log.info("A core did not run the operation; the next one of the pool is tried", { operation, core, reason: error.reason });
       }
@@ -109,9 +109,10 @@ export function coreClient({ coreUrls, coreTriggerUrls, triggerToken }: Pool, lo
   const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS, failover: true };
   return {
     async prepareFamily(sealedContext) {
+      // Without failover, prepare-family runs on the first core alone. It answers no version, so
+      // the version is read from that same core's /api/health, on its pages' address.
       await call("prepare-family", sealedContext);
-      // prepare-family answers no version; the core that ran it tells its own at /api/health.
-      const coreVersion = runningVersion(await healthOf(first.url, timers));
+      const coreVersion = runningVersion(await healthOf(firstPages, timers));
       if (coreVersion === undefined) throw new CoreError("The core answered /api/health without its version");
       return { coreVersion };
     },
@@ -129,7 +130,7 @@ export function coreClient({ coreUrls, coreTriggerUrls, triggerToken }: Pool, lo
       return password;
     },
     async runDueWork(sealedContext) {
-      const polled = sourcesPolled((await call("due-work", sealedContext, triggered)).answer);
+      const polled = dueWorkOf((await call("due-work", sealedContext, triggered)).answer);
       if (!polled) throw new CoreError("The core answered due-work without what ran");
       if ("error" in polled) throw new CoreError(`The core's due work failed, ${polled.error}`);
       return polled;
@@ -143,20 +144,16 @@ export function coreClient({ coreUrls, coreTriggerUrls, triggerToken }: Pool, lo
   };
 }
 
-type Target = { url: string; triggerUrl: string; triggerToken: string };
-
-/** Calls the operation on one core; throws NotRun if the core provably did not run it. */
+/** Calls the operation on the core at `triggerUrl`; throws NotRun if the core provably did not run it. */
 async function callCore(
-  { triggerUrl, triggerToken }: Target,
+  triggerUrl: string,
+  triggerToken: string,
   operation: string,
   sealedContext: string,
   { body, accept = [], timeoutMs = CALL_TIMEOUT_MS }: CallOptions,
   timers: Timers,
 ): Promise<{ status: number; answer: Answer }> {
-  const timeout = new AbortController();
-  const timer = timers.setTimeout(() => {
-    timeout.abort(new Error(`no answer within ${timeoutMs / 1000} seconds`));
-  }, timeoutMs);
+  const timeout = deadline(timeoutMs, timers);
   const noAnswer = (error: unknown) => new CoreError(`The core did not answer ${operation}: ${describe(timeout.signal.reason ?? error)}`);
   try {
     const response = await fetch(`${triggerUrl}/operations/${operation}`, {
@@ -181,16 +178,13 @@ async function callCore(
     });
     return { status: response.status, answer: answerOf(text) };
   } finally {
-    timers.clearTimeout(timer);
+    timeout.clear();
   }
 }
 
 /** What the core answers at /api/health, the one page it serves without a Context. */
 async function healthOf(url: string, timers: Timers): Promise<Answer> {
-  const timeout = new AbortController();
-  const timer = timers.setTimeout(() => {
-    timeout.abort(new Error(`no answer within ${CALL_TIMEOUT_MS / 1000} seconds`));
-  }, CALL_TIMEOUT_MS);
+  const timeout = deadline(CALL_TIMEOUT_MS, timers);
   try {
     const response = await fetch(`${url}/api/health`, { signal: timeout.signal });
     if (!response.ok) throw new CoreError(`The core answered /api/health with ${response.status}`);
@@ -199,6 +193,20 @@ async function healthOf(url: string, timers: Timers): Promise<Answer> {
     if (error instanceof CoreError) throw error;
     throw new CoreError(`The core did not answer /api/health: ${describe(timeout.signal.reason ?? error)}`);
   } finally {
-    timers.clearTimeout(timer);
+    timeout.clear();
   }
+}
+
+/** An abort signal that fires once `ms` have passed without `clear()`, its reason saying so. */
+function deadline(ms: number, timers: Timers): { signal: AbortSignal; clear(): void } {
+  const controller = new AbortController();
+  const timer = timers.setTimeout(() => {
+    controller.abort(new Error(`no answer within ${ms / 1000} seconds`));
+  }, ms);
+  return {
+    signal: controller.signal,
+    clear: () => {
+      timers.clearTimeout(timer);
+    },
+  };
 }

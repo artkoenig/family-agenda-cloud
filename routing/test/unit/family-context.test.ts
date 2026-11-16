@@ -110,6 +110,10 @@ describe("sealedContext", () => {
     expect(decodeURIComponent(url.username)).toBe("family_f_1_role");
   });
 
+  it("refuses a blob location not named by the Family id, where the core would look for other blobs", () => {
+    expect(() => sealedContext(config, { ...withKey, blobLocation: "/srv/blobs/f-2" })).toThrow(/blob location/);
+  });
+
   it("offers no single sign-on without an Identity Provider", () => {
     const withoutIdentityProvider: Config = { ...config, identityProvider: null };
     expect(openContext(sealedContext(withoutIdentityProvider, withKey), contextKey)).not.toHaveProperty("identityProvider");

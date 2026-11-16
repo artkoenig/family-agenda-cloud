@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerOf, isUnknownAdmin, newPassword, runningVersion, sourcesPolled } from "../../src/core-answers";
+import { answerOf, isUnknownAdmin, newPassword, runningVersion, dueWorkOf } from "../../src/core-answers";
 
 describe("answerOf", () => {
   it("reads a JSON object", () => {
@@ -51,31 +51,31 @@ describe("newPassword", () => {
   });
 });
 
-describe("sourcesPolled", () => {
+describe("dueWorkOf", () => {
   const report = (ran: unknown[], failed: unknown[]) => ({ ran, failed, invalid: [], refused: [], lost: [] });
   const failure = (sourceId: string) => ({ sourceId, kind: "temporary", message: "timed out" });
   const extracted = { ok: true, report: {} };
 
   it("is how many due Sources were polled, those that ran and those that failed, and how many of them failed", () => {
     const answer = { polled: { ok: true, report: report(["s-1", "s-2"], [failure("s-3")]) }, extracted };
-    expect(sourcesPolled(answer)).toStrictEqual({ ran: 3, failed: 1 });
+    expect(dueWorkOf(answer)).toStrictEqual({ ran: 3, failed: 1 });
   });
 
   it("takes a run that polled nothing", () => {
-    expect(sourcesPolled({ polled: { ok: true, report: report([], []) }, extracted })).toStrictEqual({ ran: 0, failed: 0 });
+    expect(dueWorkOf({ polled: { ok: true, report: report([], []) }, extracted })).toStrictEqual({ ran: 0, failed: 0 });
   });
 
   it("is why polling failed", () => {
-    expect(sourcesPolled({ polled: { ok: false, error: "database unavailable" }, extracted })).toStrictEqual({ error: "polling the Sources: database unavailable" });
+    expect(dueWorkOf({ polled: { ok: false, error: "database unavailable" }, extracted })).toStrictEqual({ error: "polling the Sources: database unavailable" });
   });
 
   it("is why extracting the messages failed", () => {
     const answer = { polled: { ok: true, report: report([], []) }, extracted: { ok: false, error: "disk full" } };
-    expect(sourcesPolled(answer)).toStrictEqual({ error: "extracting the messages: disk full" });
+    expect(dueWorkOf(answer)).toStrictEqual({ error: "extracting the messages: disk full" });
   });
 
   it("says no reason was given for a failed step without one", () => {
-    expect(sourcesPolled({ polled: { ok: false }, extracted })).toStrictEqual({ error: "polling the Sources: no reason given" });
+    expect(dueWorkOf({ polled: { ok: false }, extracted })).toStrictEqual({ error: "polling the Sources: no reason given" });
   });
 
   it.each([
@@ -88,6 +88,6 @@ describe("sourcesPolled", () => {
     { polled: { ok: true, report: { ran: 2, failed: 0 } }, extracted },
     { polled: { ok: true, report: { ran: [] } }, extracted },
   ])("is none for %j", (answer) => {
-    expect(sourcesPolled(answer)).toBeUndefined();
+    expect(dueWorkOf(answer)).toBeUndefined();
   });
 });
