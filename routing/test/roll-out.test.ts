@@ -91,6 +91,29 @@ describe("A rollout", () => {
     expect(families.find((line) => line.startsWith(second))).not.toContain("preparing");
   });
 
+  it("fails for a Family whose core prepared it but answered its health check with an error", async () => {
+    const familyId = await createFamily();
+    upgradeCores();
+    routing.core.answerNext({ status: 503, headers: [], body: new Uint8Array() });
+
+    const result = await routing.run(["roll-out"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain(`${familyId}\tThe core answered /api/health with 503\n`);
+    expect(await coreVersionOf(familyId)).toBe(STAND_IN_CORE_VERSION);
+  });
+
+  it("fails for a Family whose core's pages cannot be reached for the version", async () => {
+    const familyId = await createFamily();
+    upgradeCores();
+
+    const result = await routing.run(["roll-out"], { CORE_URLS: "http://127.0.0.1:9" });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatch(new RegExp(`^${familyId}\tThe core did not answer /api/health: `, "m"));
+    expect(await coreVersionOf(familyId)).toBe(STAND_IN_CORE_VERSION);
+  });
+
   it("run again prepares only the Families still behind and forgets their failure", async () => {
     const [first, second] = [await createFamily(), await createFamily()];
     upgradeCores();
