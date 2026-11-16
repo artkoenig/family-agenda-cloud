@@ -2,7 +2,7 @@ import { createDecipheriv, hkdfSync } from "node:crypto";
 import type { ContextClaims } from "../../src/context";
 
 /**
- * Opens a sealed Context as the core 0.7.0 does (apps/api/src/context/context.ts of the core),
+ * Opens a sealed Context as the core 0.7.0 does (its documented Context format),
  * written down independently of src/context.ts so that a mistake there shows. Throws for a
  * Context that is not `v1.<iv>.<ciphertext>.<tag>`, was not sealed with the key, was altered, or
  * has expired by `at` beyond the core's 30 s of skew, or lasts longer than a day.
