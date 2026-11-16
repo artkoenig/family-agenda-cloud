@@ -51,8 +51,11 @@ jobs:
 
   real-core:
     # The walk-through against the core in supplied mode (test/real-core), which the stand-in core
-    # of the other tests mirrors: the image cube/compose.yaml pins. The core reaches the Families'
-    # databases on the postgres service by its name; the tests reach both on localhost.
+    # of the other tests mirrors: the image cube/compose.yaml pins, with TRUST_PROXY=true as on the
+    # Cube, and the demo Source plugin built from the core's repository at the same commit (no image
+    # of it is published). Both run on the network of the postgres service, so the core reaches the
+    # Families' databases by the service's name and the plugin by its own; the tests reach the core
+    # and Postgres on localhost.
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -66,23 +69,9 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      core:
-        image: ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
-        env:
-          CONTEXT_MODE: supplied
-          CONTEXT_KEY: ci-walk-through-context-key-of-32-characters
-          CALLER_PORT: "3002"
-          TRIGGER_TOKEN: ci-walk-through-trigger-token-of-32-characters
-          TRIGGER_PORT: "3001"
-        ports:
-          - 3002:3002
-          - 3001:3001
-        options: >-
-          --health-cmd "node -e \"fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))\""
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     env:
+      # The image cube/compose.yaml pins; the core's commit below is the one it was built from.
+      CORE_IMAGE: ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       REAL_CORE_URL: http://localhost:3002
       REAL_CORE_TRIGGER_URL: http://localhost:3001
@@ -92,7 +81,37 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
+      - name: Check out the core at the pinned image's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: artkoenig/family-agenda
+          ref: 1181f1a51e0da23c3897bea01f531c692e0661b8
+          path: core
+          persist-credentials: false
+      - name: Start the demo Source plugin and the core
+        working-directory: .
+        env:
+          NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          docker build -f core/tools/demo-source/Dockerfile -t demo-source core
+          docker run -d --name plugin-demo --network "$NETWORK" demo-source
+          docker run -d --name core --network "$NETWORK" -p 3001:3001 -p 3002:3002 \
+            -e CONTEXT_MODE=supplied -e CONTEXT_KEY="$REAL_CORE_CONTEXT_KEY" -e CALLER_PORT=3002 \
+            -e TRIGGER_TOKEN="$REAL_CORE_TRIGGER_TOKEN" -e TRIGGER_PORT=3001 -e TRUST_PROXY=true \
+            -e PLUGIN_URLS=demo=http://plugin-demo:8080 \
+            --health-cmd "node -e \"fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))\"" \
+            --health-interval 2s "$CORE_IMAGE"
+          for _ in $(seq 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' core)" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs core
+          exit 1
       - run: pnpm vitest run --project real-core
+      - name: The logs of the core and the plugin
+        if: failure()
+        working-directory: .
+        run: docker logs core; docker logs plugin-demo
 
   mutation:
     # Mutation testing of the Routing module's pure logic (see stryker.config.json), with the unit
