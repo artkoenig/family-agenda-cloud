@@ -35,6 +35,37 @@ async function createFamily() {
 const deleteFamily = (familyId: string, confirmation = familyId, env: Record<string, string | undefined> = {}) =>
   run(["delete", "--family-id", familyId, "--confirm", confirmation], env);
 
+/** How the last core request reached the Family's database, as a core would open it. */
+function lastDatabaseConnection() {
+  const [context] = routing.core.requests.map(({ context }) => context!).slice(-1);
+  const { host, port, name: database, user, password } = context!.database;
+  return { host, port, database, user, password };
+}
+
+/** Opens and closes a new connection to the last Family's database, as a core would. */
+async function connectAnew() {
+  const client = new pg.Client(lastDatabaseConnection());
+  await client.connect();
+  await client.end();
+}
+
+/** Holds a connection to the last Family's database open, as a core's pool does, and notes its errors. */
+async function holdConnection() {
+  const client = new pg.Client(lastDatabaseConnection());
+  const errors: Error[] = [];
+  client.on("error", (error) => errors.push(error));
+  await client.connect();
+  return { client, errors };
+}
+
+async function until(condition: () => Promise<boolean>) {
+  for (let tries = 0; tries < 200; tries++) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("The condition did not come true");
+}
+
 const name = (familyId: string) => familyDatabaseNames(familyId).databaseName;
 
 async function blobsOf(familyId: string): Promise<string[]> {
@@ -101,19 +132,20 @@ describe("Deleting a Family", () => {
     expect(await routing.schedules(other)).toEqual(["due-work", "purge-messages", "sweep-secrets"]);
   });
 
-  it("closes the connections a core still holds to the Family's database", async () => {
+  it("waits until a core has closed its connections to the Family's database, and ends none of them", async () => {
     const familyId = await createFamily();
-    const [context] = routing.core.requests.map(({ context }) => context!).slice(-1);
-    const { host, port, name: database, user, password } = context!.database;
-    const held = new pg.Client({ host, port, database, user, password });
-    held.on("error", () => undefined);
-    await held.connect();
+    const held = await holdConnection();
 
-    const result = await deleteFamily(familyId);
+    const deleting = deleteFamily(familyId);
+    await until(async () => (await routing.server("SELECT 1 FROM pg_database WHERE datname = $1 AND NOT datallowconn", [name(familyId)])).length === 1);
+    await expect(connectAnew()).rejects.toThrow();
+    expect((await held.client.query("SELECT 1 AS one")).rows).toEqual([{ one: 1 }]);
+    await held.client.end();
+    const result = await deleting;
 
     expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(held.errors).toEqual([]);
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
-    await held.end().catch(() => undefined);
   });
 
   it.each(["suspended", "being_prepared"])("deletes a Family that is %s", async (status) => {
@@ -227,10 +259,15 @@ describe("Deleting a Family is refused, and changes nothing,", () => {
 
 describe("Running delete again", () => {
   /** Fails a delete with `breakIt`, mends it with `mendIt`, and runs delete again. */
-  async function failAndRunAgain(failure: RegExp, breakIt: (familyId: string) => Promise<void>, mendIt: (familyId: string) => Promise<void>) {
+  async function failAndRunAgain(
+    failure: RegExp,
+    breakIt: (familyId: string) => Promise<void>,
+    mendIt: (familyId: string) => Promise<void>,
+    env: Record<string, string | undefined> = {},
+  ) {
     const familyId = await createFamily();
     await breakIt(familyId);
-    const failed = await deleteFamily(familyId);
+    const failed = await deleteFamily(familyId, familyId, env);
     expect(failed.exitCode, failed.stderr).toBe(1);
     expect(failed.stderr).toMatch(failure);
     expect(failed.stderr).toContain("did not finish; run delete again to finish it");
@@ -273,6 +310,24 @@ describe("Running delete again", () => {
       async (id) => routing.server(`ALTER DATABASE ${name(id)} OWNER TO ${name(id)}`).then(() => undefined),
     );
 
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+  });
+
+  it("after a connection to the database stayed open too long ends as an undisturbed run, and that connection was not ended", async () => {
+    let held: Awaited<ReturnType<typeof holdConnection>> | undefined;
+    const familyId = await failAndRunAgain(
+      /The Family's database still has open connections \(1\) after 1 s; it is not dropped/,
+      async () => {
+        held = await holdConnection();
+      },
+      async () => {
+        expect((await held!.client.query("SELECT 1 AS one")).rows).toEqual([{ one: 1 }]);
+        await held!.client.end();
+      },
+      { FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS: "1" },
+    );
+
+    expect(held!.errors).toEqual([]);
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
   });
 
