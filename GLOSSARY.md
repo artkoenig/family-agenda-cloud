@@ -15,7 +15,7 @@ The one server the hosted service runs on.
 _Avoid_: Server, host, VM, node
 
 **Core**:
-One container of the public Family Agenda image, unmodified, in a pool of identical ones; it keeps no data of its own and serves whichever Family the Context it is given names. It answers browser requests, each with a Context, on its caller port, and operations triggered from outside, such as due work, purge and preparation, on its trigger port.
+One container of the public Family Agenda image, unmodified, in a pool of identical ones; it keeps no data of its own and serves whichever Family the Context it is given names. It answers browser requests, each with a Context, on its caller port, and operations triggered from outside, such as due work and purge, on its trigger port. It prepares a Family's database for its release when it first opens it, and refuses a Family whose database a newer release has migrated.
 _Avoid_: Instance (one installation for one Family), backend, worker
 
 **Supplied mode**:
@@ -29,11 +29,11 @@ The closed program in front of the pool of cores, made of the Router, the Direct
 _Avoid_: Gateway, control plane, proxy
 
 **Router**:
-The Routing module's entrance for web requests, which finds a request's Family by the Family id in its path and hands the request with that Family's Context to any core.
+The Routing module's entrance for web requests, which finds a request's Family by the Family id in its path and hands the request with that Family's Context to any core, and to the next one when a core refuses to open the Family.
 _Avoid_: Load balancer, front door
 
 **Directory**:
-The one list of every Family, holding per Family its Family id, status (being prepared, active, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, the core version it was last prepared for, and how its due work last ended.
+The one list of every Family, holding per Family its Family id, status (being prepared, active, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, and how its due work last ended.
 _Avoid_: Registry, tenant table, control database
 
 **Scheduler**:
@@ -41,7 +41,7 @@ The Routing module's clock, which gives each active Family's core the occasion t
 _Avoid_: Cron, job runner, worker
 
 **Provisioning**:
-The Operator's command line into the Routing module, which creates a Family and enters its first Admin, suspends, resumes and deletes it, resets an Admin's password, and prepares every Family for a new core version.
+The Operator's command line into the Routing module, which creates a Family and enters its first Admin, suspends, resumes and deletes it, and resets an Admin's password.
 _Avoid_: Onboarding, setup, admin tool
 
 ### Families and keys

@@ -1,5 +1,6 @@
 /**
- * The stand-in core: the public core 0.7.0 in supplied mode, as far as the Routing module uses it.
+ * The stand-in core: the public core in supplied mode, as it prepares a Family on opening it
+ * (artkoenig/family-agenda#405), as far as the Routing module uses it.
  * It follows the core's documentation (docs/configuration.md of the core, "Supplied mode" and
  * "Triggered operations"), and the walk-through against the real core image
  * (test/real-core/walk-through.test.ts) shows any difference, which is then fixed here.
@@ -17,14 +18,20 @@
  * - Sent in the request header `X-Family-Context`, sealed as `v1.<iv>.<ciphertext>.<tag>` with
  *   AES-256-GCM under a key derived from `CONTEXT_KEY` (see test/support/core-context.ts).
  * - One that does not open, or has expired, is refused with 401 and opens nothing.
- * - A Context for a database that holds no prepared Family is refused with 409
- *   `family-not-prepared`, by every page and operation but `prepare-family`.
+ * - The first page or operation with a Context whose database this release has not prepared
+ *   prepares it, with the Context's Family id, and is then served: the caller has no step of its
+ *   own for it.
+ * - A core that does not open the Family refuses the page or operation, and changes nothing:
+ *   - a database a newer release migrated, as a core of an older release finds during a rolling
+ *     update: 409, a page with the text `migrated-by-newer-release: …`, an operation with
+ *     `{ "error": "migrated-by-newer-release" }`. Another core, of that release, may serve it.
+ *   - a database being prepared for longer than the core waits: 503, `migrating: …` or
+ *     `{ "error": "migrating" }`. A retry is served once preparing is done.
+ *   - a database that cannot be reached: 503, `The Family cannot be opened now.` or
+ *     `{ "error": "unavailable" }`.
  *
  * ## Triggered operations (`POST /operations/<name>`)
  *
- * - `prepare-family`: prepares the database the Context names with its Family id. Safe to call
- *   again. Answers `{ "familyId" }`; a body `{ "familyId" }` naming another Family is refused 400.
- *   It answers no version: the core's `GET /api/health` answers `{ "status": "ok", "version" }`.
  * - `enter-admin` with `{ "email" }`: enters an Admin without a password. Answers
  *   `{ "email", "outcome": "first" | "added" | "exists" }`.
  * - `reset-admin-password` with `{ "email" }`: draws and sets a new password, ending the Admin's
@@ -59,7 +66,7 @@ import { openContext } from "./core-context";
 
 export const CONTEXT_HEADER = "x-family-context";
 
-/** The version the stand-in runs, and answers "prepare the Family" with, until told otherwise. */
+/** The version the stand-in runs, as its health check answers it. */
 export const STAND_IN_CORE_VERSION = "0.0.0";
 
 /** A Context as the stand-in opened it, with its database read from `databaseUrl` as the core reads it. */
@@ -92,10 +99,23 @@ export type RecordedRequest = {
   body: unknown;
 };
 
-type Operation = "prepare-family" | "enter-admin" | "reset-admin-password" | "due-work" | "purge" | "secret-sweep";
+type Operation = "enter-admin" | "reset-admin-password" | "due-work" | "purge" | "secret-sweep";
 
 /** An answer the stand-in gives as it is, to show that it reaches the browser unchanged. */
 export type CannedAnswer = { status: number; headers: [string, string][]; body: Uint8Array };
+
+/** Why a core does not open a Family: see "The Context" above. */
+export type OpeningProblem = "migrated-by-newer-release" | "migrating" | "unavailable";
+
+/** What a core answers instead of opening the Family: the status, and the text of a page's refusal. */
+const OPENING_REFUSALS: Record<OpeningProblem, { status: 409 | 503; text: string }> = {
+  "migrated-by-newer-release": {
+    status: 409,
+    text: "migrated-by-newer-release: a newer release migrated the database the Context names; another core may serve it.",
+  },
+  migrating: { status: 503, text: "migrating: the Family's database is being prepared; try again shortly." },
+  unavailable: { status: 503, text: "The Family cannot be opened now." },
+};
 
 export type StandInCore = {
   /** Where it serves the pages: its CALLER_PORT. */
@@ -108,7 +128,7 @@ export type StandInCore = {
   admins(familyId: string): string[];
   /** The password the stand-in last gave out for an Admin of a Family, if any. */
   password(familyId: string, email: string): string | undefined;
-  /** Whether a Family was prepared. */
+  /** Whether a core prepared the Family, as the first one to open it does. */
   isPrepared(familyId: string): boolean;
   /** The next call of the operation answers with this status, and does nothing. */
   failNext(operation: Operation, status?: number): void;
@@ -136,8 +156,14 @@ export type StandInCore = {
   goDown(): Promise<void>;
   /** Listens again on the same address, with everything it knew before. */
   comeBack(): Promise<void>;
-  /** From now on the stand-in runs this version, as a core of a new release does. */
-  runVersion(version: string): void;
+  /**
+   * From now on this core does not open the Family and refuses its pages and operations with
+   * `problem`, as a core of an older release does for a database a newer one migrated; undefined
+   * has it open the Family again.
+   */
+  refuseFamily(familyId: string, problem: OpeningProblem | undefined): void;
+  /** From now on this core opens no Family at all and refuses each with `problem`; undefined has it open them again. */
+  refuseEveryFamily(problem: OpeningProblem | undefined): void;
   close(): Promise<void>;
 };
 
@@ -188,7 +214,7 @@ type Variables = { Variables: { context: Context } };
 const prepared = new Set<string>();
 
 /** A refusal a triggered operation answers with, as the core does: the status and `{ "error" }`. */
-type Refusal = { refused: 400 | 404; error: string };
+type Refusal = { refused: 404; error: string };
 
 /** Starts the stand-in core on two free ports of localhost: its pages', and its triggered operations'. */
 export async function startStandInCore(contextKey: string, triggerToken: string): Promise<StandInCore> {
@@ -210,9 +236,11 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
   /** The Families whose next run of due work is held, and what releases it. */
   const held = new Map<string, { until: Promise<void>; release: () => void }>();
 
-  let version = STAND_IN_CORE_VERSION;
+  /** The Families this core does not open, and why. */
+  const refusedFamilies = new Map<string, OpeningProblem>();
+  let refusedAll: OpeningProblem | undefined;
 
-  /** Records the request, and opens its Context; the Context of a Family not prepared is refused, but by prepare-family. */
+  /** Records the request, opens its Context and with it the Family, which the first opening prepares. */
   const recording = (on: RecordedRequest["on"], app: Hono<Variables>) =>
     app.use(async (c, next) => {
       const sealedContext = c.req.header(CONTEXT_HEADER) ?? null;
@@ -221,11 +249,14 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
       const search = new URL(c.req.url).search;
       requests.push({ on, method: c.req.method, path: c.req.path, search, headers: c.req.header(), sealedContext, context, body });
       if (on === "trigger" && c.req.header("authorization") !== `Bearer ${triggerToken}`) return c.json({ error: "unauthorized" }, 401);
-      if (on === "caller" && c.req.method === "GET" && c.req.path === "/api/health") return cannedAnswer() ?? c.json({ status: "ok", version });
+      if (on === "caller" && c.req.method === "GET" && c.req.path === "/api/health") return cannedAnswer() ?? c.json({ status: "ok", version: STAND_IN_CORE_VERSION });
       if (!context) return c.text("A valid Context is required.", 401);
-      if (!prepared.has(context.familyId) && c.req.path !== "/operations/prepare-family") {
-        return c.text("family-not-prepared: the database the Context names holds no prepared Family.", 409);
+      const problem = refusedAll ?? refusedFamilies.get(context.familyId);
+      if (problem) {
+        const { status, text } = OPENING_REFUSALS[problem];
+        return on === "trigger" ? c.json({ error: problem }, status) : c.text(text, status, { "cache-control": "no-store" });
       }
+      prepared.add(context.familyId);
       c.set("context", context);
       await next();
     });
@@ -257,15 +288,6 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
       return c.json(answered);
     });
   };
-  operations.post("/operations/prepare-family", (c, next) => {
-    const body = requests.at(-1)?.body as { familyId?: unknown } | null;
-    if (body?.familyId !== undefined && body.familyId !== c.get("context").familyId) return c.json({ error: "family-id-not-the-contexts" }, 400);
-    return next();
-  });
-  triggered("prepare-family", ({ familyId }) => {
-    prepared.add(familyId);
-    return { familyId };
-  });
   triggered("enter-admin", ({ familyId }, { email }) => {
     const address = String(email);
     const entered = admins.get(familyId) ?? [];
@@ -365,8 +387,12 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
     comeBack: async () => {
       await Promise.all([reopening(servers[0], port), reopening(servers[1], triggerPort)]);
     },
-    runVersion(next) {
-      version = next;
+    refuseEveryFamily(problem) {
+      refusedAll = problem;
+    },
+    refuseFamily(familyId, problem) {
+      if (problem) refusedFamilies.set(familyId, problem);
+      else refusedFamilies.delete(familyId);
     },
     close: async () => {
       await Promise.all(servers.map((server) => closing(server, false)));

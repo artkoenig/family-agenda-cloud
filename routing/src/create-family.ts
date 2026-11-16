@@ -52,9 +52,7 @@ export async function createFamily(provisioning: Provisioning & { schedules: Fam
   });
   log.info("The Family is in the Directory, being prepared", { familyId });
 
-  const { coreVersion } = await core.prepareFamily(sealedContext(config, family));
-  log.info("The core prepared the Family", { familyId, coreVersion });
-
+  // The core that opens the Family first, here for its first Admin, prepares its database.
   await core.enterAdmin(sealedContext(config, family), input.adminEmail);
   log.info("The core entered the first Admin", { familyId });
 
@@ -62,7 +60,7 @@ export async function createFamily(provisioning: Provisioning & { schedules: Fam
   await schedules.create(familyId, family.timeZone);
   log.info("The Family's schedules exist", { familyId });
 
-  await directory.activate(familyId, coreVersion);
+  await directory.activate(familyId);
   log.info("The Family is active", { familyId });
   return familyAddress(config, familyId);
 }

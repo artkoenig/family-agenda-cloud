@@ -94,8 +94,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
 2. Create `/opt/family-agenda/.env` on the Cube (root only, mode 600) with the keys of `cube/.env.example` and the
    values from the password manager.
 3. `scripts/deploy.sh`: copies `cube/`, `routing/` and `site/` to the Cube, pulls the images, builds the Routing
-   module's, brings the services up, reloads Caddy and runs `routing roll-out` for the `CORE_VERSION` of the `.env`.
-   This is also the way to redeploy.
+   module's, brings the services up and reloads Caddy. This is also the way to redeploy, and to bring a
+   [new core version](#8-a-new-core-version) to the Families.
 4. Once: create the Family the smoke check opens, with an address of the Operator's, and store its id in the password
    manager:
    `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --admin-email <address>'`.
@@ -109,3 +109,31 @@ with a Context) and 3001 (the Routing module's triggered operations); only the C
 they do not hold, protect them.
 
 The scripts reach the Cube as `root@family-agenda.cloud`; `CUBE_HOST` overrides it.
+
+## 8. A new core version
+
+No command prepares the Families for a new core version, and the Routing module does not know which version the
+cores run.
+
+1. Read the release's notes in the public repo (`docs/upgrading.md`). Take a backup first if they say its migration
+   cannot be undone: a core never goes back to a database a newer release migrated.
+2. Change the core image in `cube/compose.yaml` (`x-core-image`) to the release's tag and digest, and the same image
+   in the `real-core` job of `.github/workflows/ci.yml`, whose walk-through must pass against it.
+3. `scripts/deploy.sh`. Compose replaces the cores.
+
+What happens then, without the Operator:
+
+- A core of the new release prepares each Family the first time it opens it, for a request or for its due work,
+  whichever comes first. A Family nobody opens stays as it is until somebody does.
+- While cores of both releases run, a core of the old one refuses a Family the new one has migrated
+  (`409 migrated-by-newer-release`), and a core still preparing a Family for longer than 20 seconds answers
+  `503 migrating`. The Router, the Scheduler and Provisioning then try the next core of the pool, each core at most
+  once.
+- If every core refuses, the browser gets `503` with `Retry-After: 30`, a scheduled run fails and is retried with
+  its usual delay, and a Provisioning command fails with what each core answered. The Router's log says the same
+  (`Every core that answered refused to open the Family`).
+
+Check afterwards: `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`, and `routing families` for due work that keeps failing.
+
+Going back to the release before means restoring the backup of step 1: its cores refuse every Family the new
+release has opened.

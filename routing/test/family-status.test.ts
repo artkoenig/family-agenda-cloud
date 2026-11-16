@@ -47,7 +47,7 @@ const scheduledCallsOf = (familyId: string): string[] =>
   routing.core.requests
     .filter(({ path, context }) => context?.familyId === familyId && path.startsWith("/operations/"))
     .map(({ path }) => path)
-    .filter((path) => !["/operations/prepare-family", "/operations/enter-admin"].includes(path));
+    .filter((path) => path !== "/operations/enter-admin");
 
 /** What the Family keeps while it is suspended: its entry with its secrets, database, role and blobs. */
 async function dataOf(familyId: string) {

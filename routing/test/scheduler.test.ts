@@ -1,7 +1,7 @@
 import { PgBoss, TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import { poolOf, startStandInCore, type RecordedRequest, type StandInCore } from "./support/stand-in-core";
+import { poolOf, startStandInCore, type OpeningProblem, type RecordedRequest, type StandInCore } from "./support/stand-in-core";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 const MINUTE = 60_000;
@@ -166,10 +166,7 @@ describe("A Family that is not active", () => {
     await expect
       .poll(() => routing.log())
       .toContain(`"message":"The Family is not active; nothing is triggered","familyId":"${familyId}","occasion":"purge-messages"`);
-    expect(routing.core.requests.filter(({ context }) => context?.familyId === familyId).map(({ path }) => path)).toEqual([
-      "/operations/prepare-family",
-      "/operations/enter-admin",
-    ]);
+    expect(routing.core.requests.filter(({ context }) => context?.familyId === familyId).map(({ path }) => path)).toEqual(["/operations/enter-admin"]);
     expect(await routing.schedules(familyId)).toHaveLength(3);
   });
 
@@ -279,7 +276,7 @@ describe("The log", () => {
     await expect.poll(() => routing.log()).toContain(`"message":"Due work failed","familyId":"${familyId}"`);
     await expect.poll(() => routing.log()).toContain(`"familyId":"${familyId}","occasion":"purge-messages"`);
 
-    const scheduled = routing.core.requests.filter(({ on, path }) => on === "trigger" && !["/operations/prepare-family", "/operations/enter-admin"].includes(path));
+    const scheduled = routing.core.requests.filter(({ on, path }) => on === "trigger" && path !== "/operations/enter-admin");
     expect(scheduled.length).toBeGreaterThanOrEqual(3);
     for (const { sealedContext, context } of scheduled) {
       for (const secret of [sealedContext!, context!.familyKey, context!.database.password, routing.env.OPERATOR_KEY!, routing.env.CONTEXT_KEY!]) {
@@ -447,7 +444,7 @@ describe("A core that does not answer", () => {
     // Fails in minutes 1 and 3; waits for its retry in minutes 2 and 4.
     expect(await minutesWithDueWork(clock, familyId, 4)).toEqual([]);
     expect(handled(familyId)).toBe(4);
-    expect((await overview())[0]).toMatchObject({ outcome: "failed", detail: expect.stringMatching(/^No core answered due-work/) as unknown });
+    expect((await overview())[0]).toMatchObject({ outcome: "failed", detail: expect.stringMatching(/^No core ran due-work/) as unknown });
 
     await routing.core.comeBack();
     // The retry in minute 7 is the first run again; from then on one per minute.
@@ -456,3 +453,61 @@ describe("A core that does not answer", () => {
     expect((await overview())[0]).toMatchObject({ outcome: "succeeded" });
   });
 });
+
+describe("A core that refuses to open the Family", () => {
+  let others: StandInCore[] = [];
+  afterEach(async () => {
+    for (const core of others) await core.close();
+    others = [];
+  });
+
+  /** A core of the pool that does not open the Family, as one of an older release than the one that migrated its database. */
+  async function refusingCore(familyId: string, problem: OpeningProblem): Promise<StandInCore> {
+    const core = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    others.push(core);
+    core.refuseFamily(familyId, problem);
+    return core;
+  }
+
+  it.each(["migrated-by-newer-release", "migrating"] as const)("with %s makes the Scheduler use another core of the pool, and the run counts as a success", async (problem) => {
+    const familyId = await createFamily();
+    const refusing = await refusingCore(familyId, problem);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, poolOf(refusing, routing.core));
+
+    expect(await minutesWithDueWork(clock, familyId, 2)).toEqual([1, 2]);
+
+    expect(refusing.requests.length).toBeGreaterThan(0);
+    expect((await overview())[0]).toMatchObject({ outcome: "succeeded" });
+    const status = problem === "migrating" ? 503 : 409;
+    expect(routing.log()).toContain(
+      `"message":"A core did not run the operation; the next one of the pool is tried","operation":"due-work","core":"${new URL(refusing.triggerUrl).host}","reason":"${status} ${problem}"`,
+    );
+    expect(routing.log()).not.toContain('"message":"Due work failed"');
+  });
+
+  it("on every core of the pool fails the run after one try per core, saying what each core answered, and the run is retried", { timeout: 60_000 }, async () => {
+    const familyId = await createFamily();
+    const older = await refusingCore(familyId, "migrated-by-newer-release");
+    routing.core.refuseFamily(familyId, "migrating");
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, poolOf(older, routing.core));
+
+    await minutes(clock, 1);
+    await expect.poll(async () => (await overview())[0]?.outcome).toBe("failed");
+
+    const [olderHost, preparingHost] = [older, routing.core].map(({ triggerUrl }) => new URL(triggerUrl).host);
+    const said = [`${olderHost} 409 migrated-by-newer-release`, `${preparingHost} 503 migrating`];
+    // The cores are taken in turn, so either may have been asked first.
+    const { stdout } = await routing.run(["families"]);
+    expect(stdout).toMatch(new RegExp(`\\tfailed: No core ran due-work: (${said.join(", ")}|${said.toReversed().join(", ")})\\t1 failure in a row`));
+    expect(callsOf("due-work", familyId)).toHaveLength(1);
+    expect(older.requests.filter(({ path }) => path === "/operations/due-work")).toHaveLength(1);
+
+    // Preparing is done: the retry, two minutes after the failed run, is served.
+    routing.core.refuseFamily(familyId, undefined);
+    await minutes(clock, 2);
+    await expect.poll(async () => (await overview())[0]?.outcome).toBe("succeeded");
+  });
+});
+

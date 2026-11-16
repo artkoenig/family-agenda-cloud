@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "../support/routing";
 
 /**
- * The walk-through against the released core in supplied mode, not the stand-in: what the stand-in
- * mirrors, the real core must answer alike. It runs where REAL_CORE_URL names such a core (CI's
+ * The walk-through against the core in supplied mode, not the stand-in: what the stand-in mirrors,
+ * the real core must answer alike. No step prepares a Family: the core does when it first opens
+ * it, here for its first Admin. It runs where REAL_CORE_URL names such a core (CI's
  * `real-core` job starts one); the core must reach the test's Postgres server at
  * REAL_CORE_DATABASE_HOST, and holds the Families' blobs below REAL_CORE_BLOB_ROOT.
  */
@@ -13,7 +14,6 @@ const real = {
   triggerUrl: process.env.REAL_CORE_TRIGGER_URL,
   contextKey: process.env.REAL_CORE_CONTEXT_KEY,
   triggerToken: process.env.REAL_CORE_TRIGGER_TOKEN,
-  version: process.env.REAL_CORE_VERSION,
   databaseHost: process.env.REAL_CORE_DATABASE_HOST,
   databasePort: process.env.REAL_CORE_DATABASE_PORT ?? "5432",
   blobRoot: process.env.REAL_CORE_BLOB_ROOT ?? "/var/lib/family-agenda/blobs",
@@ -29,7 +29,6 @@ const withRealCore = (): Record<string, string> => ({
   CORE_TRIGGER_URLS: real.triggerUrl!,
   CONTEXT_KEY: real.contextKey!,
   TRIGGER_TOKEN: real.triggerToken!,
-  CORE_VERSION: real.version!,
   FAMILY_DATABASE_HOST: real.databaseHost!,
   FAMILY_DATABASE_PORT: real.databasePort,
   BLOB_ROOT: real.blobRoot,
@@ -41,7 +40,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   // The core closes a Family's idle connections after 10 seconds; dropping its database before
-  // would end them, and the core 0.7.0 does not survive a connection Postgres ends.
+  // would end them, and the core does not survive a connection Postgres ends.
   await expect
     .poll(async () => routing.server("SELECT count(*)::int AS open FROM pg_stat_activity WHERE datname LIKE 'family\\_%'"), { timeout: 30_000, interval: 500 })
     .toEqual([{ open: 0 }]);
@@ -55,7 +54,7 @@ afterEach(async () => {
  * documents (ADR-0001). That the core keeps the two Families apart is shown by what is documented:
  * each Family's Admins are found in its own database only.
  */
-describe.skipIf(!real.url)("Two Families on the released core", () => {
+describe.skipIf(!real.url)("Two Families on the core", () => {
   it("are created, served apart, scheduled and given new Admin passwords", async () => {
     const familyIdOf = async (email: string): Promise<string> => {
       const created = await routing.run(["create", "--admin-email", email], withRealCore());
@@ -64,13 +63,13 @@ describe.skipIf(!real.url)("Two Families on the released core", () => {
     };
     const first = await familyIdOf(EMAIL);
     const second = await familyIdOf(OTHER_EMAIL);
-    expect(await routing.directory("SELECT family_id, status, core_version FROM family ORDER BY family_id")).toEqual(
-      [first, second].sort().map((familyId) => ({ family_id: familyId, status: "active", core_version: real.version })),
+    expect(await routing.directory("SELECT family_id, status FROM family ORDER BY family_id")).toEqual(
+      [first, second].sort().map((familyId) => ({ family_id: familyId, status: "active" })),
     );
 
     const router = await routing.startRouter(withRealCore());
     const health = await fetch(`${router.url}/api/health`);
-    expect(await health.json()).toEqual({ status: "ok", version: real.version });
+    expect(await health.json()).toEqual({ status: "ok", version: expect.any(String) as unknown });
     for (const familyId of [first, second]) {
       // Each Family has its first Admin: no setup page, the sign-in below the Family's own address.
       const page = await fetch(`${router.url}/${familyId}/admin`, { redirect: "manual" });

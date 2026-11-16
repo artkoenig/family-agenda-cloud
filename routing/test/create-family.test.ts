@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import { openContext, type Context } from "./support/stand-in-core";
+import { openContext, poolOf, startStandInCore, type Context, type StandInCore } from "./support/stand-in-core";
 
 /** The core's triggered operations the Routing module called: its health checks aside. */
 const triggered = () => routing.core.requests.filter(({ on }) => on === "trigger");
@@ -40,7 +40,7 @@ async function connect(database: Context["database"], name = database.name) {
 /** What an Operator, a core and Postgres can see of a Family; the same after any run that ended well. */
 async function stateOf(familyId: string) {
   const [entry] = await routing.directory(
-    `SELECT status, core_version, blob_location, time_zone,
+    `SELECT status, blob_location, time_zone,
             wrapped_family_key IS NOT NULL AS has_family_key, wrapped_database_password IS NOT NULL AS has_database_password
      FROM family WHERE family_id = $1`,
     [familyId],
@@ -72,7 +72,6 @@ async function stateOf(familyId: string) {
 const expectedState = (familyId: string) => ({
   entry: {
     status: "active",
-    core_version: "0.0.0",
     blob_location: `/var/lib/family-agenda/blobs/${familyId}`,
     time_zone: "Europe/Berlin",
     has_family_key: true,
@@ -88,15 +87,16 @@ const expectedState = (familyId: string) => ({
 });
 
 describe("Creating a Family", () => {
-  it("prints the Family's address and leaves it active, prepared by the core, with its first Admin", async () => {
+  it("prints the Family's address and leaves it active, with its first Admin entered by the core that opened it first", async () => {
     const { stdout, familyId } = await createFamily(EMAIL);
 
     expect(stdout).toBe(`https://app.family-agenda.cloud/${familyId}/\n`);
-    const [entry] = await routing.directory("SELECT status, core_version FROM family WHERE family_id = $1", [familyId]);
-    expect(entry).toEqual({ status: "active", core_version: "0.0.0" });
+    expect(await routing.directory("SELECT status FROM family WHERE family_id = $1", [familyId])).toEqual([{ status: "active" }]);
+    // No step of its own prepares the Family: the core does when it opens it for its first Admin.
     const operations = triggered().map(({ method, path }) => `${method} ${path}`);
-    expect(operations).toEqual(["POST /operations/prepare-family", "POST /operations/enter-admin"]);
-    expect(triggered()[1]?.body).toEqual({ email: EMAIL });
+    expect(operations).toEqual(["POST /operations/enter-admin"]);
+    expect(triggered()[0]?.body).toEqual({ email: EMAIL });
+    expect(routing.core.isPrepared(familyId)).toBe(true);
     expect(routing.core.admins(familyId)).toEqual([EMAIL]);
   });
 
@@ -112,18 +112,18 @@ describe("Creating a Family", () => {
       FAMILY_DATABASE_PORT: "6543",
     });
 
-    const [prepare, enterAdmin] = contextsOf(familyId);
+    const [enterAdmin, ...more] = contextsOf(familyId);
+    expect(more).toEqual([]);
     const name = `family_${familyId.replaceAll("-", "")}`;
-    expect(prepare).toMatchObject({
+    expect(enterAdmin).toMatchObject({
       familyId,
       database: { host: "postgres", port: 6543, name, user: name },
       blobDirectory: "/var/lib/family-agenda/blobs",
       timeZone: "America/New_York",
       publicUrl: `https://app.family-agenda.cloud/${familyId}`,
     });
-    expect(prepare).not.toHaveProperty("identityProvider");
-    expect(Buffer.from(prepare!.familyKey, "base64url")).toHaveLength(32);
-    expect(enterAdmin).toMatchObject({ familyKey: prepare!.familyKey, database: prepare!.database });
+    expect(enterAdmin).not.toHaveProperty("identityProvider");
+    expect(Buffer.from(enterAdmin!.familyKey, "base64url")).toHaveLength(32);
     const [entry] = await routing.directory("SELECT time_zone FROM family WHERE family_id = $1", [familyId]);
     expect(entry).toEqual({ time_zone: "America/New_York" });
   });
@@ -154,6 +154,44 @@ describe("Creating a Family", () => {
     expect(first.familyId).not.toBe(second.familyId);
     expect(contextsOf(first.familyId)[0]!.familyKey).not.toBe(contextsOf(second.familyId)[0]!.familyKey);
     expect(routing.core.admins(second.familyId)).toEqual(["second.admin@example.org"]);
+  });
+});
+
+describe("Creating a Family while a core refuses to open it", () => {
+  let other: StandInCore | undefined;
+  afterEach(async () => {
+    await other?.close();
+    other = undefined;
+  });
+
+  it("has the next core of the pool enter its first Admin", async () => {
+    other = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    // The first core cannot reach the new Family's database yet.
+    routing.core.refuseEveryFamily("unavailable");
+
+    const { familyId } = await createFamily(EMAIL, [], poolOf(routing.core, other));
+
+    expect(triggered().map(({ path }) => path)).toEqual(["/operations/enter-admin"]);
+    expect(other.requests.map(({ path }) => path)).toEqual(["/operations/enter-admin"]);
+    expect(routing.core.admins(familyId)).toEqual([]);
+    expect(other.admins(familyId)).toEqual([EMAIL]);
+    expect(await routing.directory("SELECT status FROM family WHERE family_id = $1", [familyId])).toEqual([{ status: "active" }]);
+  });
+
+  it("fails when every core refuses, saying what each answered, and is finished by running it again", async () => {
+    other = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    routing.core.refuseEveryFamily("unavailable");
+    other.refuseEveryFamily("migrating");
+
+    const failed = await routing.run(["create", "--admin-email", EMAIL], poolOf(routing.core, other));
+
+    expect(failed.exitCode).toBe(1);
+    const hosts = [routing.core, other].map(({ triggerUrl }) => new URL(triggerUrl).host);
+    expect(failed.stderr).toContain(`No core ran enter-admin: ${hosts[0]} 503 unavailable, ${hosts[1]} 503 migrating`);
+    const familyId = /"familyId":"([0-9a-f-]{36})"/.exec(failed.stderr)![1]!;
+    routing.core.refuseEveryFamily(undefined);
+    await createFamily(EMAIL, ["--family-id", familyId], poolOf(routing.core, other));
+    expect(await stateOf(familyId)).toEqual(expectedState(familyId));
   });
 });
 
@@ -262,14 +300,14 @@ describe("Running create again", () => {
     const other = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyId, "--time-zone", "Europe/Berlin"]);
     expect(other.exitCode).toBe(1);
     expect(other.stderr).toContain("begun with the time zone Europe/Vienna, not Europe/Berlin");
-    expect(triggered()).toHaveLength(2);
+    expect(triggered()).toHaveLength(1);
 
     await createFamily(EMAIL, ["--family-id", familyId, "--time-zone", "Europe/Vienna"]);
     expect(await stateOf(familyId)).toMatchObject({ entry: { status: "active", time_zone: "Europe/Vienna" } });
   });
 
   it("without --family-id is refused while a Family is being prepared, and names it", async () => {
-    routing.core.failNext("prepare-family");
+    routing.core.failNext("enter-admin");
     const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL])).stderr)!;
     const calls = triggered().length;
 
@@ -308,16 +346,6 @@ describe("Running create again", () => {
     const familyId = await failAndRunAgain(/permission denied for table family/, revoke("INSERT"), grant("INSERT"));
 
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
-  });
-
-  it("after the core failed to prepare the Family ends as an undisturbed run, with the same keys", async () => {
-    const familyId = await failAndRunAgain(/answered prepare-family with 500/, () => {
-      routing.core.failNext("prepare-family");
-    });
-
-    expect(await stateOf(familyId)).toEqual(expectedState(familyId));
-    const keys = new Set(triggered().map(({ context }) => context?.familyKey));
-    expect(keys.size).toBe(1);
   });
 
   it("after the core did not answer ends as an undisturbed run", async () => {

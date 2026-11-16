@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { FamilyStatus } from "../../src/directory";
-import { BAD_GATEWAY, routeRequest } from "../../src/request-routing";
+import { BAD_GATEWAY, routeRequest, UNAVAILABLE } from "../../src/request-routing";
 
 const familyId = "0f8fad5b-d9cb-469f-a165-70867728950e";
-const coreVersion = "0.3.1";
-
-type Entry = { familyId: string; status: FamilyStatus; coreVersion: string | null };
+type Entry = { familyId: string; status: FamilyStatus };
 
 /** Routes the request with a Directory that knows these entries, and notes what was looked up. */
 async function routed(method: string | undefined, target: string, ...entries: Entry[]) {
@@ -14,10 +12,10 @@ async function routed(method: string | undefined, target: string, ...entries: En
     lookedUp.push(id);
     return Promise.resolve(entries.find((entry) => entry.familyId === id));
   };
-  return { route: await routeRequest({ method, target }, coreVersion, find), lookedUp };
+  return { route: await routeRequest({ method, target }, find), lookedUp };
 }
 
-const active: Entry = { familyId, status: "active", coreVersion };
+const active: Entry = { familyId, status: "active" };
 
 const notFound = { to: "refused", status: 404, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Not found\n" };
 
@@ -74,25 +72,13 @@ describe("routeRequest", () => {
     });
 
     it.each([
-      ["an older core version", "0.3.0"],
-      ["none yet", null],
-    ])("answers 503 for an active Family prepared for %s, to be tried again", async (_case, preparedFor) => {
-      expect((await routed("GET", `/${familyId}/feed.ics`, { ...active, coreVersion: preparedFor })).route).toEqual({
-        to: "refused",
-        status: 503,
-        headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "30", "cache-control": "no-store" },
-        body: "This Family is being updated. Try again in a moment.\n",
-      });
-    });
-
-    it.each([
       "/operations",
       "/operations/",
       "/operations?x=1",
       "/operations/reset-admin-password",
       "//operations/run-due-work",
       "/\\operations/run-due-work",
-      "/OPERATIONS/prepare-family",
+      "/OPERATIONS/due-work",
       "/x/../operations/enter-admin",
       "/./operations/purge-messages",
       "/%6Fperations/sweep-secrets",
@@ -111,15 +97,22 @@ describe("routeRequest", () => {
         expect((await routed("GET", `/${familyId}${path}`, active)).route).toMatchObject({ to: "family", path });
       },
     );
-
-    it("answers 404, not 503, for a suspended Family not prepared for the running core version", async () => {
-      expect((await routed("GET", `/${familyId}/`, { ...active, status: "suspended", coreVersion: "0.1.0" })).route).toEqual(notFound);
-    });
   });
 });
 
 describe("BAD_GATEWAY", () => {
   it("is the Router's answer when no core answered", () => {
     expect(BAD_GATEWAY).toEqual({ to: "refused", status: 502, headers: { "content-type": "text/plain; charset=utf-8" }, body: "Bad gateway\n" });
+  });
+});
+
+describe("UNAVAILABLE", () => {
+  it("is the Router's answer when every core that answered refused to open the Family: to be asked again, and not kept", () => {
+    expect(UNAVAILABLE).toEqual({
+      to: "refused",
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "30", "cache-control": "no-store" },
+      body: "Not available right now. Try again in a moment.\n",
+    });
   });
 });
