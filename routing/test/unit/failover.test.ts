@@ -3,31 +3,49 @@ import { isBodiless, mayRefuseOpening, neverConnected, notServing, takingTurns }
 
 describe("takingTurns", () => {
   it("starts each round at the next item, and wraps around", () => {
-    const inTurn = takingTurns(["a", "b", "c"]);
-    expect(inTurn()).toEqual(["a", "b", "c"]);
-    expect(inTurn()).toEqual(["b", "c", "a"]);
-    expect(inTurn()).toEqual(["c", "a", "b"]);
-    expect(inTurn()).toEqual(["a", "b", "c"]);
+    const inTurn = takingTurns<string>();
+    const items = ["a", "b", "c"];
+    expect(inTurn(items)).toEqual(["a", "b", "c"]);
+    expect(inTurn(items)).toEqual(["b", "c", "a"]);
+    expect(inTurn(items)).toEqual(["c", "a", "b"]);
+    expect(inTurn(items)).toEqual(["a", "b", "c"]);
   });
 
   it("answers the one item every time", () => {
-    const inTurn = takingTurns(["a"]);
-    expect(inTurn()).toEqual(["a"]);
-    expect(inTurn()).toEqual(["a"]);
+    const inTurn = takingTurns<string>();
+    expect(inTurn(["a"])).toEqual(["a"]);
+    expect(inTurn(["a"])).toEqual(["a"]);
+  });
+
+  it("answers nothing for no items, and goes on with the items there are after", () => {
+    const inTurn = takingTurns<string>();
+    expect(inTurn([])).toEqual([]);
+    expect(inTurn([])).toEqual([]);
+    expect(inTurn(["a", "b"])).toEqual(["a", "b"]);
+  });
+
+  it("goes on in turn over items that became more or fewer", () => {
+    const inTurn = takingTurns<string>();
+    expect(inTurn(["a", "b"])).toEqual(["a", "b"]);
+    expect(inTurn(["a", "b", "c"])).toEqual(["b", "c", "a"]);
+    expect(inTurn(["a", "b", "c"])).toEqual(["c", "a", "b"]);
+    expect(inTurn(["a", "b"])).toEqual(["b", "a"]);
+    expect(inTurn(["a"])).toEqual(["a"]);
+    expect(inTurn(["a", "b"])).toEqual(["b", "a"]);
   });
 
   it("keeps a turn of its own for each pool", () => {
-    const first = takingTurns(["a", "b"]);
-    const second = takingTurns(["a", "b"]);
-    first();
-    expect(second()).toEqual(["a", "b"]);
+    const first = takingTurns<string>();
+    const second = takingTurns<string>();
+    first(["a", "b"]);
+    expect(second(["a", "b"])).toEqual(["a", "b"]);
   });
 
-  it("is not changed by what a caller does with a round", () => {
+  it("leaves the items as they are, and is not changed by what a caller does with a round", () => {
     const items = ["a", "b"];
-    const inTurn = takingTurns(items);
-    inTurn().pop();
-    expect(inTurn()).toEqual(["b", "a"]);
+    const inTurn = takingTurns<string>();
+    inTurn(items).pop();
+    expect(inTurn(items)).toEqual(["b", "a"]);
     expect(items).toEqual(["a", "b"]);
   });
 });

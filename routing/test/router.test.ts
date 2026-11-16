@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/cli";
 import type { Router } from "../src/router";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import { clientOf, poolOf, STAND_IN_CORE_VERSION, startStandInCore, type StandInCore } from "./support/stand-in-core";
+import { clientOf, poolOf, resolveStandIns, scalePool, STAND_IN_CORE_VERSION, startStandInCore, type StandInCore } from "./support/stand-in-core";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 
@@ -195,7 +195,7 @@ describe("the browser's headers", () => {
 
 describe("routing serve, when its configuration is wrong", () => {
   it.each([
-    ["no core", { CORE_URLS: " , ", CORE_TRIGGER_URLS: " , " }],
+    ["a list of cores", { CORE_URL: "http://core-1:3002,http://core-2:3002" }],
     ["a port that is no number", { PORT: "eighty" }],
     ["a port out of range", { PORT: "65536" }],
     ["a negative port", { PORT: "-1" }],
@@ -225,6 +225,7 @@ describe("routing serve", () => {
       stdout: sink(() => {}),
       stderr: sink((text) => (stderr += text)),
       until: stopped,
+      resolve: resolveStandIns,
     });
     await expect.poll(() => stderr).toContain("The Router listens");
     // Before any other command ran.
@@ -320,6 +321,71 @@ describe("a pool of several cores", () => {
 
     expect(answers).toEqual([200, 200, 200, 200]);
     expect(arrived(since)).toHaveLength(4);
+  });
+
+  it("takes a core the pool was scaled up by into its turns, without a restart", async () => {
+    const familyId = await createFamily();
+    others = [await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!)];
+    const pool = poolOf(routing.core);
+    const throughPool = await routing.startRouter(pool);
+    expect((await fetch(`${throughPool.url}/${familyId}/agendas/0`)).status).toBe(200);
+    expect(others[0]!.requests).toEqual([]);
+
+    scalePool(pool, routing.core, others[0]!);
+    const since = routing.core.requests.length;
+    for (let index = 1; index <= 4; index++) expect((await fetch(`${throughPool.url}/${familyId}/agendas/${index}`)).status).toBe(200);
+
+    expect(others[0]!.requests).toHaveLength(2);
+    expect(arrived(since)).toHaveLength(2);
+  });
+
+  it("asks nothing of a core the pool was scaled down by, without a restart", async () => {
+    const familyId = await createFamily();
+    others = [await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!)];
+    const pool = poolOf(routing.core, others[0]!);
+    const throughPool = await routing.startRouter(pool);
+
+    scalePool(pool, others[0]!);
+    const since = routing.core.requests.length;
+    const logBefore = routing.log().length;
+    for (let index = 0; index < 4; index++) expect((await fetch(`${throughPool.url}/${familyId}/agendas/${index}`)).status).toBe(200);
+
+    expect(arrived(since)).toEqual([]);
+    expect(others[0]!.requests).toHaveLength(4);
+    expect(routing.log().slice(logBefore)).not.toContain("did not answer");
+  });
+
+  it("answers 502 while the pool's name stands for no core, says so in the log, and serves again once it does", async () => {
+    const familyId = await createFamily();
+    const pool = poolOf();
+    const throughPool = await routing.startRouter(pool);
+
+    expect((await fetch(`${throughPool.url}/${familyId}/admin`)).status).toBe(502);
+    expect(routing.log()).toContain(`"message":"The pool's name stands for no core","pool":"${new URL(pool.CORE_URL).host}"`);
+
+    scalePool(pool, routing.core);
+    expect((await fetch(`${throughPool.url}/${familyId}/admin`)).status).toBe(200);
+  });
+
+  it("answers 502 when the pool's name does not resolve, and says why in the log", async () => {
+    const familyId = await createFamily();
+    const throughPool = await routing.startRouter({ CORE_URL: "http://no-such-pool.invalid:3002" });
+
+    expect((await fetch(`${throughPool.url}/${familyId}/admin`)).status).toBe(502);
+    expect(routing.log()).toMatch(/"message":"The pool's name did not resolve","pool":"no-such-pool.invalid:3002","reason":"E[A-Z_]+"/);
+  });
+
+  it("sends a request with a body on to the next core when one could not be connected to, as it then did not arrive", async () => {
+    const familyId = await createFamily();
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    await down.close();
+    const throughPool = await routing.startRouter(poolOf(down, routing.core));
+    const since = routing.core.requests.length;
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin/agendas`, { method: "POST", body: "name=Kitchen" });
+
+    expect(response.status).toBe(200);
+    expect(arrived(since).map(({ method, path }) => `${method} ${path}`)).toEqual(["POST /admin/agendas"]);
   });
 
   it("answers 502 when no core answers", async () => {
@@ -505,7 +571,7 @@ describe("a core whose 409 breaks off before its body arrived", () => {
     });
     await new Promise<void>((resolve) => dying.listen(0, "127.0.0.1", resolve));
     try {
-      const throughPool = await routing.startRouter({ CORE_URLS: `http://127.0.0.1:${(dying.address() as AddressInfo).port},${routing.core.url}` });
+      const throughPool = await routing.startRouter(poolOf({ url: `http://127.0.0.1:${(dying.address() as AddressInfo).port}`, triggerUrl: "http://127.0.0.1:9" }, routing.core));
       const since = routing.core.requests.length;
 
       // A request with a body: the core may have run it, so no other core is asked.
@@ -530,7 +596,7 @@ describe("a request with a body", () => {
     const familyId = await createFamily();
     const echo = await startEcho();
     try {
-      const throughEcho = await routing.startRouter({ CORE_URLS: echo.url });
+      const throughEcho = await routing.startRouter({ CORE_URL: echo.url });
       const upload = Buffer.from(Array.from({ length }, (_, index) => index % 251));
 
       const response = await fetch(`${throughEcho.url}/${familyId}/admin/upload`, { method: "POST", body: upload });

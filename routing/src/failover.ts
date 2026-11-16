@@ -16,12 +16,15 @@ const NOT_CONNECTED = new Set(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENE
  */
 const NOT_RUN = new Set([502, 503, 504]);
 
-/** Answers the items in turn: each round starts at the item after the one the last round started at. */
-export function takingTurns<T>(items: readonly T[]): () => T[] {
-  let next = 0;
-  return () => {
-    const start = next;
-    next = (next + 1) % items.length;
+/**
+ * Answers the items it is given in turn: each round starts one item further than the round before,
+ * over however many items there are this time, so that rounds spread over items that come and go.
+ */
+export function takingTurns<T>(): (items: readonly T[]) => T[] {
+  let round = 0;
+  return (items) => {
+    const start = items.length === 0 ? 0 : round % items.length;
+    round++;
     return [...items.slice(start), ...items.slice(0, start)];
   };
 }

@@ -15,8 +15,12 @@ The one server the hosted service runs on.
 _Avoid_: Server, host, VM, node
 
 **Core**:
-One container of the public Family Agenda image, unmodified, in a pool of identical ones; it keeps no data of its own and serves whichever Family the Context it is given names. It answers browser requests, each with a Context, on its caller port, and operations triggered from outside, such as due work and purge, on its trigger port. It prepares a Family's database for its release when it first opens it, and refuses a Family whose database a newer release has migrated.
+One container of the public Family Agenda image, unmodified, in the pool; it keeps no data of its own and serves whichever Family the Context it is given names. It answers browser requests, each with a Context, on its caller port, and operations triggered from outside, such as due work and purge, on its trigger port. It prepares a Family's database for its release when it first opens it, and refuses a Family whose database a newer release has migrated.
 _Avoid_: Instance (one installation for one Family), backend, worker
+
+**Pool**:
+The cores that run now: the replicas of one service on the Cube, all alike, so that any of them serves any Family. The Operator scales it by one number, and the Routing module knows it by one name alone, which it resolves at each call.
+_Avoid_: Cluster, core list, upstreams
 
 **Supplied mode**:
 The core's mode in which it opens no Family of its own but is handed one Context per request or triggered operation.

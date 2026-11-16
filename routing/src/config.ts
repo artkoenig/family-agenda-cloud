@@ -14,10 +14,13 @@ export type Config = {
   operatorKey: Buffer;
   /** Encrypts and signs the Contexts the cores open; shared with the cores, 32 characters or more. */
   contextKey: string;
-  /** The cores of the pool, each where it serves the pages: its `CALLER_PORT`. */
-  coreUrls: string[];
-  /** The cores of the pool, each where it serves the triggered operations: its `TRIGGER_PORT`. */
-  coreTriggerUrls: string[];
+  /**
+   * The pool of cores where it serves the pages: the cores' service and their `CALLER_PORT`. The
+   * name stands for however many cores run now, and is resolved at each call (see pool.ts).
+   */
+  coreUrl: string;
+  /** The pool of cores where it serves the triggered operations: the cores' service and their `TRIGGER_PORT`. */
+  coreTriggerUrl: string;
   /** The token the cores' triggered operations require, as `Authorization: Bearer`; shared with the cores. */
   triggerToken: string;
   /** Where the cores reach the Families' databases; the Directory's server unless set. */
@@ -56,8 +59,8 @@ export function readConfig(env: Env): Config {
     directoryDatabasePassword: required(env, "DIRECTORY_DATABASE_PASSWORD"),
     operatorKey: key(env, "OPERATOR_KEY"),
     contextKey: secret(env, "CONTEXT_KEY"),
-    coreUrls: urls(env, "CORE_URLS"),
-    coreTriggerUrls: urls(env, "CORE_TRIGGER_URLS"),
+    coreUrl: poolAddress(env, "CORE_URL"),
+    coreTriggerUrl: poolAddress(env, "CORE_TRIGGER_URL"),
     triggerToken: secret(env, "TRIGGER_TOKEN"),
     familyDatabaseHost: env.FAMILY_DATABASE_HOST ?? directoryDatabaseUrl.hostname,
     familyDatabasePort: Number(env.FAMILY_DATABASE_PORT ?? (directoryDatabaseUrl.port || "5432")),
@@ -70,14 +73,16 @@ export function readConfig(env: Env): Config {
   };
 }
 
-/** The cores of the pool as `name` lists them, separated by commas, at least one. */
-function urls(env: Env, name: string): string[] {
-  const urls = required(env, name)
-    .split(",")
-    .map((url) => withoutTrailingSlash(url.trim()))
-    .filter(Boolean);
-  if (urls.length === 0) throw new ConfigError(`${name} must name at least one core`);
-  return urls;
+/** An http address of a host and its port alone: no credentials, path, query or fragment, and no list. */
+const POOL_ADDRESS = /^http:\/\/[^/?#@,\s]+$/;
+
+/** The one address `name` gives the pool: http, a host and a port, nothing below it. */
+function poolAddress(env: Env, name: string): string {
+  const address = withoutTrailingSlash(required(env, name).trim());
+  if (!POOL_ADDRESS.test(address) || !URL.canParse(address)) {
+    throw new ConfigError(`${name} must be one http address without a path, the cores' service and port, such as http://core:3002`);
+  }
+  return address;
 }
 
 /** FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS, whole seconds; 30 unless set, three times a core's idle timeout. */

@@ -6,9 +6,11 @@ import { directoryConnection, type Config } from "./config";
 import { CONTEXT_HEADER } from "./context";
 import { openingRefusal, pageErrorCode } from "./core-answers";
 import { directory as openDirectory, type Directory } from "./directory";
-import { isBodiless, mayRefuseOpening, takingTurns } from "./failover";
+import { isBodiless, mayRefuseOpening, neverConnected } from "./failover";
 import { sealedContext, unwrappedFamily } from "./family-context";
 import { reasonOf, type Log } from "./log";
+import { hostnameOf, poolAt, type Pool, type Resolve } from "./pool";
+import { systemResolve } from "./resolve";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
 
@@ -20,8 +22,8 @@ type RouterSetup = {
   config: Config;
   directory: Directory;
   log: Log;
-  /** The cores of the pool, each request starting at the next; any core may answer any request. */
-  inTurn: () => URL[];
+  /** The pool of cores where it serves the pages; any core may answer any request. */
+  pool: Pool;
 };
 
 /** A request as the Router passes it on to a core. */
@@ -47,15 +49,15 @@ const REFUSAL_BYTES = 1024;
 /**
  * Starts the Router: it finds each request's Family by the Family id in its path and passes the
  * request on to any core with that Family's Context. It opens the Directory on the first request
- * that names a Family.
+ * that names a Family. `resolve` finds the cores the pool's name stands for, at each request.
  */
-export async function startRouter(config: Config, log: Log): Promise<Router> {
+export async function startRouter(config: Config, log: Log, resolve: Resolve = systemResolve): Promise<Router> {
   const directoryPool = new pg.Pool({ ...directoryConnection(config), max: 10 });
   // An idle connection the server closed is replaced on the next request; it is no reason to stop.
   directoryPool.on("error", (error) => {
     log.error("A connection to the Directory failed", { reason: reasonOf(error) });
   });
-  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, inTurn: takingTurns(config.coreUrls.map((url) => new URL(url))) };
+  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, pool: poolAt(config.coreUrl, resolve, log) };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -95,20 +97,23 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
 }
 
 /**
- * Passes the request on to a core and the core's answer back unchanged, trying each core of the
- * pool at most once.
+ * Passes the request on to a core and the core's answer back unchanged, trying each core the
+ * pool's name stands for at this request at most once.
  *
  * - A core that refuses to open the Family has not run the request (see `openingRefusal`), so the
  *   request goes on to the next core, whatever its method, as long as the Router still holds all
  *   of it: a request without a body, or with one of up to HELD_BODY_BYTES.
+ * - A core that could not be connected to, as one stopped a moment ago, has not received the
+ *   request, so the request goes on to the next core under the same condition.
  * - A core that does not answer, or answers 503 without saying that it refuses, may have run the
  *   request, so only a request without a body goes on to the next core then, as long as no answer
  *   has begun. A HEAD request, whose answer has no body to say why, goes on after any 409 too.
- * - When no core is left, the answer is 503 if any core refused, and 502 if none answered.
+ * - When no core is left, the answer is 503 if any core refused, and 502 if none answered or the
+ *   pool's name stands for none.
  * - An answer that breaks off breaks off for the browser too.
  */
 async function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse, coreRequest: CoreRequest): Promise<void> {
-  const { config, log, inTurn } = setup;
+  const { config, log, pool } = setup;
   const bodiless = isBodiless(incoming.method);
   const body: Beginning | undefined = bodiless ? { chunks: [], whole: true } : await beginningOf(incoming, HELD_BODY_BYTES);
   // A browser that went away before its request was read has nobody to answer.
@@ -142,7 +147,7 @@ async function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: S
     }
     let answered = false;
     const toCore = request(
-      { host: core.hostname, port: core.port, method: incoming.method, path: coreRequest.path, headers: { ...headers, host: core.host } },
+      { host: hostnameOf(core), port: core.port, method: incoming.method, path: coreRequest.path, headers: { ...headers, host: core.host } },
       (fromCore) => {
         answered = true;
         void passBack(fromCore, core, others);
@@ -150,8 +155,9 @@ async function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: S
     );
     toCore.on("error", (error) => {
       if (answered) return;
-      log.error("A core did not answer", { ...familyField, core: core.host, reason: reasonOf(error) });
-      if (bodiless) {
+      const reason = reasonOf(error);
+      log.error("A core did not answer", { ...familyField, core: core.host, reason });
+      if (bodiless || (body.whole && neverConnected(reason))) {
         attempt(others);
         return;
       }
@@ -185,7 +191,10 @@ async function passOn(setup: RouterSetup, incoming: IncomingMessage, outgoing: S
     attempt(body.whole ? others : []);
   };
 
-  attempt(body.whole ? inTurn() : inTurn().slice(0, 1));
+  const cores = await pool.cores();
+  // A browser that went away while the pool's name was resolved has nobody to answer.
+  if (outgoing.destroyed) return;
+  attempt(body.whole ? cores : cores.slice(0, 1));
 }
 
 /** The beginning of what a browser or a core sent: all of it if `whole`, or else the rest is still to be read. */

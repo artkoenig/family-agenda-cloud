@@ -22,7 +22,7 @@ const resetPassword = (familyId: string, email = ADMIN) =>
   routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", email]);
 
 describe("Resetting an Admin's password", () => {
-  it("is not tried on another core when the first core of the pool does not answer, so that no second password is drawn", async () => {
+  it("is tried on the next core when a core could not be connected to, as the call then did not arrive, and draws one password only", async () => {
     const familyId = await createFamily();
     const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
     await down.close();
@@ -30,9 +30,35 @@ describe("Resetting an Admin's password", () => {
 
     const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], poolOf(down, routing.core));
 
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(routing.core.requests.slice(since).map(({ path }) => path)).toEqual(["/operations/reset-admin-password"]);
+    expect(result.stdout).toContain(`New password for ${ADMIN}: ${routing.core.password(familyId, ADMIN)}\n`);
+  });
+
+  it("is not tried on another core when a core takes the call and drops it without an answer, so that no second password is drawn", async () => {
+    const familyId = await createFamily();
+    const other = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    try {
+      routing.core.dropNextCall("reset-admin-password");
+
+      const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], poolOf(routing.core, other));
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(other.requests).toEqual([]);
+    } finally {
+      await other.close();
+    }
+  });
+
+  it("fails saying so when the pool's name stands for no core", async () => {
+    const familyId = await createFamily();
+    const pool = poolOf();
+
+    const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], pool);
+
     expect(result.exitCode).toBe(1);
-    expect(result.stdout).toBe("");
-    expect(routing.core.requests.slice(since)).toEqual([]);
+    expect(result.stderr).toContain(`No core ran reset-admin-password: ${new URL(pool.CORE_TRIGGER_URL).host} stands for no core`);
   });
 
   it("is tried on the next core when a core refuses to open the Family, and draws one password only", async () => {
