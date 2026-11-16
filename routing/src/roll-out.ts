@@ -71,7 +71,7 @@ export async function rollOut(provisioning: Provisioning): Promise<RollOutResult
 async function prepare({ config, directory, core, log }: Provisioning, entry: DirectoryEntry): Promise<void> {
   const { coreVersion } = config;
   const { familyId } = entry;
-  const answered = await core.prepareFamily(await sealedContext(config, unwrappedFamily(config, entry)));
+  const answered = await core.prepareFamily(sealedContext(config, unwrappedFamily(config, entry)));
   if (answered.coreVersion !== coreVersion) {
     throw new Error(`The core answered version ${answered.coreVersion}, not the CORE_VERSION ${coreVersion}`);
   }

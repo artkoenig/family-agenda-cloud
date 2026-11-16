@@ -24,10 +24,6 @@ const notFound = { to: "refused", status: 404, headers: { "content-type": "text/
 describe("routeRequest", () => {
   describe("a request for every Family", () => {
     it.each([
-      ["GET", "/static/app.js"],
-      ["HEAD", "/static/app.js"],
-      ["GET", "/static/"],
-      ["GET", "/static/app.js?v=3"],
       ["GET", "/api/health"],
       ["HEAD", "/api/health"],
       ["GET", "/api/health?probe=1"],
@@ -38,7 +34,8 @@ describe("routeRequest", () => {
     });
 
     it.each([
-      ["POST", "/static/app.js"],
+      ["GET", "/static/app.js"],
+      ["GET", "/static/"],
       ["PUT", "/api/health"],
       [undefined, "/api/health"],
       ["GET", "/api/healthz"],

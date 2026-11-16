@@ -166,9 +166,6 @@ importers:
 
   .:
     dependencies:
-      jose:
-        specifier: 6.2.17
-        version: 6.2.17
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -1589,9 +1586,6 @@ packages:
 
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
-
-  jose@6.2.17:
-    resolution: {integrity: sha512-wOuK9V1yujQFH5S0ZWmLcDZN7+IKh9bUCC2ZPCf2HDlol3WWHy+PPyNjEI75FXRLMp3vDKQcupP59xhVU95hcg==}
 
   js-md4@0.3.2:
     resolution: {integrity: sha512-/GDnfQYsltsjRswQhN9fhv3EMw2sCpUdrdxyWDOUK7eyD++r3gRhzgiQgc/x4MAv2i1iuQ4lxO5mvqM3vj4bwA==}
@@ -3650,8 +3644,6 @@ snapshots:
   is-unsafe@2.0.3: {}
 
   isexe@2.0.0: {}
-
-  jose@6.2.17: {}
 
   js-md4@0.3.2: {}
 

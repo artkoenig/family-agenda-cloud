@@ -7,11 +7,11 @@
 #   edge       Caddy and the Router.
 #   pool       the Routing module (Router, Scheduler) and the cores: the cores' Context interface.
 #   directory  Postgres, the Routing module and the cores, which open their Family's database.
-#   outbound   the cores and the Egress Proxies, which reach the internet and the cores' allowlist.
+#   outbound   the cores and the Egress Proxies, which reach the internet.
 #   plugin-<id>         the cores and that plugin.
 #   plugin-<id>-egress  that plugin and its Egress Proxy alone.
-# The plugins and their Egress Proxies share a network with the cores, so they can reach the
-# cores' port 3000 too: only the Context key, which they do not hold, guards that interface.
+# The plugins and the Egress Proxies share a network with the cores, so they can reach the cores'
+# ports too: only the Context key and the trigger token, which they do not hold, guard them.
 name: family-agenda
 
 # The core image of the pool: CORE_VERSION is an exact release, the one the Routing module
@@ -31,12 +31,17 @@ x-core: &core
   image: *core-image
   restart: unless-stopped
   environment:
+    # Supplied mode: each request's Context names the Family's database, key, blob location
+    # (under BLOB_ROOT of the Routing module) and address; the core listens on CALLER_PORT only.
+    CONTEXT_MODE: supplied
     CONTEXT_KEY: ${CONTEXT_KEY:?}
+    CALLER_PORT: "3002"
+    # The triggered operations (prepare, due work, Admin passwords) of the Routing module.
+    TRIGGER_TOKEN: ${TRIGGER_TOKEN:?}
+    TRIGGER_PORT: "3001"
     EGRESS_TICKET_KEY: ${EGRESS_TICKET_KEY:?}
     # Caddy and the Router sit in front: the Router forwards the browser's scheme and address.
     TRUST_PROXY: "true"
-    # The Context names each Family's blob location under this directory (BLOB_ROOT of the Router).
-    BLOB_DIRECTORY: /var/lib/family-agenda/blobs
     TESSDATA_DIRECTORY: /var/lib/family-agenda/tessdata
     PLUGIN_URLS: ics=http://plugin-ics:8080,imap=http://plugin-imap:8080,webuntis=http://plugin-webuntis:8080
   volumes:
@@ -45,14 +50,13 @@ x-core: &core
   networks:
     pool:
     directory:
-    # The Egress Proxies ask for their allowlist at http://core:3001; any core answers.
+    # The identity providers of the Families' Contexts.
     outbound:
-      aliases: [core]
     plugin-ics:
     plugin-imap:
     plugin-webuntis:
   healthcheck:
-    test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+    test: ["CMD", "node", "-e", "fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
     interval: 30s
     timeout: 5s
     start_period: 20s
@@ -68,7 +72,9 @@ x-routing: &routing
     DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
     OPERATOR_KEY: ${OPERATOR_KEY:?}
     CONTEXT_KEY: ${CONTEXT_KEY:?}
-    CORE_URLS: http://core-1:3000,http://core-2:3000
+    TRIGGER_TOKEN: ${TRIGGER_TOKEN:?}
+    CORE_URLS: http://core-1:3002,http://core-2:3002
+    CORE_TRIGGER_URLS: http://core-1:3001,http://core-2:3001
     CORE_VERSION: ${CORE_VERSION:?}
     BLOB_ROOT: /var/lib/family-agenda/blobs
     PUBLIC_URL: https://app.family-agenda.cloud
@@ -94,12 +100,9 @@ x-plugin: &plugin
     NO_PROXY: localhost,127.0.0.1
     no_proxy: localhost,127.0.0.1
 
-# A plugin's Egress Proxy, run from the core image: it checks each connection's Ticket and asks the
-# cores what that Ticket allows, at EGRESS_ALLOWLIST_URL (http://core:3001/egress/plugin-<id>).
-# This depends on Context mode (family-agenda#362): the released core answers it from its own
-# database, which a core of the pool does not have. The proxy's other mode, EGRESS_HOSTS, allows
-# fixed hosts without checking Tickets, and so not the host fields of a Source, which ics, imap
-# and webuntis need.
+# A plugin's Egress Proxy, run from the core image: it allows a connection by the Ticket of the
+# plugin call alone, which carries the Source's host fields (ics, imap and webuntis declare no
+# further hosts), asking no core. EGRESS_PLUGIN is the plugin's service.
 x-egress-proxy: &egress-proxy
   image: *core-image
   restart: unless-stopped
@@ -107,6 +110,7 @@ x-egress-proxy: &egress-proxy
   mem_limit: 128m
 x-egress-proxy-environment: &egress-proxy-environment
   EGRESS_TICKET_KEY: ${EGRESS_TICKET_KEY:?}
+  EGRESS_HOSTS: ""
   PORT: "3128"
 
 services:
@@ -190,7 +194,7 @@ services:
     <<: *egress-proxy
     environment:
       <<: *egress-proxy-environment
-      EGRESS_ALLOWLIST_URL: http://core:3001/egress/plugin-ics
+      EGRESS_PLUGIN: plugin-ics
     networks:
       outbound:
       plugin-ics-egress:
@@ -204,7 +208,7 @@ services:
     <<: *egress-proxy
     environment:
       <<: *egress-proxy-environment
-      EGRESS_ALLOWLIST_URL: http://core:3001/egress/plugin-imap
+      EGRESS_PLUGIN: plugin-imap
     networks:
       outbound:
       plugin-imap-egress:
@@ -218,7 +222,7 @@ services:
     <<: *egress-proxy
     environment:
       <<: *egress-proxy-environment
-      EGRESS_ALLOWLIST_URL: http://core:3001/egress/plugin-webuntis
+      EGRESS_PLUGIN: plugin-webuntis
     networks:
       outbound:
       plugin-webuntis-egress:

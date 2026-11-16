@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/cli";
 import type { Router } from "../src/router";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import { clientOf, startStandInCore, type StandInCore } from "./support/stand-in-core";
+import { clientOf, poolOf, STAND_IN_CORE_VERSION, startStandInCore, type StandInCore } from "./support/stand-in-core";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 
@@ -46,7 +46,6 @@ describe("a Family's request", () => {
     expect(request).toMatchObject({ method: "GET", path: "/agendas/123", search: "?day=2026-11-15" });
     expect(request?.context).toMatchObject({
       familyId,
-      pathPrefix: `/${familyId}`,
       publicUrl: `https://app.family-agenda.cloud/${familyId}`,
     });
   });
@@ -60,14 +59,14 @@ describe("a Family's request", () => {
     await browse(`/${second}/admin`);
 
     const [toFirst, toSecond] = arrived(since).map(({ context }) => context!);
-    expect(toFirst).toMatchObject({ familyId: first, pathPrefix: `/${first}`, blobLocation: `/var/lib/family-agenda/blobs/${first}` });
-    expect(toSecond).toMatchObject({ familyId: second, pathPrefix: `/${second}`, blobLocation: `/var/lib/family-agenda/blobs/${second}` });
+    expect(toFirst).toMatchObject({ familyId: first, publicUrl: `https://app.family-agenda.cloud/${first}`, blobDirectory: "/var/lib/family-agenda/blobs" });
+    expect(toSecond).toMatchObject({ familyId: second, publicUrl: `https://app.family-agenda.cloud/${second}`, blobDirectory: "/var/lib/family-agenda/blobs" });
     expect(toFirst!.database.name).not.toBe(toSecond!.database.name);
     expect(toFirst!.database.password).not.toBe(toSecond!.database.password);
     expect(toFirst!.familyKey).not.toBe(toSecond!.familyKey);
     // The Context the Router builds is the one Provisioning prepared the Family with.
     const prepared = routing.core.requests.find(({ path, context }) => path === "/operations/prepare-family" && context?.familyId === first);
-    expect({ ...toFirst, iat: 0, exp: 0 }).toEqual({ ...prepared?.context, iat: 0, exp: 0 });
+    expect({ ...toFirst, expiresAt: 0 }).toEqual({ ...prepared?.context, expiresAt: 0 });
   });
 
   it("at the Family's address itself arrives at the core's root", async () => {
@@ -135,9 +134,9 @@ describe("the core's answer", () => {
 
   it("breaks off when the core drops it mid-answer, is not asked of another core, and the Router serves on", async () => {
     const familyId = await createFamily();
-    const other = await startStandInCore(routing.env.CONTEXT_KEY!);
+    const other = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
     try {
-      const throughPool = await routing.startRouter({ CORE_URLS: `${routing.core.url},${other.url}` });
+      const throughPool = await routing.startRouter(poolOf(routing.core, other));
       const logBefore = routing.log().length;
       const since = routing.core.requests.length;
       routing.core.dropNext();
@@ -177,7 +176,7 @@ describe("the browser's headers", () => {
           "x-hop-secret": "for the Router only",
           "keep-alive": "timeout=5",
           forwarded: "for=198.51.100.66;proto=https",
-          "x-family-agenda-context": "forged",
+          "x-family-context": "forged",
           "x-end-to-end": "kept",
         },
       });
@@ -189,13 +188,13 @@ describe("the browser's headers", () => {
     const headers = arrived(since)[0]!.headers;
     expect(headers["x-end-to-end"]).toBe("kept");
     for (const name of ["x-hop-secret", "keep-alive", "forwarded"]) expect(headers[name], name).toBeUndefined();
-    expect(headers["x-family-agenda-context"]).not.toBe("forged");
+    expect(headers["x-family-context"]).not.toBe("forged");
   });
 });
 
 describe("routing serve, when its configuration is wrong", () => {
   it.each([
-    ["no core", { CORE_URLS: " , " }],
+    ["no core", { CORE_URLS: " , ", CORE_TRIGGER_URLS: " , " }],
     ["a port that is no number", { PORT: "eighty" }],
     ["a port out of range", { PORT: "65536" }],
     ["a negative port", { PORT: "-1" }],
@@ -253,9 +252,9 @@ describe("routing serve, when the Directory cannot be opened", () => {
 describe("the log", () => {
   it("names the Family by its Family id, and holds no Context, family key, database password or page address", async () => {
     const familyId = await createFamily();
-    const down = await startStandInCore(routing.env.CONTEXT_KEY!);
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
     await down.close();
-    const throughBrokenPool = await routing.startRouter({ CORE_URLS: down.url });
+    const throughBrokenPool = await routing.startRouter(poolOf(down));
     const logBefore = routing.log().length;
     const since = routing.core.requests.length;
 
@@ -294,10 +293,10 @@ describe("a pool of several cores", () => {
 
   it("serves requests from any of them, each with the Family's Context", async () => {
     const familyId = await createFamily();
-    others = [await startStandInCore(routing.env.CONTEXT_KEY!), await startStandInCore(routing.env.CONTEXT_KEY!)];
+    others = [await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!), await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!)];
     const pool = [routing.core, ...others];
     const sinces = pool.map((core) => core.requests.length);
-    const throughPool = await routing.startRouter({ CORE_URLS: pool.map(({ url }) => url).join(",") });
+    const throughPool = await routing.startRouter(poolOf(...pool));
 
     for (let index = 0; index < 9; index++) expect((await fetch(`${throughPool.url}/${familyId}/agendas/${index}`)).status).toBe(200);
 
@@ -311,9 +310,9 @@ describe("a pool of several cores", () => {
 
   it("serves a page from another core while one of them is down", async () => {
     const familyId = await createFamily();
-    const down = await startStandInCore(routing.env.CONTEXT_KEY!);
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
     await down.close();
-    const throughPool = await routing.startRouter({ CORE_URLS: `${down.url},${routing.core.url}` });
+    const throughPool = await routing.startRouter(poolOf(down, routing.core));
     const since = routing.core.requests.length;
 
     const answers = await Promise.all([0, 1, 2, 3].map(async () => (await fetch(`${throughPool.url}/${familyId}/admin`)).status));
@@ -324,9 +323,9 @@ describe("a pool of several cores", () => {
 
   it("answers 502 when no core answers", async () => {
     const familyId = await createFamily();
-    const down = await startStandInCore(routing.env.CONTEXT_KEY!);
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
     await down.close();
-    const throughPool = await routing.startRouter({ CORE_URLS: down.url });
+    const throughPool = await routing.startRouter(poolOf(down));
 
     expect((await fetch(`${throughPool.url}/${familyId}/admin`)).status).toBe(502);
     expect((await fetch(`${throughPool.url}/api/health`)).status).toBe(502);
@@ -368,36 +367,33 @@ describe("the client's address and scheme", () => {
   });
 });
 
-describe("static files and the health check", () => {
-  it("arrive at a core without a Context, and without the Directory", async () => {
+describe("the health check", () => {
+  it("arrives at a core without a Context, and without the Directory", async () => {
     // A Router that cannot open the Directory: whatever it serves, it serves without it.
     const withoutDirectory = await routing.startRouter({ DIRECTORY_DATABASE_PASSWORD: "not-the-password" });
     const since = routing.core.requests.length;
 
     const answers = await Promise.all(
-      ["/static/app.css", "/static/icons/agenda-192.png", "/api/health"].map(async (path) => {
-        const response = await fetch(`${withoutDirectory.url}${path}`, { headers: { "x-family-agenda-context": "forged" } });
+      ["/api/health"].map(async (path) => {
+        const response = await fetch(`${withoutDirectory.url}${path}`, { headers: { "x-family-context": "forged" } });
         return { status: response.status, body: (await response.json()) };
       }),
     );
 
-    expect(answers).toEqual([
-      { status: 200, body: { familyIndependent: "/static/app.css" } },
-      { status: 200, body: { familyIndependent: "/static/icons/agenda-192.png" } },
-      { status: 200, body: { familyIndependent: "/api/health" } },
-    ]);
+    expect(answers).toEqual([{ status: 200, body: { status: "ok", version: STAND_IN_CORE_VERSION } }]);
     const requests = arrived(since);
-    expect(requests.map(({ path }) => path).sort()).toEqual(["/api/health", "/static/app.css", "/static/icons/agenda-192.png"]);
-    expect(requests.map(({ sealedContext }) => sealedContext)).toEqual([null, null, null]);
+    expect(requests.map(({ path }) => path)).toEqual(["/api/health"]);
+    expect(requests.map(({ sealedContext }) => sealedContext)).toEqual([null]);
     // A Family's request through that Router fails, as it needs the Directory.
     const familyId = await createFamily();
     expect((await fetch(`${withoutDirectory.url}/${familyId}/admin`)).status).toBe(502);
   });
 
-  it("are the only paths outside a Family that arrive at a core", async () => {
+  it("is the only path outside a Family that arrives at a core", async () => {
     const since = routing.core.requests.length;
 
-    for (const path of ["/api/version", "/static", "/staticx/app.css"]) expect((await browse(path)).status, path).toBe(404);
+    // Static files too: the core serves them below a Family's prefix only, with its Context.
+    for (const path of ["/api/version", "/static", "/static/app.css", "/staticx/app.css"]) expect((await browse(path)).status, path).toBe(404);
     expect((await browse("/api/health", { method: "POST" })).status).toBe(404);
 
     expect(arrived(since)).toEqual([]);
@@ -450,8 +446,8 @@ describe("a path that names no active Family", () => {
     const since = routing.core.requests.length;
     const unknown = await answerTo(`/${crypto.randomUUID()}`);
 
-    const spellings = ["/operations", "/operations/reset-admin-password", "//operations/run-due-work", "/OPERATIONS/prepare-family"];
-    const disguised = ["/x/../operations/enter-admin", "/./operations/purge-messages", "/%6Fperations/sweep-secrets", "/%2e/operations/x", "/%zz/../operations/x"];
+    const spellings = ["/operations", "/operations/reset-admin-password", "//operations/due-work", "/OPERATIONS/prepare-family"];
+    const disguised = ["/x/../operations/enter-admin", "/./operations/purge", "/%6Fperations/sweep-secrets", "/%2e/operations/x", "/%zz/../operations/x"];
     for (const path of [...spellings, ...disguised]) {
       expect(await answerTo(`/${familyId}${path}`), path).toEqual(unknown);
       const response = await browse(`/${familyId}${path}`, { method: "POST", body: JSON.stringify({ email: "first.admin@example.org" }) });

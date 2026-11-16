@@ -80,7 +80,7 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
   outgoing.on("close", () => {
     setup.log.info("Served a request", { familyId, method: incoming.method, status: outgoing.statusCode });
   });
-  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: await sealedContext(config, family) } });
+  passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: sealedContext(config, family) } });
 }
 
 /**

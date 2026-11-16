@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { familyDatabaseNames } from "../src/family-databases";
 import { setUpRouting, type TestRouting } from "./support/routing";
 
+/** The core's triggered operations the Routing module called: its health checks aside. */
+const triggered = () => routing.core.requests.filter(({ on }) => on === "trigger");
+
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 
 let routing: TestRouting;
@@ -35,9 +38,9 @@ async function createFamily() {
 const deleteFamily = (familyId: string, confirmation = familyId, env: Record<string, string | undefined> = {}) =>
   run(["delete", "--family-id", familyId, "--confirm", confirmation], env);
 
-/** How the last core request reached the Family's database, as a core would open it. */
+/** How the last triggered operation reached the Family's database, as a core would open it. */
 function lastDatabaseConnection() {
-  const [context] = routing.core.requests.map(({ context }) => context!).slice(-1);
+  const [context] = triggered().map(({ context }) => context!).slice(-1);
   const { host, port, name: database, user, password } = context!.database;
   return { host, port, database, user, password };
 }
@@ -170,7 +173,7 @@ describe("Deleting a Family", () => {
   it("logs the Family by its Family id and no secret", async () => {
     const familyId = await createFamily();
     const [entry] = await routing.directory("SELECT wrapped_family_key, wrapped_database_password FROM family WHERE family_id = $1", [familyId]);
-    const secrets = routing.core.requests.flatMap(({ sealedContext, context }) => [sealedContext!, context!.familyKey, context!.database.password]);
+    const secrets = triggered().flatMap(({ sealedContext, context }) => [sealedContext!, context!.familyKey, context!.database.password]);
     const logBefore = routing.log().length;
 
     const result = await deleteFamily(familyId);

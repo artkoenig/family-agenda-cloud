@@ -218,7 +218,7 @@ function giving(
       return;
     }
     try {
-      const sources = await occasion.trigger(core, await contextOf(config, entry));
+      const sources = await occasion.trigger(core, contextOf(config, entry));
       if (occasion.recorded && sources) await directory.recordDueWork(familyId, { ranAt, outcome: "succeeded", sources });
       log.info(occasion.ran, { familyId, occasion: name, ...(sources ? { sources } : {}) });
     } catch (error) {

@@ -27,8 +27,8 @@ describe("headersToCore", () => {
   });
 
   it("drops a Context, a Forwarded and the Host the browser sent", () => {
-    const headers = headersToCore(browser({ "x-family-agenda-context": "forged", forwarded: "for=203.0.113.9" }), false);
-    expect(headers).not.toHaveProperty("x-family-agenda-context");
+    const headers = headersToCore(browser({ "x-family-context": "forged", forwarded: "for=203.0.113.9" }), false);
+    expect(headers).not.toHaveProperty("x-family-context");
     expect(headers).not.toHaveProperty("forwarded");
     expect(headers).not.toHaveProperty("host");
   });

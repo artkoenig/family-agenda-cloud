@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import { startStandInCore } from "./support/stand-in-core";
+import { poolOf, startStandInCore } from "./support/stand-in-core";
 
 const ADMIN = "locked.out@example.org";
 
@@ -24,13 +24,11 @@ const resetPassword = (familyId: string, email = ADMIN) =>
 describe("Resetting an Admin's password", () => {
   it("is not tried on another core when the first core of the pool does not answer, so that no second password is drawn", async () => {
     const familyId = await createFamily();
-    const down = await startStandInCore(routing.env.CONTEXT_KEY!);
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
     await down.close();
     const since = routing.core.requests.length;
 
-    const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], {
-      CORE_URLS: `${down.url},${routing.core.url}`,
-    });
+    const result = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN], poolOf(down, routing.core));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
@@ -51,10 +49,9 @@ describe("Resetting an Admin's password", () => {
       familyId,
       database: contextOfCreate.database,
       familyKey: contextOfCreate.familyKey,
-      blobLocation: contextOfCreate.blobLocation,
+      blobDirectory: contextOfCreate.blobDirectory,
       timeZone: contextOfCreate.timeZone,
       publicUrl: contextOfCreate.publicUrl,
-      pathPrefix: contextOfCreate.pathPrefix,
     });
     const password = routing.core.password(familyId, ADMIN)!;
     expect(password).toBeDefined();
@@ -120,7 +117,7 @@ describe("Resetting an Admin's password", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("answered reset-admin-password without a password");
+    expect(result.stderr).toContain("answered reset-admin-password without a new password");
   });
 
   it("leaves the new password in no log line and nowhere in the Directory", async () => {

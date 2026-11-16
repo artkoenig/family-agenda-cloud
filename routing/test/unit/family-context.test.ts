@@ -1,19 +1,21 @@
-import { jwtDecrypt } from "jose";
 import { describe, expect, it } from "vitest";
 import { readConfig, type Config } from "../../src/config";
 import type { DirectoryEntry } from "../../src/directory";
 import { familyUrl, sealedContext, unwrappedFamily, type Family } from "../../src/family-context";
 import { wrapperFor } from "../../src/secrets";
+import { openContext } from "../support/core-context";
 
 const operatorKey = Buffer.alloc(32, 5);
-const contextKey = Buffer.alloc(32, 6);
+const contextKey = "the context key, 32 characters or more";
 
 const config: Config = readConfig({
   DIRECTORY_DATABASE_URL: "postgres://routing@directory.internal/directory",
   DIRECTORY_DATABASE_PASSWORD: "directory-password",
   OPERATOR_KEY: operatorKey.toString("base64"),
-  CONTEXT_KEY: contextKey.toString("base64"),
+  CONTEXT_KEY: contextKey,
+  TRIGGER_TOKEN: "the trigger token, 32 characters or more",
   CORE_URLS: "http://core-1:3000",
+  CORE_TRIGGER_URLS: "http://core-1:3001",
   BLOB_ROOT: "/srv/blobs",
   CORE_VERSION: "0.3.1",
   FAMILY_DATABASE_HOST: "families.internal",
@@ -84,20 +86,32 @@ describe("unwrappedFamily", () => {
 });
 
 describe("sealedContext", () => {
-  it("is the Family's Context, sealed with the Context key", async () => {
-    const { payload } = await jwtDecrypt(await sealedContext(config, family), contextKey);
-    expect(payload).toEqual({
+  const familyKey = Buffer.alloc(32, 9);
+  const withKey: Family = { ...family, familyKey: familyKey.toString("base64") };
+
+  it("is the Family's Context, sealed with the Context key as the core opens it", () => {
+    expect(openContext(sealedContext(config, withKey), contextKey)).toEqual({
       familyId: "f-1",
-      database: { host: "families.internal", port: 6432, name: "family_f_1", user: "family_f_1_role", password: "the database password" },
-      familyKey: "the family key",
-      blobLocation: "/srv/blobs/f-1",
+      databaseUrl: "postgres://family_f_1_role:the%20database%20password@families.internal:6432/family_f_1",
+      familyKey: familyKey.toString("base64url"),
+      blobDirectory: "/srv/blobs",
       timeZone: "Europe/Vienna",
       publicUrl: "https://agenda.example/f-1",
-      pathPrefix: "/f-1",
-      identityProvider: { issuerUrl: "https://idp.example", clientId: "client", clientSecret: "secret", requiredGroup: "families" },
-      identityProviderSignIn: "known-admins-only",
-      iat: expect.any(Number) as number,
-      exp: expect.any(Number) as number,
+      identityProvider: { issuerUrl: "https://idp.example", clientId: "client", clientSecret: "secret", requiredGroup: "families", knownAdminsOnly: true },
+      expiresAt: expect.any(Number) as number,
     });
+  });
+
+  it("names the database so that a password of any characters reads back as it is", () => {
+    const password = "p@ss:w/rd?#%+ ";
+    const { databaseUrl } = openContext(sealedContext(config, { ...withKey, databasePassword: password }), contextKey);
+    const url = new URL(databaseUrl);
+    expect(decodeURIComponent(url.password)).toBe(password);
+    expect(decodeURIComponent(url.username)).toBe("family_f_1_role");
+  });
+
+  it("offers no single sign-on without an Identity Provider", () => {
+    const withoutIdentityProvider: Config = { ...config, identityProvider: null };
+    expect(openContext(sealedContext(withoutIdentityProvider, withKey), contextKey)).not.toHaveProperty("identityProvider");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerOf, isUnknownAdmin, newPassword, preparedVersion, sourcesPolled } from "../../src/core-answers";
+import { answerOf, isUnknownAdmin, newPassword, runningVersion, sourcesPolled } from "../../src/core-answers";
 
 describe("answerOf", () => {
   it("reads a JSON object", () => {
@@ -21,13 +21,13 @@ describe("answerOf", () => {
   });
 });
 
-describe("preparedVersion", () => {
-  it("is the core version the core answered", () => {
-    expect(preparedVersion({ coreVersion: "1.2.0" })).toBe("1.2.0");
+describe("runningVersion", () => {
+  it("is the release /api/health answers", () => {
+    expect(runningVersion({ status: "ok", version: "0.7.0" })).toBe("0.7.0");
   });
 
-  it.each([{}, { coreVersion: 12 }, { coreVersion: null }])("is none for %j", (answer) => {
-    expect(preparedVersion(answer)).toBeUndefined();
+  it.each([{}, { version: 12 }, { version: null }, { version: "" }])("is none for %j", (answer) => {
+    expect(runningVersion(answer)).toBeUndefined();
   });
 });
 
@@ -43,24 +43,51 @@ describe("isUnknownAdmin", () => {
 
 describe("newPassword", () => {
   it("is the password the core drew", () => {
-    expect(newPassword({ password: "correct horse battery staple" })).toBe("correct horse battery staple");
+    expect(newPassword({ email: "admin@example.org", newPassword: "correct horse battery staple" })).toBe("correct horse battery staple");
   });
 
-  it.each([{}, { password: "" }, { password: 42 }])("is none for %j", (answer) => {
+  it.each([{}, { newPassword: "" }, { newPassword: 42 }, { password: "the old field" }])("is none for %j", (answer) => {
     expect(newPassword(answer)).toBeUndefined();
   });
 });
 
 describe("sourcesPolled", () => {
-  it("is how many due Sources ran and how many of them failed", () => {
-    expect(sourcesPolled({ ran: 3, failed: 1, extra: true })).toStrictEqual({ ran: 3, failed: 1 });
+  const report = (ran: unknown[], failed: unknown[]) => ({ ran, failed, invalid: [], refused: [], lost: [] });
+  const failure = (sourceId: string) => ({ sourceId, kind: "temporary", message: "timed out" });
+  const extracted = { ok: true, report: {} };
+
+  it("is how many due Sources were polled, those that ran and those that failed, and how many of them failed", () => {
+    const answer = { polled: { ok: true, report: report(["s-1", "s-2"], [failure("s-3")]) }, extracted };
+    expect(sourcesPolled(answer)).toStrictEqual({ ran: 3, failed: 1 });
   });
 
   it("takes a run that polled nothing", () => {
-    expect(sourcesPolled({ ran: 0, failed: 0 })).toStrictEqual({ ran: 0, failed: 0 });
+    expect(sourcesPolled({ polled: { ok: true, report: report([], []) }, extracted })).toStrictEqual({ ran: 0, failed: 0 });
   });
 
-  it.each([{}, { ran: 3 }, { failed: 1 }, { ran: 1.5, failed: 0 }, { ran: 2, failed: "0" }, { ran: "2", failed: 0 }])("is none for %j", (answer) => {
+  it("is why polling failed", () => {
+    expect(sourcesPolled({ polled: { ok: false, error: "database unavailable" }, extracted })).toStrictEqual({ error: "polling the Sources: database unavailable" });
+  });
+
+  it("is why extracting the messages failed", () => {
+    const answer = { polled: { ok: true, report: report([], []) }, extracted: { ok: false, error: "disk full" } };
+    expect(sourcesPolled(answer)).toStrictEqual({ error: "extracting the messages: disk full" });
+  });
+
+  it("says no reason was given for a failed step without one", () => {
+    expect(sourcesPolled({ polled: { ok: false }, extracted })).toStrictEqual({ error: "polling the Sources: no reason given" });
+  });
+
+  it.each([
+    {},
+    { ran: 3, failed: 1 },
+    { polled: { ok: true, report: report([], []) } },
+    { polled: { ok: true }, extracted },
+    { polled: { ok: "yes", report: report([], []) }, extracted },
+    { polled: null, extracted },
+    { polled: { ok: true, report: { ran: 2, failed: 0 } }, extracted },
+    { polled: { ok: true, report: { ran: [] } }, extracted },
+  ])("is none for %j", (answer) => {
     expect(sourcesPolled(answer)).toBeUndefined();
   });
 });

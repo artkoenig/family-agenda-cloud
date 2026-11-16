@@ -2,15 +2,18 @@ import { describe, expect, it } from "vitest";
 import { ConfigError, directoryConnection, readConfig } from "../../src/config";
 
 const operatorKey = Buffer.alloc(32, 1);
-const contextKey = Buffer.alloc(32, 2);
+const contextKey = "a context key of 32 characters or more";
+const triggerToken = "a trigger token of 32 characters or more";
 
 /** The least environment the Routing module starts with. */
 const minimal = {
   DIRECTORY_DATABASE_URL: "postgres://routing@db.internal:6543/directory",
   DIRECTORY_DATABASE_PASSWORD: "directory-password",
   OPERATOR_KEY: operatorKey.toString("base64"),
-  CONTEXT_KEY: contextKey.toString("base64"),
+  CONTEXT_KEY: contextKey,
+  TRIGGER_TOKEN: triggerToken,
   CORE_URLS: "http://core-1:3000",
+  CORE_TRIGGER_URLS: "http://core-1:3001",
   BLOB_ROOT: "/srv/blobs",
   CORE_VERSION: "0.3.1",
 };
@@ -29,6 +32,8 @@ describe("readConfig", () => {
       operatorKey,
       contextKey,
       coreUrls: ["http://core-1:3000"],
+      coreTriggerUrls: ["http://core-1:3001"],
+      triggerToken,
       coreVersion: "0.3.1",
       familyDatabaseHost: "db.internal",
       familyDatabasePort: 6543,
@@ -81,7 +86,7 @@ describe("readConfig", () => {
   });
 
   it("splits CORE_URLS at commas, trimmed, without trailing slashes or empty entries", () => {
-    expect(readConfig({ ...minimal, CORE_URLS: " http://core-1:3000/ ,, http://core-2:3000// ," }).coreUrls).toEqual([
+    expect(readConfig({ ...minimal, CORE_URLS: " http://core-1:3000/ ,, http://core-2:3000// ,", CORE_TRIGGER_URLS: "http://core-1:3001,http://core-2:3001" }).coreUrls).toEqual([
       "http://core-1:3000",
       "http://core-2:3000",
     ]);
@@ -109,7 +114,28 @@ describe("readConfig", () => {
     );
   });
 
-  it.each(["OPERATOR_KEY", "CONTEXT_KEY"])("refuses a %s that is not 32 bytes", (name) => {
+  it.each(["CONTEXT_KEY", "TRIGGER_TOKEN"])("refuses a %s shorter than 32 characters, as the core does", (name) => {
+    expect(() => readConfig({ ...minimal, [name]: "x".repeat(31) })).toThrow(
+      new ConfigError(`${name} must be 32 characters or more (openssl rand -base64 32)`),
+    );
+    expect(readConfig({ ...minimal, [name]: "x".repeat(32) })).toBeDefined();
+  });
+
+  it("takes the Context key as the text it is, as the core does", () => {
+    expect(readConfig({ ...minimal, CONTEXT_KEY: "c2hvcnQ= but long enough for the core" }).contextKey).toBe("c2hvcnQ= but long enough for the core");
+  });
+
+  it("pairs the cores' trigger addresses with their pages', in order", () => {
+    const config = readConfig({ ...minimal, CORE_URLS: "http://core-1:3000, http://core-2:3000/", CORE_TRIGGER_URLS: "http://core-1:3001,http://core-2:3001" });
+    expect(config.coreUrls).toEqual(["http://core-1:3000", "http://core-2:3000"]);
+    expect(config.coreTriggerUrls).toEqual(["http://core-1:3001", "http://core-2:3001"]);
+  });
+
+  it.each([["http://core-1:3001,http://core-2:3001"], [" , "]])("refuses CORE_TRIGGER_URLS %j that do not name each core once", (urls) => {
+    expect(() => readConfig({ ...minimal, CORE_TRIGGER_URLS: urls })).toThrow(ConfigError);
+  });
+
+  it.each(["OPERATOR_KEY"])("refuses a %s that is not 32 bytes", (name) => {
     for (const length of [31, 33]) {
       expect(() => readConfig({ ...minimal, [name]: Buffer.alloc(length).toString("base64") })).toThrow(
         new ConfigError(`${name} must be 32 bytes in base64 (openssl rand -base64 32)`),

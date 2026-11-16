@@ -16,7 +16,7 @@ export type BrowserTarget = { method: string | undefined; target: string };
 export type Refusal = { to: "refused"; status: number; headers: Record<string, string>; body: string };
 
 export type Route<E> =
-  /** Static files and the health check: the same for every Family, so served without one. */
+  /** The health check: the one path a core answers without a Context. */
   | { to: "core"; path: string }
   /** A request for an active Family prepared for the running core version, with the path after its Family id. */
   | { to: "family"; familyId: string; path: string; entry: E }
@@ -62,7 +62,9 @@ export async function routeRequest<E extends Pick<DirectoryEntry, "status" | "co
 function isFamilyIndependent(method: string | undefined, target: string): boolean {
   const [pathname = ""] = target.split("?", 1);
   if (!isBodiless(method)) return false;
-  return pathname.startsWith("/static/") || pathname === "/api/health";
+  // Static files are not: a core in supplied mode serves them only with a Context, below the
+  // Family's prefix, where its pages link to them.
+  return pathname === "/api/health";
 }
 
 /**
