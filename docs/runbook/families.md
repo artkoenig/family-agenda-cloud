@@ -19,9 +19,11 @@ lines in JSON around it are its log. It ends with `0` when it did what it says, 
 was called wrongly, after which it prints all commands, or when a setting in the `.env` is missing or wrong.
 `routing` with nothing after it prints the commands too.
 
-The commands and what they print were run on 2026-11-16 against the compose project of `cube/` with the core image
-it pins, on a laptop, with a Docker volume in place of the mounted bucket. The checks of the mount itself are in the
-setup runbook and have not been run on the Cube yet.
+When a command fails, its reason is in the `error` of its last log line, such as
+`"error":"The confirmation does not match the Family id; nothing was deleted"`.
+
+The commands and what they print were run on 2026-11-16 on the Cube, with the bucket mounted
+([#103](https://github.com/artkoenig/family-agenda-cloud/issues/103)).
 
 A Family id is the part of a Family's address after the host, 36 characters long:
 `https://app.family-agenda.cloud/<Family id>/`.

@@ -159,10 +159,10 @@ The scripts reach the Cube as `root@family-agenda.cloud`; `CUBE_HOST` overrides 
 
 ### Checking the blob mount
 
-None of this has been run on the Cube yet; ADR-0002 lists what was tried on a laptop. Run it on the Cube, in
-`/opt/family-agenda`, before the first Family of somebody else is created (stage (b) of
-[#90](https://github.com/artkoenig/family-agenda-cloud/issues/90)), and write the result and the date of each check into
-[#102](https://github.com/artkoenig/family-agenda-cloud/issues/102). `core-1` and `core-2` stand for
+All six checks passed on the Cube on 2026-11-16; the results are in
+[#102](https://github.com/artkoenig/family-agenda-cloud/issues/102), and ADR-0002 lists what was tried on a laptop
+before. Run them again in `/opt/family-agenda` after a change to the `blob-mount` service or its rclone image, and
+write the result and the date of each check into #102. `core-1` and `core-2` stand for
 `family-agenda-core-1` and `-2`.
 
 1. The mount is there, on the Cube and in every core:
@@ -211,7 +211,8 @@ None of this has been run on the Cube yet; ADR-0002 lists what was tried on a la
    docker network connect family-agenda_outbound family-agenda-blob-mount-1
    ```
 
-   Expect an error (`EIO`) after 20 seconds at most, not a write that hangs or seems to work. Afterwards the write
+   Expect an error (`EIO`) after 20 seconds at most, not a write that hangs or seems to work; on the Cube it came at
+   once, on `close`. Afterwards the write
    of check 2 under a new name works again.
 5. Without the mount no core writes, and the mount comes back to running cores:
 
@@ -253,7 +254,8 @@ cores run.
 1. Read the release's notes in the public repo (`docs/upgrading.md`). Take a backup first if they say its migration
    cannot be undone: a core never goes back to a database a newer release migrated.
 2. Change the core image in `cube/compose.yaml` (`x-core-image`) to the release's tag and digest, and the same image
-   in the `real-core` job of `.github/workflows/ci.yml`, whose walk-through must pass against it.
+   in the `real-core` job of `.github/workflows/ci.yml`, together with the core commit that job checks out (`ref`,
+   the commit the image was built from; the demo Source plugin is built from it). The job's walk-through must pass.
 3. `scripts/deploy.sh`. Compose replaces the cores.
 
 What happens then, without the Operator:

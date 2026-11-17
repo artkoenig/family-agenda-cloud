@@ -6,9 +6,9 @@ import { setUpRouting, type TestRouting } from "../support/routing";
  * The walk-through against the core in supplied mode, not the stand-in: what the stand-in mirrors,
  * the real core must answer alike. No step prepares a Family: the core does when it first opens
  * it. Its Admins are Logto's, which the walk-through does not run: the core is configured with an
- * Identity Provider that never answers, and nothing here signs in. It runs where REAL_CORE_URL names such a core (CI's
- * `real-core` job starts one); the core must reach the test's Postgres server at
- * REAL_CORE_DATABASE_HOST, and holds the Families' blobs below REAL_CORE_BLOB_ROOT.
+ * Identity Provider that never answers, and nothing here signs in. It runs where REAL_CORE_URL
+ * names such a core, which CI's `real-core` job starts with TRUST_PROXY=true, as on the Cube; the
+ * core must reach the test's Postgres server at REAL_CORE_DATABASE_HOST, and holds the Families' blobs below REAL_CORE_BLOB_ROOT.
  */
 const real = {
   url: process.env.REAL_CORE_URL,
@@ -47,8 +47,8 @@ afterEach(async () => {
 }, 45_000);
 
 /**
- * Not walked through here: an Admin signing in at Logto, a demo Source and its Items on one
- * Family's Agenda only. The core documents its sign-in page, Sources and Agendas as pages for
+ * Not walked through here until Logto runs beside the core (#136): an Admin signing in, a demo
+ * Source and its Items on one Family's Agenda only. The core documents its sign-in page, Sources and Agendas as pages for
  * people, not as an interface for callers, and the Routing module takes from the core only what it
  * documents (ADR-0001).
  */
@@ -70,9 +70,8 @@ describe.skipIf(!real.url)("Two Families on the core", () => {
     expect(await health.json()).toEqual({ status: "ok", version: expect.any(String) as unknown });
     for (const familyId of [first, second]) {
       // The core opens each Family with its own Context, its Organization included: no setup page.
-      const page = await fetch(`${router.url}/${familyId}/admin`, { redirect: "manual" });
-      expect(page.status, await page.text()).not.toBe(409);
-      expect(page.status).not.toBe(503);
+      const setup = await fetch(`${router.url}/${familyId}/setup`, { redirect: "manual" });
+      expect(setup.status, await setup.text()).toBe(404);
     }
 
     const clock = new TestClock(new Date(Date.now() - (Date.now() % 60_000) + 10_000).toISOString());
