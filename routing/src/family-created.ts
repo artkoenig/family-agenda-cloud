@@ -24,9 +24,7 @@ const HEX_SHA_256 = /^[0-9a-f]{64}$/i;
  * the email address the Admin registered with, is not read.
  */
 export function familyCreatedOf(body: Buffer, signature: string | undefined, secret: string): FamilyCreated | NotTaken {
-  if (signature === undefined || !HEX_SHA_256.test(signature)) return { refused: "unsigned" };
-  const expected = createHmac("sha256", secret).update(body).digest();
-  if (!timingSafeEqual(expected, Buffer.from(signature, "hex"))) return { refused: "unsigned" };
+  if (!isSigned(body, signature, secret)) return { refused: "unsigned" };
   const announced = jsonObjectOf(body);
   if (announced?.event !== "family.created") return { refused: "malformed" };
   const { familyId, organizationId } = announced;
@@ -34,6 +32,12 @@ export function familyCreatedOf(body: Buffer, signature: string | undefined, sec
   const lowerFamilyId = familyId.toLowerCase();
   if (!isFamilyId(lowerFamilyId) || !isOrganizationId(organizationId)) return { refused: "malformed" };
   return { familyId: lowerFamilyId, organizationId };
+}
+
+/** Whether `signature` is the body's HMAC-SHA256 with `secret`, in hex. */
+function isSigned(body: Buffer, signature: string | undefined, secret: string): boolean {
+  if (signature === undefined || !HEX_SHA_256.test(signature)) return false;
+  return timingSafeEqual(createHmac("sha256", secret).update(body).digest(), Buffer.from(signature, "hex"));
 }
 
 function jsonObjectOf(body: Buffer): Record<string, unknown> | undefined {

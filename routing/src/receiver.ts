@@ -56,21 +56,9 @@ export async function startReceiver(config: Config, log: Log, resolve?: Resolve)
 }
 
 async function receive(setup: ReceiverSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const pathname = (incoming.url ?? "/").split("?")[0];
-  if (incoming.method !== "POST" || pathname !== RECEIVER_PATH) {
-    answer(outgoing, 404, { error: "not-found" });
-    return;
-  }
-  const body = await bodyOf(incoming);
-  if (body === undefined) {
-    answer(outgoing, 413, { error: "too-large" });
-    return;
-  }
-  const signature = incoming.headers[SIGNATURE_HEADER];
-  const announced = familyCreatedOf(body, typeof signature === "string" ? signature : undefined, setup.secret);
-  if ("refused" in announced) {
-    setup.log.error("A delivery was refused", { reason: announced.refused });
-    answer(outgoing, announced.refused === "unsigned" ? 401 : 400, { error: announced.refused });
+  const announced = await deliveryOf(setup, incoming);
+  if ("status" in announced) {
+    answer(outgoing, announced.status, { error: announced.error });
     return;
   }
   try {
@@ -81,6 +69,29 @@ async function receive(setup: ReceiverSetup, incoming: IncomingMessage, outgoing
     setup.log.error("Creating the registered Family was refused", { ...announced, error });
     answer(outgoing, 409, { error: "refused" });
   }
+}
+
+type Refusal = { status: number; error: string };
+
+/** The Family a delivery announces, or how it is refused: not this path, too long, unsigned or malformed. */
+async function deliveryOf({ secret, log }: ReceiverSetup, incoming: IncomingMessage): Promise<FamilyCreated | Refusal> {
+  if (!isDelivery(incoming)) return { status: 404, error: "not-found" };
+  const body = await bodyOf(incoming);
+  if (body === undefined) return { status: 413, error: "too-large" };
+  const announced = familyCreatedOf(body, signatureOf(incoming), secret);
+  if (!("refused" in announced)) return announced;
+  log.error("A delivery was refused", { reason: announced.refused });
+  return { status: announced.refused === "unsigned" ? 401 : 400, error: announced.refused };
+}
+
+/** Whether the request is a POST to RECEIVER_PATH. */
+function isDelivery(incoming: IncomingMessage): boolean {
+  return incoming.method === "POST" && (incoming.url ?? "/").split("?")[0] === RECEIVER_PATH;
+}
+
+function signatureOf(incoming: IncomingMessage): string | undefined {
+  const signature = incoming.headers[SIGNATURE_HEADER];
+  return typeof signature === "string" ? signature : undefined;
 }
 
 /**

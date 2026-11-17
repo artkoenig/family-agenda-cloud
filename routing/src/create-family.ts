@@ -36,11 +36,7 @@ export async function createFamily(provisioning: Provisioning & { schedules: Fam
 async function creating(provisioning: Provisioning & { schedules: FamilySchedules }, input: CreateFamilyInput): Promise<string> {
   const { config, client, directory, core, schedules, log } = provisioning;
   const { familyId } = input;
-  if (input.familyIdFrom === "drawn") await refuseUnfinished(directory);
-  const existing = await existingOf(provisioning, input);
-  if (existing && existing.organizationId !== input.organizationId) {
-    throw new ProvisioningError(`The Family ${familyId} belongs to the Organization ${existing.organizationId ?? "(none)"}, not ${input.organizationId}`);
-  }
+  const existing = await existingFor(provisioning, input);
   log.info(existing ? "Finishing the Family" : "Creating the Family", { familyId, organizationId: input.organizationId });
   if (existing?.status === "active") {
     await schedules.create(familyId, existing.timeZone);
@@ -76,6 +72,16 @@ async function creating(provisioning: Provisioning & { schedules: FamilySchedule
   await directory.activate(familyId);
   log.info("The Family is active", { familyId });
   return familyAddress(config, familyId);
+}
+
+/** The entry of the Family to finish, refusing a new Family while another is half-made and an entry of another Organization. */
+async function existingFor(provisioning: Provisioning, input: CreateFamilyInput): Promise<DirectoryEntry | undefined> {
+  if (input.familyIdFrom === "drawn") await refuseUnfinished(provisioning.directory);
+  const existing = await existingOf(provisioning, input);
+  if (existing && existing.organizationId !== input.organizationId) {
+    throw new ProvisioningError(`The Family ${input.familyId} belongs to the Organization ${existing.organizationId ?? "(none)"}, not ${input.organizationId}`);
+  }
+  return existing;
 }
 
 /** A new Family is refused while another is half-made, so that a careless re-run leaves none behind. */
