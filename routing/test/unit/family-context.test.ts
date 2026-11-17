@@ -20,10 +20,6 @@ const config: Config = readConfig({
   FAMILY_DATABASE_HOST: "families.internal",
   FAMILY_DATABASE_PORT: "6432",
   PUBLIC_URL: "https://agenda.example",
-  OIDC_ISSUER_URL: "https://idp.example",
-  OIDC_CLIENT_ID: "client",
-  OIDC_CLIENT_SECRET: "secret",
-  OIDC_REQUIRED_GROUP: "families",
 });
 
 const wrapper = wrapperFor(operatorKey, "f-1");
@@ -35,6 +31,7 @@ const entry: DirectoryEntry = {
   databaseRole: "family_f_1_role",
   blobLocation: "/srv/blobs/f-1",
   timeZone: "Europe/Vienna",
+  organizationId: "org_1",
   wrappedFamilyKey: wrapper.wrap("family-key", "the family key"),
   wrappedDatabasePassword: wrapper.wrap("database-password", "the database password"),
   createdAt: new Date("2026-05-01T10:00:00.000Z"),
@@ -47,6 +44,7 @@ const family: Family = {
   databaseRole: "family_f_1_role",
   blobLocation: "/srv/blobs/f-1",
   timeZone: "Europe/Vienna",
+  organizationId: "org_1",
   familyKey: "the family key",
   databasePassword: "the database password",
 };
@@ -95,7 +93,7 @@ describe("sealedContext", () => {
       blobDirectory: "/srv/blobs",
       timeZone: "Europe/Vienna",
       publicUrl: "https://agenda.example/f-1",
-      identityProvider: { issuerUrl: "https://idp.example", clientId: "client", clientSecret: "secret", requiredGroup: "families", knownAdminsOnly: true },
+      organizationId: "org_1",
       expiresAt: expect.any(Number) as number,
     });
   });
@@ -112,8 +110,7 @@ describe("sealedContext", () => {
     expect(() => sealedContext(config, { ...withKey, blobLocation: "/srv/blobs/f-2" })).toThrow(/blob location/);
   });
 
-  it("offers no single sign-on without an Identity Provider", () => {
-    const withoutIdentityProvider: Config = { ...config, identityProvider: null };
-    expect(openContext(sealedContext(withoutIdentityProvider, withKey), contextKey)).not.toHaveProperty("identityProvider");
+  it("names no Organization for a Family created before registration, which the core then records on its first opening", () => {
+    expect(openContext(sealedContext(config, { ...withKey, organizationId: null }), contextKey)).not.toHaveProperty("organizationId");
   });
 });

@@ -3,7 +3,7 @@ import type { Writable } from "node:stream";
 import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
-import { parseCreate, parseDelete, parseFamilyId, parseReset, UsageError } from "./cli-arguments";
+import { parseCreate, parseDelete, parseFamilyId, UsageError } from "./cli-arguments";
 import { familyLine } from "./cli-reports";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
@@ -13,8 +13,8 @@ import { createLog, type Log } from "./log";
 import { isFamilyId } from "./family-id";
 import type { Resolve } from "./pool";
 import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
+import { startReceiver } from "./receiver";
 import { startRouter } from "./router";
-import { resetAdminPassword, UnknownAdminError, type ResetAdminPasswordInput } from "./reset-admin-password";
 import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
 import { resumeFamily, suspendFamily } from "./family-status";
 
@@ -34,12 +34,10 @@ export type Io = {
 };
 
 const USAGE = `Usage:
-  routing create --admin-email <address> [--time-zone <IANA zone>] [--family-id <id>]
-    Creates a Family with its first Admin and prints its address. After a failure part-way,
-    run it again with the --family-id it names to finish that Family.
-  routing reset-admin-password --family-id <id> --admin-email <address>
-    Has a core give the Admin of an active Family a new password, ends their sessions and prints
-    the password once.
+  routing create --organization-id <id> [--time-zone <IANA zone>] [--family-id <id>]
+    Creates a Family whose Admins are the members of that Logto Organization with the role
+    admin, and prints its address. After a failure part-way, run it again with the --family-id
+    it names to finish that Family. A Family that registers is created by receive instead.
   routing delete --family-id <id> --confirm <id>
     Deletes the Family: its database and role, its blobs, its wrapped family key and database
     password. Its Directory entry stays, marked deleted. --confirm must repeat the Family id.
@@ -59,7 +57,11 @@ const USAGE = `Usage:
     Brings the Directory's schema up to date (every command does this first).
   routing serve
     Runs the Router on LISTEN_HOST:PORT until SIGTERM or SIGINT, passing each Family's requests
-    on to the cores CORE_URL names.
+    on to the cores CORE_URL names, and the sign-in callback and /idp/events without a Context.
+  routing receive
+    Runs the receiver on LISTEN_HOST:RECEIVER_PORT until SIGTERM or SIGINT: it creates the
+    Family each family.created of a core announces at POST /family-created, signed with
+    FAMILY_WEBHOOK_SECRET, and answers 2xx once the Family is active.
 
 A core prepares a Family's database when it first opens it, so a new core version needs no
 command: a request or operation that a core of an older release refuses is tried on another core.`;
@@ -70,11 +72,11 @@ type Command = (args: string[], config: Config, io: Io, log: Log) => Promise<num
 const COMMANDS: Record<string, Command> = {
   migrate: (_args, config) => withDirectory(config, () => Promise.resolve(0)),
   create: (args, config, io, log) => create(config, parseCreate(args, config.defaultTimeZone, randomUUID), io, log),
-  "reset-admin-password": (args, config, io, log) => reset(config, parseReset(args), io, log),
   delete: (args, config, io, log) => runFamilyCommand(config, deletion(parseDelete(args)), io, log),
   suspend: (args, config, io, log) => runFamilyCommand(config, suspension(parseFamilyId(args)), io, log),
   resume: (args, config, io, log) => runFamilyCommand(config, resumption(parseFamilyId(args)), io, log),
   serve: (_args, config, io, log) => serve(config, io, log),
+  receive: (_args, config, io, log) => receive(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
 };
@@ -112,7 +114,7 @@ async function create(config: Config, input: CreateFamilyInput, io: Io, log: Log
   } catch (error) {
     if (error instanceof ProvisioningError) {
       // Nothing was done; a drawn Family id that was never used is not worth naming.
-      log.error("Creating the Family was refused", { ...(input.resume ? { familyId: input.familyId } : {}), error });
+      log.error("Creating the Family was refused", { ...(input.familyIdFrom === "drawn" ? {} : { familyId: input.familyId }), error });
     } else {
       log.error("Creating the Family failed; run create again with --family-id to finish it", { familyId: input.familyId, error });
     }
@@ -130,6 +132,16 @@ async function serve(config: Config, io: Io, log: Log): Promise<number> {
   return 0;
 }
 
+async function receive(config: Config, io: Io, log: Log): Promise<number> {
+  await migrate(config);
+  const receiver = await startReceiver(config, log, io.resolve);
+  log.info("The receiver listens", { url: receiver.url });
+  await (io.until ?? stopSignal());
+  await receiver.close();
+  log.info("The receiver stopped");
+  return 0;
+}
+
 const stopSignal = () =>
   new Promise<void>((resolve) => {
     process.once("SIGTERM", resolve).once("SIGINT", resolve);
@@ -143,24 +155,6 @@ async function migrate(config: Config): Promise<void> {
     await migrateDirectory(client);
   } finally {
     await client.end();
-  }
-}
-
-async function reset(config: Config, input: ResetAdminPasswordInput, io: Io, log: Log): Promise<number> {
-  try {
-    const password = await withDirectory(config, (client) => resetAdminPassword(provisioning(config, client, log, io.resolve), input));
-    // The one place the new password is given out: on the Operator's output, never in the log.
-    io.stdout.write(`New password for ${input.adminEmail}: ${password}\nThe Admin's sessions have ended. Sign in with this password.\n`);
-    return 0;
-  } catch (error) {
-    if (error instanceof UnknownAdminError) {
-      // The Operator is told which address was not found; the log names the Family only.
-      io.stderr.write(`${error.message}\n`);
-      log.error("Resetting the Admin's password was refused: the Family has no Admin with that email", { familyId: input.familyId });
-    } else {
-      log.error("Resetting the Admin's password failed", { familyId: input.familyId, error });
-    }
-    return 1;
   }
 }
 

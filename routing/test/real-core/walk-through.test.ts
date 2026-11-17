@@ -5,7 +5,8 @@ import { setUpRouting, type TestRouting } from "../support/routing";
 /**
  * The walk-through against the core in supplied mode, not the stand-in: what the stand-in mirrors,
  * the real core must answer alike. No step prepares a Family: the core does when it first opens
- * it, here for its first Admin. It runs where REAL_CORE_URL names such a core (CI's
+ * it. Its Admins are Logto's, which the walk-through does not run: the core is configured with an
+ * Identity Provider that never answers, and nothing here signs in. It runs where REAL_CORE_URL names such a core (CI's
  * `real-core` job starts one); the core must reach the test's Postgres server at
  * REAL_CORE_DATABASE_HOST, and holds the Families' blobs below REAL_CORE_BLOB_ROOT.
  */
@@ -20,8 +21,6 @@ const real = {
 };
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
-const EMAIL = "first.admin@example.org";
-const OTHER_EMAIL = "other.admin@example.org";
 
 /** The Routing module's environment with the real core as its one-core pool. */
 const withRealCore = (): Record<string, string> => ({
@@ -48,21 +47,20 @@ afterEach(async () => {
 }, 45_000);
 
 /**
- * Not walked through here: an Admin signing in with the reset password, a demo Source and its Items on
- * one Family's Agenda only. The core documents its sign-in page, Sources and Agendas as pages for
+ * Not walked through here: an Admin signing in at Logto, a demo Source and its Items on one
+ * Family's Agenda only. The core documents its sign-in page, Sources and Agendas as pages for
  * people, not as an interface for callers, and the Routing module takes from the core only what it
- * documents (ADR-0001). That the core keeps the two Families apart is shown by what is documented:
- * each Family's Admins are found in its own database only.
+ * documents (ADR-0001).
  */
 describe.skipIf(!real.url)("Two Families on the core", () => {
-  it("are created, served apart, scheduled and given new Admin passwords", async () => {
-    const familyIdOf = async (email: string): Promise<string> => {
-      const created = await routing.run(["create", "--admin-email", email], withRealCore());
+  it("are created, served apart and scheduled", async () => {
+    const familyIdOf = async (organizationId: string): Promise<string> => {
+      const created = await routing.run(["create", "--organization-id", organizationId], withRealCore());
       expect(created, created.stderr).toMatchObject({ exitCode: 0 });
       return ADDRESS.exec(created.stdout.trim())![1]!;
     };
-    const first = await familyIdOf(EMAIL);
-    const second = await familyIdOf(OTHER_EMAIL);
+    const first = await familyIdOf("org_walkfirst");
+    const second = await familyIdOf("org_walksecond");
     expect(await routing.directory("SELECT family_id, status FROM family ORDER BY family_id")).toEqual(
       [first, second].sort().map((familyId) => ({ family_id: familyId, status: "active" })),
     );
@@ -71,24 +69,11 @@ describe.skipIf(!real.url)("Two Families on the core", () => {
     const health = await fetch(`${router.url}/api/health`);
     expect(await health.json()).toEqual({ status: "ok", version: expect.any(String) as unknown });
     for (const familyId of [first, second]) {
-      // Each Family has its first Admin: no setup page, the sign-in below the Family's own address.
+      // The core opens each Family with its own Context, its Organization included: no setup page.
       const page = await fetch(`${router.url}/${familyId}/admin`, { redirect: "manual" });
-      expect(page.status, await page.text()).toBeLessThan(500);
-      expect(page.status).not.toBe(409);
-      const location = page.headers.get("location");
-      if (location) expect(location).toContain(`/${familyId}/`);
+      expect(page.status, await page.text()).not.toBe(409);
+      expect(page.status).not.toBe(503);
     }
-
-    const reset = await routing.run(["reset-admin-password", "--family-id", first, "--admin-email", EMAIL], withRealCore());
-    expect(reset, reset.stderr).toMatchObject({ exitCode: 0 });
-    expect(reset.stdout).toMatch(new RegExp(`^New password for ${EMAIL}: \\S{8,}$`, "m"));
-    // The other Family's Admin is not one of this Family's, nor the other way round.
-    const elsewhere = await routing.run(["reset-admin-password", "--family-id", first, "--admin-email", OTHER_EMAIL], withRealCore());
-    expect(elsewhere.stderr).toContain(`The Family ${first} has no Admin with the email ${OTHER_EMAIL}`);
-    const back = await routing.run(["reset-admin-password", "--family-id", second, "--admin-email", EMAIL], withRealCore());
-    expect(back.stderr).toContain(`The Family ${second} has no Admin with the email ${EMAIL}`);
-    const own = await routing.run(["reset-admin-password", "--family-id", second, "--admin-email", OTHER_EMAIL], withRealCore());
-    expect(own, own.stderr).toMatchObject({ exitCode: 0 });
 
     const clock = new TestClock(new Date(Date.now() - (Date.now() % 60_000) + 10_000).toISOString());
     await routing.startScheduler(clock, withRealCore());

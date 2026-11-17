@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerOf, isUnknownAdmin, newPassword, openingRefusal, pageErrorCode, dueWorkOf } from "../../src/core-answers";
+import { answerOf, openingRefusal, pageErrorCode, dueWorkOf } from "../../src/core-answers";
 
 describe("answerOf", () => {
   it("reads a JSON object", () => {
@@ -67,26 +67,6 @@ describe("pageErrorCode", () => {
     "Conflict\nmigrating: the Family's database",
   ])("reads none from the text %j", (text) => {
     expect(pageErrorCode(text)).toBeUndefined();
-  });
-});
-
-describe("isUnknownAdmin", () => {
-  it("takes the error code of a Family without that Admin", () => {
-    expect(isUnknownAdmin({ error: "unknown-admin" })).toBe(true);
-  });
-
-  it.each([{}, { error: "unknown-family" }, { error: "Unknown-Admin" }])("does not take %j, a core without the operation", (answer) => {
-    expect(isUnknownAdmin(answer)).toBe(false);
-  });
-});
-
-describe("newPassword", () => {
-  it("is the password the core drew", () => {
-    expect(newPassword({ email: "admin@example.org", newPassword: "correct horse battery staple" })).toBe("correct horse battery staple");
-  });
-
-  it.each([{}, { newPassword: "" }, { newPassword: 42 }, { password: "the old field" }])("is none for %j", (answer) => {
-    expect(newPassword(answer)).toBeUndefined();
   });
 });
 

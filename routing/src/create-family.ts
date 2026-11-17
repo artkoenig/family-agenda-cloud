@@ -3,21 +3,25 @@ import type { Directory, DirectoryEntry } from "./directory";
 import { familyUrl, sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { ensureFamilyDatabase, familyDatabaseLeftBehind, familyDatabaseNames } from "./family-databases";
 import { blobLocationOf } from "./family-id";
-import { ProvisioningError, type Provisioning } from "./provisioning";
+import { ProvisioningError, withFamilyLock, type Provisioning } from "./provisioning";
 import type { FamilySchedules } from "./scheduler";
 import { drawDatabasePassword, drawFamilyKey, wrapperFor } from "./secrets";
 
 export type CreateFamilyInput = {
-  adminEmail: string;
+  /** The Logto Organization whose members with the role `admin` are the Family's Admins. */
+  organizationId: string;
   /** The time zone the Operator named; the configured default for a new Family when absent. */
   timeZone?: string;
-  /** A newly drawn Family id, or that of a Family to finish creating after a failure part-way. */
   familyId: string;
-  /** Whether `familyId` names a Family to finish creating, rather than a new one. */
-  resume: boolean;
+  /**
+   * Where `familyId` comes from: `drawn` now for a new Family; named by the `operator` to finish
+   * a Family after a failure part-way; or drawn by the core whose `family.created` announced a
+   * `registration`, new or delivered again.
+   */
+  familyIdFrom: "drawn" | "operator" | "registration";
 };
 
-/** The address the Operator sends to the Family's first Admin. */
+/** The Family's address, where its Admins sign in. */
 const familyAddress = (config: Config, familyId: string): string => `${familyUrl(config, familyId)}/`;
 
 /**
@@ -25,11 +29,19 @@ const familyAddress = (config: Config, familyId: string): string => `${familyUrl
  * again with the same Family id and ends in the state of an undisturbed run. Answers its address.
  */
 export async function createFamily(provisioning: Provisioning & { schedules: FamilySchedules }, input: CreateFamilyInput): Promise<string> {
+  // Two deliveries of one family.created may arrive side by side; they run one after the other.
+  return withFamilyLock(provisioning.client, input.familyId, () => creating(provisioning, input));
+}
+
+async function creating(provisioning: Provisioning & { schedules: FamilySchedules }, input: CreateFamilyInput): Promise<string> {
   const { config, client, directory, core, schedules, log } = provisioning;
   const { familyId } = input;
-  if (!input.resume) await refuseUnfinished(directory);
-  const existing = input.resume ? await resumable(provisioning, input) : undefined;
-  log.info(existing ? "Finishing the Family" : "Creating the Family", { familyId });
+  if (input.familyIdFrom === "drawn") await refuseUnfinished(directory);
+  const existing = await existingOf(provisioning, input);
+  if (existing && existing.organizationId !== input.organizationId) {
+    throw new ProvisioningError(`The Family ${familyId} belongs to the Organization ${existing.organizationId ?? "(none)"}, not ${input.organizationId}`);
+  }
+  log.info(existing ? "Finishing the Family" : "Creating the Family", { familyId, organizationId: input.organizationId });
   if (existing?.status === "active") {
     await schedules.create(familyId, existing.timeZone);
     log.info("The Family is active already", { familyId });
@@ -47,14 +59,15 @@ export async function createFamily(provisioning: Provisioning & { schedules: Fam
     databaseRole: family.databaseRole,
     blobLocation: family.blobLocation,
     timeZone: family.timeZone,
+    organizationId: input.organizationId,
     wrappedFamilyKey: wrapper.wrap("family-key", family.familyKey),
     wrappedDatabasePassword: wrapper.wrap("database-password", family.databasePassword),
   });
   log.info("The Family is in the Directory, being prepared", { familyId });
 
-  // The core that opens the Family first, here for its first Admin, prepares its database.
-  await core.enterAdmin(sealedContext(config, family), input.adminEmail);
-  log.info("The core entered the first Admin", { familyId });
+  // The core that opens the Family first prepares its database and records its Organization.
+  await core.openFamily(sealedContext(config, family));
+  log.info("A core opened the Family", { familyId });
 
   // Before it is active, so that an active Family always has them; a Family that is not active is skipped.
   await schedules.create(familyId, family.timeZone);
@@ -76,23 +89,26 @@ async function refuseUnfinished(directory: Directory): Promise<void> {
 }
 
 /**
- * The entry of the Family to finish, or undefined when creating it stopped before its entry was
- * written. A Family id that has left no trace is refused: the Operator does not choose Family ids.
+ * The entry of the Family to finish, or undefined for a new Family and one whose creation stopped
+ * before its entry was written. A Family id the Operator names that has left no trace is refused:
+ * the Operator does not choose Family ids.
  */
-async function resumable({ client, directory }: Provisioning, { familyId }: CreateFamilyInput): Promise<DirectoryEntry | undefined> {
+async function existingOf({ client, directory }: Provisioning, { familyId, familyIdFrom }: CreateFamilyInput): Promise<DirectoryEntry | undefined> {
+  if (familyIdFrom === "drawn") return undefined;
   const entry = await directory.find(familyId);
-  if (entry) return entry;
+  if (entry || familyIdFrom === "registration") return entry;
   if (await familyDatabaseLeftBehind(client, familyDatabaseNames(familyId))) return undefined;
   throw new ProvisioningError(`Nothing of the Family ${familyId} was created; run create without --family-id`);
 }
 
 /** A Family that is not in the Directory yet: its key and password drawn now. */
-function newFamily(config: Config, { familyId, timeZone }: CreateFamilyInput): Family {
+function newFamily(config: Config, { familyId, timeZone, organizationId }: CreateFamilyInput): Family {
   return {
     familyId,
     ...familyDatabaseNames(familyId),
     blobLocation: blobLocationOf(config, familyId),
     timeZone: timeZone ?? config.defaultTimeZone,
+    organizationId,
     familyKey: drawFamilyKey(),
     databasePassword: drawDatabasePassword(),
   };

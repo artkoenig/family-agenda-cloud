@@ -41,10 +41,15 @@ A Family id is the part of a Family's address after the host, 36 characters long
 
 ## Create a Family
 
-Needs the email address of the person who becomes the Family's first Admin.
+Families create themselves: a person registers at Logto, a core creates the Family's Logto Organization and posts
+`family.created` to the receiver (`docker compose logs receiver`), which creates the Family as `create` does and
+answers once it is active. The core posts again until it gets that answer, so a registration that failed part-way is
+finished by the next delivery; there is nothing to run by hand.
+
+By hand, for a Family whose Logto Organization exists already, such as the smoke check's:
 
 ```
-routing create --admin-email <address>
+routing create --organization-id <Logto Organization id>
 ```
 
 `--time-zone <IANA zone>` sets the Family's time zone when it is not the service's default. It prints the Family's
@@ -54,12 +59,8 @@ address:
 https://app.family-agenda.cloud/190ca3a1-78b7-45d7-b735-e8cd59b04509/
 ```
 
-Then:
-
-1. `routing reset-admin-password --family-id <id> --admin-email <address>` gives the first password
-   ([below](#reset-an-admins-password)): `create` enters the Admin without telling anyone a password.
-2. Send the address and the password to that person, each on its own way (the address by mail, the password by
-   phone or messenger), and ask them to change the password after signing in.
+One Organization belongs to one Family; another Family with it is refused. Its Admins sign in at Logto; the Operator
+gives no password.
 
 If it fails part-way (`Creating the Family failed; run create again with --family-id to finish it`), the log names the
 Family id, and `routing families` lists the Family as `being_prepared` unless it failed before the Family was
@@ -77,7 +78,7 @@ The Family 190ca3a1-78b7-45d7-b735-e8cd59b04509 is suspended
 ```
 
 From then on the Family's address answers `404`, as an unknown one does, and its due work, purge and sweep no longer
-run. Its data stays. An Admin's password cannot be reset while it is suspended.
+run. Its data stays.
 
 ```
 routing resume --family-id <id>
@@ -149,23 +150,11 @@ What to do, by what the cores answer:
   (`docker compose logs --since 1h core | grep <id>`). Suspend the Family if its Admins should see `404` instead of
   errors meanwhile. Going back to the release before means restoring a backup, for all Families.
 
-## Reset an Admin's password
+## An Admin's lost password
 
-```
-routing reset-admin-password --family-id <id> --admin-email <address>
-```
-
-```
-New password for first.admin@example.org: gRPMOTEWbK9RRxfr
-The Admin's sessions have ended. Sign in with this password.
-```
-
-The password is printed this once and is in no log. Give it to the Admin on another way than the one the Family's
-address went, and ask them to change it. Running the command again makes another password and ends the sessions again.
-
-It fails when the Family has no Admin with that address
-(`The Family <id> has no Admin with the email <address>`), and when the Family is not active
-(`The Family <id> is suspended, not active`).
+Admins sign in at Logto, and reset a lost password there themselves ("Forgot password"). The Routing module holds no
+password and has no command for it. When that does not help, the Operator finds the person in the Logto console and
+sets a password or sends a reset; the Family is not touched.
 
 ## When a Family's due work last ran
 

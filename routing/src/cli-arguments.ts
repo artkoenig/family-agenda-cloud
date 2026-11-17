@@ -1,8 +1,7 @@
 import { parseArgs } from "node:util";
 import type { CreateFamilyInput } from "./create-family";
 import type { DeleteFamilyInput } from "./delete-family";
-import { isFamilyId } from "./family-id";
-import type { ResetAdminPasswordInput } from "./reset-admin-password";
+import { isFamilyId, isOrganizationId } from "./family-id";
 
 /**
  * The Operator's arguments to each command, checked and read into what the command works with.
@@ -17,18 +16,19 @@ export class UsageError extends Error {}
  * `drawFamilyId` draws the Family id of a new Family, for none named.
  */
 export function parseCreate(args: string[], defaultTimeZone: string, drawFamilyId: () => string): CreateFamilyInput {
-  const values = options(args, ["admin-email", "time-zone", "family-id"]);
-  const adminEmail = adminEmailOption(values["admin-email"], "the first Admin");
+  const values = options(args, ["organization-id", "time-zone", "family-id"]);
+  const organizationId = values["organization-id"];
+  if (!organizationId || !isOrganizationId(organizationId)) throw new UsageError("--organization-id needs the id of the Family's Logto Organization");
   const timeZone = values["time-zone"];
   const effectiveTimeZone = timeZone ?? defaultTimeZone;
   if (!isTimeZone(effectiveTimeZone)) throw new UsageError(`Unknown time zone ${effectiveTimeZone}`);
-  return { adminEmail, ...familyIdOption(values["family-id"], drawFamilyId), ...(timeZone === undefined ? {} : { timeZone }) };
+  return { organizationId, ...familyIdOption(values["family-id"], drawFamilyId), ...(timeZone === undefined ? {} : { timeZone }) };
 }
 
 /** The Family to finish that --family-id names, or a newly drawn Family id. */
-function familyIdOption(value: string | undefined, drawFamilyId: () => string): { familyId: string; resume: boolean } {
-  if (value === undefined) return { familyId: drawFamilyId(), resume: false };
-  return { familyId: familyIdValue(value), resume: true };
+function familyIdOption(value: string | undefined, drawFamilyId: () => string): Pick<CreateFamilyInput, "familyId" | "familyIdFrom"> {
+  if (value === undefined) return { familyId: drawFamilyId(), familyIdFrom: "drawn" };
+  return { familyId: familyIdValue(value), familyIdFrom: "operator" };
 }
 
 /** The Family id that --family-id names, in the lower case the Directory keeps. */
@@ -36,12 +36,6 @@ function familyIdValue(value: string | undefined): string {
   const familyId = value?.toLowerCase();
   if (!familyId || !isFamilyId(familyId)) throw new UsageError("--family-id needs a Family id, a UUID");
   return familyId;
-}
-
-/** The email address that --admin-email names; `whose` says which Admin it is for. */
-function adminEmailOption(value: string | undefined, whose: string): string {
-  if (!value || !isEmailAddress(value)) throw new UsageError(`--admin-email needs the email address of ${whose}`);
-  return value;
 }
 
 function options(args: string[], names: string[]): Record<string, string | undefined> {
@@ -53,12 +47,6 @@ function options(args: string[], names: string[]): Record<string, string | undef
   }
 }
 
-/** One @, something before it, and a dotted domain after it; the core checks it further. */
-function isEmailAddress(text: string): boolean {
-  const [local, domain, ...rest] = text.split("@");
-  return rest.length === 0 && Boolean(local) && /^[^\s.]+(\.[^\s.]+)+$/.test(domain ?? "") && !/\s/.test(local ?? "");
-}
-
 function isTimeZone(timeZone: string): boolean {
   try {
     new Intl.DateTimeFormat("en", { timeZone });
@@ -66,12 +54,6 @@ function isTimeZone(timeZone: string): boolean {
   } catch {
     return false;
   }
-}
-
-/** What `reset-admin-password` is asked for. */
-export function parseReset(args: string[]): ResetAdminPasswordInput {
-  const values = options(args, ["family-id", "admin-email"]);
-  return { familyId: familyIdValue(values["family-id"]), adminEmail: adminEmailOption(values["admin-email"], "the Admin") };
 }
 
 /** What `delete` is asked for. */

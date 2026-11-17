@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 async function createFamily(args: string[] = []): Promise<string> {
-  const result = await routing.run(["create", "--admin-email", "first.admin@example.org", ...args]);
+  const result = await routing.run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`, ...args]);
   expect(result, result.stderr).toMatchObject({ exitCode: 0 });
   return ADDRESS.exec(result.stdout.trim())![1]!;
 }
@@ -84,18 +84,20 @@ describe("The purge and the sweep", () => {
   it("sweep the Family's unreferenced secrets once per day, at night in its time zone", async () => {
     const familyId = await createFamily(["--time-zone", "America/New_York"]);
     // 03:28 in New York.
+    // Creating the Family opened it with a sweep; only the Scheduler's are counted.
+    const sweeps = () => callsOf("secret-sweep", familyId).slice(1);
     const clock = new TestClock("2026-11-16T08:28:10Z");
     await routing.startScheduler(clock);
 
     await minutes(clock, 1);
-    expect(callsOf("secret-sweep", familyId)).toHaveLength(0);
+    expect(sweeps()).toHaveLength(0);
     await minutes(clock, 2);
-    await expect.poll(() => callsOf("secret-sweep", familyId).length).toBe(1);
+    await expect.poll(() => sweeps().length).toBe(1);
     await minutes(clock, 3);
     await clock.setTime("2026-11-17T08:28:10Z");
     await minutes(clock, 3);
-    await expect.poll(() => callsOf("secret-sweep", familyId).length).toBe(2);
-    expect(callsOf("secret-sweep", familyId)[0]?.context).toMatchObject({ familyId });
+    await expect.poll(() => sweeps().length).toBe(2);
+    expect(sweeps()[0]?.context).toMatchObject({ familyId });
   });
 });
 
@@ -166,7 +168,7 @@ describe("A Family that is not active", () => {
     await expect
       .poll(() => routing.log())
       .toContain(`"message":"The Family is not active; nothing is triggered","familyId":"${familyId}","occasion":"purge-messages"`);
-    expect(routing.core.requests.filter(({ context }) => context?.familyId === familyId).map(({ path }) => path)).toEqual(["/operations/enter-admin"]);
+    expect(routing.core.requests.filter(({ context }) => context?.familyId === familyId).map(({ path }) => path)).toEqual(["/operations/secret-sweep"]);
     expect(await routing.schedules(familyId)).toHaveLength(3);
   });
 
@@ -276,7 +278,7 @@ describe("The log", () => {
     await expect.poll(() => routing.log()).toContain(`"message":"Due work failed","familyId":"${familyId}"`);
     await expect.poll(() => routing.log()).toContain(`"familyId":"${familyId}","occasion":"purge-messages"`);
 
-    const scheduled = routing.core.requests.filter(({ on, path }) => on === "trigger" && path !== "/operations/enter-admin");
+    const scheduled = routing.core.requests.filter(({ on }) => on === "trigger");
     expect(scheduled.length).toBeGreaterThanOrEqual(3);
     for (const { sealedContext, context } of scheduled) {
       for (const secret of [sealedContext!, context!.familyKey, context!.database.password, routing.env.OPERATOR_KEY!, routing.env.CONTEXT_KEY!]) {

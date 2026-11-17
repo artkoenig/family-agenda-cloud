@@ -39,7 +39,9 @@ describe("readConfig", () => {
       blobRoot: "/srv/blobs",
       publicUrl: "https://app.family-agenda.cloud",
       defaultTimeZone: "Europe/Berlin",
-      identityProvider: null,
+      callbackPath: "/sso/callback",
+      familyWebhookSecret: null,
+      receiverPort: 8081,
       listenHost: "0.0.0.0",
       listenPort: 8080,
       trustProxy: false,
@@ -57,10 +59,9 @@ describe("readConfig", () => {
       LISTEN_HOST: "127.0.0.1",
       PORT: "0",
       TRUST_PROXY: "true",
-      OIDC_ISSUER_URL: "https://idp.example",
-      OIDC_CLIENT_ID: "client",
-      OIDC_CLIENT_SECRET: "secret",
-      OIDC_REQUIRED_GROUP: "families",
+      OIDC_CALLBACK_URL: "https://app.family-agenda.cloud/auth/callback",
+      FAMILY_WEBHOOK_SECRET: "a webhook secret of 32 characters or more",
+      RECEIVER_PORT: "9000",
     });
     expect(config).toMatchObject({
       familyDatabaseHost: "families.internal",
@@ -71,7 +72,9 @@ describe("readConfig", () => {
       listenHost: "127.0.0.1",
       listenPort: 0,
       trustProxy: true,
-      identityProvider: { issuerUrl: "https://idp.example", clientId: "client", clientSecret: "secret", requiredGroup: "families" },
+      callbackPath: "/auth/callback",
+      familyWebhookSecret: "a webhook secret of 32 characters or more",
+      receiverPort: 9000,
     });
   });
 
@@ -163,16 +166,24 @@ describe("readConfig", () => {
     expect(readConfig({ ...minimal, PORT: "65535" }).listenPort).toBe(65_535);
   });
 
-  it.each(["OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REQUIRED_GROUP"])("refuses an Identity Provider without %s", (name) => {
-    const env: Record<string, string | undefined> = {
-      ...minimal,
-      OIDC_ISSUER_URL: "https://idp.example",
-      OIDC_CLIENT_ID: "client",
-      OIDC_CLIENT_SECRET: "secret",
-      OIDC_REQUIRED_GROUP: "families",
-    };
-    env[name] = undefined;
-    expect(() => readConfig(env)).toThrow(new ConfigError(`${name} is not set`));
+  it.each(["/sso/callback", "https://app.example", "ftp://app.example/cb", "https://app.example/cb?x", "https://app.example/cb#x"])("refuses OIDC_CALLBACK_URL %j", (url) => {
+    expect(() => readConfig({ ...minimal, OIDC_CALLBACK_URL: url })).toThrow(
+      new ConfigError("OIDC_CALLBACK_URL must be an http or https address with a path, without query or fragment"),
+    );
+  });
+
+  it("refuses a FAMILY_WEBHOOK_SECRET shorter than 32 characters, as the core does", () => {
+    expect(() => readConfig({ ...minimal, FAMILY_WEBHOOK_SECRET: "x".repeat(31) })).toThrow(
+      new ConfigError("FAMILY_WEBHOOK_SECRET must be 32 characters or more (openssl rand -base64 32)"),
+    );
+  });
+
+  it("refuses a RECEIVER_PORT that is no port", () => {
+    expect(() => readConfig({ ...minimal, RECEIVER_PORT: "x" })).toThrow(new ConfigError("RECEIVER_PORT must be a port number, 0 to 65535"));
+  });
+
+  it("ignores the cores' OIDC settings, which only the cores read", () => {
+    expect(readConfig({ ...minimal, OIDC_ISSUER_URL: "https://idp.example" })).not.toHaveProperty("identityProvider");
   });
 });
 

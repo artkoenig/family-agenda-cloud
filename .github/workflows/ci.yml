@@ -67,9 +67,16 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       core:
-        image: ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
+        image: ghcr.io/artkoenig/family-agenda:sha-ac3208f@sha256:ff5a4b4a785ebeab5d4dc1fb1046e82d5474f3104584e04033e10ac77e6ba0fd
         env:
           CONTEXT_MODE: supplied
+          # Supplied mode requires the one Identity Provider; the walk-through signs in nowhere, so
+          # none answers here. Registration (FAMILY_WEBHOOK_URL) stays off.
+          OIDC_ISSUER_URL: https://sign-in.example.invalid/oidc
+          OIDC_CLIENT_ID: ci-walk-through
+          OIDC_CLIENT_SECRET: ci-walk-through-client-secret
+          OIDC_FAMILY_ID_CLAIM: custom_data.familyId
+          OIDC_CALLBACK_URL: https://app.family-agenda.cloud/sso/callback
           CONTEXT_KEY: ci-walk-through-context-key-of-32-characters
           CALLER_PORT: "3002"
           TRIGGER_TOKEN: ci-walk-through-trigger-token-of-32-characters

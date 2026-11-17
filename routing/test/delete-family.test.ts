@@ -27,7 +27,7 @@ const run = (args: string[], env: Record<string, string | undefined> = {}) => ro
 
 /** Creates a Family and puts blobs into its blob location, as its core would. */
 async function createFamily() {
-  const created = await run(["create", "--admin-email", "first.admin@example.org"]);
+  const created = await run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`]);
   expect(created, created.stderr).toMatchObject({ exitCode: 0 });
   const familyId = ADDRESS.exec(created.stdout.trim())![1]!;
   await mkdir(join(blobRoot, familyId, "attachments"), { recursive: true });

@@ -28,7 +28,7 @@ type RouterSetup = {
 
 /** A request as the Router passes it on to a core. */
 type CoreRequest = {
-  /** The Family the request is for; none for the health check, the one path a core answers without a Context. */
+  /** The Family the request is for; none for a request a core answers without a Context (see `routeRequest`). */
   familyId?: string;
   /** Where the request goes on the core. */
   path: string;
@@ -78,7 +78,7 @@ export async function startRouter(config: Config, log: Log, resolve: Resolve = s
 
 async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
   const { config, directory } = setup;
-  const routed = await routeRequest({ method: incoming.method, target: incoming.url ?? "/" }, (familyId) => directory.find(familyId));
+  const routed = await routeRequest({ method: incoming.method, target: incoming.url ?? "/" }, (familyId) => directory.find(familyId), config.callbackPath);
   if (routed.to === "refused") {
     outgoing.writeHead(routed.status, routed.headers).end(routed.body);
     return;

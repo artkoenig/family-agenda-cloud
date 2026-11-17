@@ -21,6 +21,12 @@
  * - The first page or operation with a Context whose database this release has not prepared
  *   prepares it, with the Context's Family id, and is then served: the caller has no step of its
  *   own for it.
+ * - The first opening records the Context's `organizationId`, the Family's Logto Organization; a
+ *   later Context naming another is refused with 403, a page with the text
+ *   `organization-id-differs: …`, an operation with `{ "error": "organization-id-differs" }`.
+ *   Another core answers it alike. A Context without one leaves what is recorded as it is.
+ * - A Context carrying `identityProvider`, which the core takes from its own `OIDC_*` variables,
+ *   is refused with 400.
  * - A core that does not open the Family refuses the page or operation, and changes nothing:
  *   - a database a newer release migrated, as a core of an older release finds during a rolling
  *     update: 409, a page with the text `migrated-by-newer-release: …`, an operation with
@@ -32,10 +38,6 @@
  *
  * ## Triggered operations (`POST /operations/<name>`)
  *
- * - `enter-admin` with `{ "email" }`: enters an Admin without a password. Answers
- *   `{ "email", "outcome": "first" | "added" | "exists" }`.
- * - `reset-admin-password` with `{ "email" }`: draws and sets a new password, ending the Admin's
- *   sessions. Answers `{ "email", "newPassword" }`, or 404 `{ "error": "unknown-admin" }`.
  * - `due-work`: polls the Family's due Sources, then extracts its messages. Answers
  *   `{ "polled": <step>, "extracted": <step> }`, each step `{ "ok": true, "report" }` or
  *   `{ "ok": false, "error" }`; the report of polling names the Sources that `ran` and those that
@@ -49,12 +51,12 @@
  *
  * - The Router passes a Family's request on below the root, its Family id removed from the path
  *   (`/<family id>/agendas/1` arrives as `/agendas/1`), with that Family's Context; static files
- *   too. Only `GET /api/health` is answered without a Context.
+ *   too. Only `GET /api/health`, the sign-in callback at `/sso/callback` (the path of its
+ *   `OIDC_CALLBACK_URL`) and `POST /idp/events` are answered without a Context.
  * - The core runs with `TRUST_PROXY=true` and takes the client from the Router's headers: the
  *   scheme from the first entry of `X-Forwarded-Proto`, the host from `X-Forwarded-Host`, and the
  *   client's address from the last entry of `X-Forwarded-For`.
  */
-import { randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve, type HttpBindings } from "@hono/node-server";
@@ -101,7 +103,10 @@ export type RecordedRequest = {
   body: unknown;
 };
 
-type Operation = "enter-admin" | "reset-admin-password" | "due-work" | "purge" | "secret-sweep";
+type Operation = "due-work" | "purge" | "secret-sweep";
+
+/** The path of the core's `OIDC_CALLBACK_URL`, the Routing module's default. */
+export const CALLBACK_PATH = "/sso/callback";
 
 /** An answer the stand-in gives as it is, to show that it reaches the browser unchanged. */
 export type CannedAnswer = { status: number; headers: [string, string][]; body: Uint8Array };
@@ -126,10 +131,8 @@ export type StandInCore = {
   triggerUrl: string;
   /** Every request that arrived, in order. */
   requests: RecordedRequest[];
-  /** The Admins entered per Family id. */
-  admins(familyId: string): string[];
-  /** The password the stand-in last gave out for an Admin of a Family, if any. */
-  password(familyId: string, email: string): string | undefined;
+  /** The Organization id the first opening of the Family recorded, if any. */
+  organizationOf(familyId: string): string | undefined;
   /** Whether a core prepared the Family, as the first one to open it does. */
   isPrepared(familyId: string): boolean;
   /** The next call of the operation answers with this status, and does nothing. */
@@ -243,13 +246,12 @@ type Variables = { Variables: { context: Context } };
  */
 const prepared = new Set<string>();
 
-/** A refusal a triggered operation answers with, as the core does: the status and `{ "error" }`. */
-type Refusal = { refused: 404; error: string };
+/** The Organization id recorded per Family, shared by every stand-in core as `prepared` is. */
+const organizations = new Map<string, string>();
 
 /** Starts the stand-in core on two free ports of localhost: its pages', and its triggered operations'. */
 export async function startStandInCore(contextKey: string, triggerToken: string): Promise<StandInCore> {
   const requests: RecordedRequest[] = [];
-  const admins = new Map<string, string[]>();
   const faults = new Map<Operation, number>();
   const drops = new Set<Operation>();
   let canned: CannedAnswer | undefined;
@@ -259,8 +261,6 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
     canned = undefined;
     return answer && new Response(answer.body, { status: answer.status, headers: answer.headers });
   };
-  const passwords = new Map<string, string>();
-  const passwordKey = (familyId: string, email: string) => `${familyId}/${email}`;
   /** What each Family's runs of due work answer: a result, or a failing status. */
   const dueWork = new Map<string, SourcesPolled | number>();
   /** The Families whose next run of due work is held, and what releases it. */
@@ -280,13 +280,26 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
       requests.push({ on, method: c.req.method, path: c.req.path, search, headers: c.req.header(), sealedContext, context, body });
       if (on === "trigger" && c.req.header("authorization") !== `Bearer ${triggerToken}`) return c.json({ error: "unauthorized" }, 401);
       if (on === "caller" && c.req.method === "GET" && c.req.path === "/api/health") return cannedAnswer() ?? c.json({ status: "ok", version: STAND_IN_CORE_VERSION });
+      if (on === "caller" && !sealedContext && ((c.req.method === "GET" && c.req.path === CALLBACK_PATH) || (c.req.method === "POST" && c.req.path === "/idp/events")))
+        return cannedAnswer() ?? c.json({ familyIndependent: c.req.path });
       if (!context) return c.text("A valid Context is required.", 401);
+      if ("identityProvider" in context) {
+        const text = "The Context is refused: identityProvider comes from the OIDC_* variables.";
+        return on === "trigger" ? c.json({ error: "invalid-context", problem: text }, 400) : c.text(text, 400);
+      }
+      const recorded = organizations.get(context.familyId);
+      if (recorded !== undefined && context.organizationId !== undefined && context.organizationId !== recorded) {
+        return on === "trigger"
+          ? c.json({ error: "organization-id-differs" }, 403)
+          : c.text("organization-id-differs: the Context names another organization than the one the Family's database holds.", 403);
+      }
       const problem = refusedAll ?? refusedFamilies.get(context.familyId);
       if (problem) {
         const { status, text } = OPENING_REFUSALS[problem];
         return on === "trigger" ? c.json({ error: problem }, status) : c.text(text, status, { "cache-control": "no-store" });
       }
       prepared.add(context.familyId);
+      if (recorded === undefined && context.organizationId !== undefined) organizations.set(context.familyId, context.organizationId);
       c.set("context", context);
       await next();
     });
@@ -303,7 +316,7 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
   };
 
   /** A triggered operation, which answers what `answer` gives: a body, or a failing status. */
-  const triggered = (operation: Operation, answer: (context: Context, body: Record<string, unknown>) => Promise<object | number> | object | number) => {
+  const triggered = (operation: Operation, answer: (context: Context) => Promise<object | number> | object | number) => {
     operations.post(`/operations/${operation}`, async (c) => {
       const status = fault(operation);
       if (status) return c.json({ error: "failed" }, status as 500);
@@ -311,27 +324,11 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
         (c.env as HttpBindings).outgoing.socket?.destroy();
         return RESPONSE_ALREADY_SENT;
       }
-      const body = (requests.at(-1)?.body ?? {}) as Record<string, unknown>;
-      const answered = await answer(c.get("context"), body);
+      const answered = await answer(c.get("context"));
       if (typeof answered === "number") return c.json({ error: "failed" }, answered as 500);
-      if ("refused" in answered) return c.json({ error: (answered as Refusal).error }, (answered as Refusal).refused);
       return c.json(answered);
     });
   };
-  triggered("enter-admin", ({ familyId }, { email }) => {
-    const address = String(email);
-    const entered = admins.get(familyId) ?? [];
-    if (entered.includes(address)) return { email: address, outcome: "exists" };
-    admins.set(familyId, [...entered, address]);
-    return { email: address, outcome: entered.length === 0 ? "first" : "added" };
-  });
-  triggered("reset-admin-password", ({ familyId }, { email }) => {
-    const address = String(email);
-    if (!(admins.get(familyId) ?? []).includes(address)) return { refused: 404, error: "unknown-admin" } satisfies Refusal;
-    const newPassword = randomBytes(12).toString("base64url");
-    passwords.set(passwordKey(familyId, address), newPassword);
-    return { email: address, newPassword };
-  });
   triggered("due-work", async ({ familyId }) => {
     // Held until released; the hold stays in place for releaseAll() while the run waits.
     await held.get(familyId)?.until;
@@ -383,8 +380,7 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
     url: `http://127.0.0.1:${port}`,
     triggerUrl: `http://127.0.0.1:${triggerPort}`,
     requests,
-    admins: (familyId) => admins.get(familyId) ?? [],
-    password: (familyId, email) => passwords.get(passwordKey(familyId, email)),
+    organizationOf: (familyId) => organizations.get(familyId),
     isPrepared: (familyId) => prepared.has(familyId),
     failNext: (operation, status = 500) => faults.set(operation, status),
     dropNextCall: (operation) => drops.add(operation),

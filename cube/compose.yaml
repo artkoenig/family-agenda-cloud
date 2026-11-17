@@ -5,7 +5,8 @@
 # publishes ports:
 #   public     Caddy and the internet (ACME, the browsers).
 #   edge       Caddy and the Router.
-#   pool       the Routing module (Router, Scheduler) and the cores: the cores' Context interface.
+#   pool       the Routing module (Router, Scheduler, receiver) and the cores: the cores' Context
+#              interface, and the cores' family.created to the receiver.
 #   directory  Postgres, the Routing module and the cores, which open their Family's database.
 #   outbound   the cores, the Egress Proxies and the blob mount, which reach the internet.
 #   plugin-<id>         the cores and that plugin.
@@ -17,9 +18,9 @@ name: family-agenda
 # The core image of the pool, pinned here as every other image is. A new core version is this line
 # changed and deployed: its cores prepare each Family when they first open it, and the Routing
 # module tries another core while one of the release before still refuses a Family (docs/runbook).
-# Until the core release that prepares a Family on opening it (artkoenig/family-agenda#405) is
-# out, this is the build of the commit on main that does; then it is that release's tag and digest.
-x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
+# Until the core release whose registration takes the Context's Organization (artkoenig/family-agenda#448)
+# is out, this is the build of that commit on main; then it is that release's tag and digest.
+x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-ac3208f@sha256:ff5a4b4a785ebeab5d4dc1fb1046e82d5474f3104584e04033e10ac77e6ba0fd
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
 
 # Every Family's blobs lie in the Object Storage bucket, which the `blob-mount` service mounts as
@@ -54,7 +55,7 @@ x-core: &core
     CONTEXT_MODE: supplied
     CONTEXT_KEY: ${CONTEXT_KEY:?}
     CALLER_PORT: "3002"
-    # The triggered operations (due work, Admin passwords) of the Routing module.
+    # The triggered operations (due work, purge, sweep) of the Routing module.
     TRIGGER_TOKEN: ${TRIGGER_TOKEN:?}
     TRIGGER_PORT: "3001"
     EGRESS_TICKET_KEY: ${EGRESS_TICKET_KEY:?}
@@ -62,6 +63,26 @@ x-core: &core
     TRUST_PROXY: "true"
     TESSDATA_DIRECTORY: /var/lib/family-agenda/tessdata
     PLUGIN_URLS: ics=http://plugin-ics:8080,imap=http://plugin-imap:8080,webuntis=http://plugin-webuntis:8080
+    # Sign-in: one Logto for every Family (ADR-0009 of the core). Each Family is a Logto
+    # Organization; an Admin's token names their Family in custom_data.familyId. Every sign-in
+    # returns to the one callback, which the Router passes on without a Context.
+    OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:?}
+    OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?}
+    OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?}
+    OIDC_FAMILY_ID_CLAIM: custom_data.familyId
+    OIDC_CALLBACK_URL: https://app.family-agenda.cloud/sso/callback
+    # Registration (ADR-0010 of the core): Logto posts PostRegister to /idp/events, which the
+    # Router passes on without a Context; a core creates the Family's Organization and posts
+    # family.created to the receiver until it answers 2xx.
+    IDP_MANAGEMENT_API: logto
+    IDP_MANAGEMENT_ENDPOINT: ${IDP_MANAGEMENT_ENDPOINT:?}
+    IDP_MANAGEMENT_CLIENT_ID: ${IDP_MANAGEMENT_CLIENT_ID:?}
+    IDP_MANAGEMENT_CLIENT_SECRET: ${IDP_MANAGEMENT_CLIENT_SECRET:?}
+    IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_SECRET:?}
+    FAMILY_WEBHOOK_URL: http://receiver:8081/family-created
+    FAMILY_WEBHOOK_SECRET: ${FAMILY_WEBHOOK_SECRET:?}
+    # The processed Logto events and pending deliveries, shared by every core of the pool.
+    REGISTRATION_DATABASE_URL: postgres://registration:${REGISTRATION_DATABASE_PASSWORD:?}@postgres:5432/registration
   volumes:
     - *blobs
     - tessdata:/var/lib/family-agenda/tessdata
@@ -75,7 +96,7 @@ x-core: &core
     pool:
       aliases: [cores]
     directory:
-    # The identity providers of the Families' Contexts.
+    # Logto, and the Families' Sources through the plugins' Egress Proxies.
     outbound:
     plugin-ics:
     plugin-imap:
@@ -89,8 +110,8 @@ x-core: &core
     timeout: 10s
     start_period: 20s
 
-# The Routing module's image, built from routing/; the Router, the Scheduler and the Operator's
-# commands (`docker compose exec router routing <command>`) run it.
+# The Routing module's image, built from routing/; the Router, the Scheduler, the receiver and the
+# Operator's commands (`docker compose exec router routing <command>`) run it.
 x-routing: &routing
   build: ./routing
   image: family-agenda-routing:local
@@ -110,6 +131,8 @@ x-routing: &routing
     BLOB_ROOT: /var/lib/family-agenda/blobs/bucket/families
     PUBLIC_URL: https://app.family-agenda.cloud
     TRUST_PROXY: "true"
+    # The path of the cores' OIDC_CALLBACK_URL, passed on without a Context.
+    OIDC_CALLBACK_URL: https://app.family-agenda.cloud/sso/callback
   volumes:
     # Holds one blob location per Family; `routing delete` removes a Family's.
     - *blobs
@@ -179,6 +202,30 @@ services:
     <<: *routing
     command: ["routing", "schedule"]
     networks: [pool, directory]
+
+  # Creates the Family of each family.created a core posts, signed with FAMILY_WEBHOOK_SECRET.
+  # Only the cores reach it, on the pool network; Caddy does not.
+  receiver:
+    <<: *routing
+    command: ["routing", "receive"]
+    environment:
+      DIRECTORY_DATABASE_URL: postgres://routing@postgres:5432/directory
+      DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
+      OPERATOR_KEY: ${OPERATOR_KEY:?}
+      CONTEXT_KEY: ${CONTEXT_KEY:?}
+      TRIGGER_TOKEN: ${TRIGGER_TOKEN:?}
+      CORE_URL: http://cores:3002
+      CORE_TRIGGER_URL: http://cores:3001
+      BLOB_ROOT: /var/lib/family-agenda/blobs/bucket/families
+      PUBLIC_URL: https://app.family-agenda.cloud
+      FAMILY_WEBHOOK_SECRET: ${FAMILY_WEBHOOK_SECRET:?}
+      RECEIVER_PORT: "8081"
+    networks: [pool, directory]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:net').connect(8081, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
 
   # The pool: as many cores as CORE_REPLICAS of the .env says, two unless it does. Scaling it is
   # that number changed and `docker compose up -d --wait core` (docs/runbook/setup.md).
@@ -264,17 +311,19 @@ services:
       retries: 10
 
   # Runs on every deploy, then exits: the Routing module's role with its current password, and the
-  # Directory's database. The Routing module migrates the Directory itself.
+  # Directory's database; the cores' registration role and database likewise. The Routing module
+  # migrates the Directory itself, the cores the registration database.
   directory-database:
     image: *postgres-image
     restart: "no"
     environment:
       DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
+      REGISTRATION_DATABASE_PASSWORD: ${REGISTRATION_DATABASE_PASSWORD:?}
     volumes:
       - postgres-socket:/var/run/postgresql
       - ./directory-database.sql:/directory-database.sql:ro
     network_mode: none
-    entrypoint: ["sh", "-c", 'exec psql -U postgres -d postgres -v ON_ERROR_STOP=1 -v password="$$DIRECTORY_DATABASE_PASSWORD" -f /directory-database.sql']
+    entrypoint: ["sh", "-c", 'exec psql -U postgres -d postgres -v ON_ERROR_STOP=1 -v password="$$DIRECTORY_DATABASE_PASSWORD" -v registration_password="$$REGISTRATION_DATABASE_PASSWORD" -f /directory-database.sql']
     depends_on:
       postgres:
         condition: service_healthy

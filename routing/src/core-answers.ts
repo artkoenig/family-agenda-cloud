@@ -40,15 +40,6 @@ export function openingRefusal(status: number, error: unknown): string | undefin
 /** The error code a page's refusal begins with, as in `migrating: the Family's database is being prepared`. */
 export const pageErrorCode = (text: string): string | undefined => /^([a-z][a-z-]*): /.exec(text)?.[1];
 
-/**
- * Whether reset-admin-password's 404 says that the Family has no Admin with that email. A 404
- * without that error code is a core that does not offer the operation.
- */
-export const isUnknownAdmin = ({ error }: Answer): boolean => error === "unknown-admin";
-
-/** The new password reset-admin-password answers. */
-export const newPassword = ({ newPassword }: Answer): string | undefined => (typeof newPassword === "string" && newPassword ? newPassword : undefined);
-
 /** How many due Sources a run of due work polled, and of those how many failed. */
 export type SourcesPolled = { ran: number; failed: number };
 
