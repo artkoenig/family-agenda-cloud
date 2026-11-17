@@ -108,7 +108,9 @@ The Family 190ca3a1-78b7-45d7-b735-e8cd59b04509 is deleted
 Only this line means the Family is deleted. If the command ends without it
 (`Deleting the Family did not finish; run delete again to finish it`), run it again until it prints the line. The
 usual reason is the blob bucket not being mounted (`The blob root … is not there`): see `docker compose ps blob-mount`
-and its log, then run `delete` again. A run that began deleting (`The Family is marked deleted` in its log) leaves
+and its log, then run `delete` again. Another is Logto not answering (`Logto's Management API answered deleting the
+Organization with …`, or `Logto refused the management client's credentials`): see `docker compose ps logto` and
+`IDP_MANAGEMENT_CLIENT_*` in the `.env`. A run that began deleting (`The Family is marked deleted` in its log) leaves
 the Family's address answering `404` and nothing scheduled for it, whether it finished or not; a run that was
 refused (`Deleting the Family was refused`) changed nothing.
 
@@ -119,6 +121,10 @@ What can be said in writing once the line was printed:
 - The Family's blobs are removed from the bucket. The bucket keeps removed objects as noncurrent versions for 14 days
   and then deletes them for good.
 - The Family's key and its database password, which the Directory held wrapped, are destroyed.
+- The Family's Logto Organization is deleted, and with it its Admins' membership. The Admins' accounts stay at
+  Logto: their email address, and their password if they set one. Such a person can still sign in at Logto, but
+  reaches no Family; registering again with that address is refused. To remove them too, delete the user in the
+  Logto console (**User management**), after the line was printed.
 - Nothing is routed to the Family and nothing runs for it.
 - The Directory keeps one entry: the Family id, its time zone, the names its database and its blob location had,
   when it was created and deleted, and how its due work last ran. It holds no name and no email address.

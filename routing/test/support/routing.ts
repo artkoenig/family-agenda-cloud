@@ -9,6 +9,7 @@ import { createLog } from "../../src/log";
 import { startReceiver, type Receiver } from "../../src/receiver";
 import { startRouter, type Router } from "../../src/router";
 import { SCHEDULER_RUNNING } from "../../src/scheduler";
+import { startStandInLogto, type StandInLogto } from "./stand-in-logto";
 import { poolOf, resolveStandIns, startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
@@ -20,6 +21,8 @@ export type TestRouting = {
   /** The environment the Routing module runs with: its Directory, keys and the stand-in core. */
   env: Record<string, string>;
   core: StandInCore;
+  /** Logto's Management API, which deleting a Family deletes its Organization in. */
+  logto: StandInLogto;
   /** Runs the Routing module's command line with these arguments, as the Operator would. */
   run(args: string[], env?: Record<string, string | undefined>, options?: RunOptions): Promise<RunResult>;
   /**
@@ -126,6 +129,7 @@ export async function setUpRouting(): Promise<TestRouting> {
   const contextKey = key();
   const triggerToken = key();
   const core = await startStandInCore(contextKey, triggerToken);
+  const logto = await startStandInLogto();
   const directoryUrl = new URL(superuserUrl);
   directoryUrl.username = routingRole;
   directoryUrl.password = "";
@@ -139,6 +143,7 @@ export async function setUpRouting(): Promise<TestRouting> {
     ...poolOf(core),
     BLOB_ROOT: "/var/lib/family-agenda/blobs",
     FAMILY_WEBHOOK_SECRET: key(),
+    ...logto.env,
   };
 
   let logged = "";
@@ -157,6 +162,7 @@ export async function setUpRouting(): Promise<TestRouting> {
   const routing: TestRouting = {
     env,
     core,
+    logto,
     routingRole,
     async run(args, overrides = {}, options = {}) {
       let stdout = "";
@@ -233,6 +239,7 @@ export async function setUpRouting(): Promise<TestRouting> {
       core.releaseAll();
       await Promise.all(schedulers.map((stop) => stop()));
       await core.close();
+      await logto.close();
       // The Families' roles, which the Routing module created and so was made a member of, and
       // the databases they own.
       const roles = await query(

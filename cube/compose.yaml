@@ -2,13 +2,15 @@
 # with routing/ beside it, and brings it up; nothing else is set up by hand but the .env.
 #
 # Who reaches whom; every network but `public` and `outbound` is internal, and only Caddy
-# publishes ports:
+# publishes ports, but for Logto's admin console on the Cube's loopback:
 #   public     Caddy and the internet (ACME, the browsers).
-#   edge       Caddy and the Router.
+#   edge       Caddy, the Router and Logto: the browsers' requests, and Logto's PostRegister to the
+#              Router, and the Operator's `routing delete` to Logto's Management API.
 #   pool       the Routing module (Router, Scheduler, receiver) and the cores: the cores' Context
 #              interface, and the cores' family.created to the receiver.
 #   directory  Postgres, the Routing module and the cores, which open their Family's database.
-#   outbound   the cores, the Egress Proxies and the blob mount, which reach the internet.
+#   outbound   the cores, the Egress Proxies, the blob mount and Logto, which reach the internet; the
+#              cores reach Logto's Management API here.
 #   plugin-<id>         the cores and that plugin.
 #   plugin-<id>-egress  that plugin and its Egress Proxy alone.
 # The plugins and the Egress Proxies share a network with the cores, so they can reach the cores'
@@ -66,7 +68,8 @@ x-core: &core
     # Sign-in: one Logto for every Family (ADR-0009 of the core). Each Family is a Logto
     # Organization; an Admin's token names their Family in custom_data.familyId. Every sign-in
     # returns to the one callback, which the Router passes on without a Context.
-    OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:?}
+    # The issuer is Logto's public address: the cores read its discovery there, through Caddy.
+    OIDC_ISSUER_URL: https://auth.family-agenda.cloud/oidc
     OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?}
     OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?}
     OIDC_FAMILY_ID_CLAIM: custom_data.familyId
@@ -75,7 +78,7 @@ x-core: &core
     # Router passes on without a Context; a core creates the Family's Organization and posts
     # family.created to the receiver until it answers 2xx.
     IDP_MANAGEMENT_API: logto
-    IDP_MANAGEMENT_ENDPOINT: ${IDP_MANAGEMENT_ENDPOINT:?}
+    IDP_MANAGEMENT_ENDPOINT: http://logto:3001
     IDP_MANAGEMENT_CLIENT_ID: ${IDP_MANAGEMENT_CLIENT_ID:?}
     IDP_MANAGEMENT_CLIENT_SECRET: ${IDP_MANAGEMENT_CLIENT_SECRET:?}
     IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_SECRET:?}
@@ -96,7 +99,7 @@ x-core: &core
     pool:
       aliases: [cores]
     directory:
-    # Logto, and the Families' Sources through the plugins' Egress Proxies.
+    # Logto's Management API, and the Families' Sources through the plugins' Egress Proxies.
     outbound:
     plugin-ics:
     plugin-imap:
@@ -133,6 +136,10 @@ x-routing: &routing
     TRUST_PROXY: "true"
     # The path of the cores' OIDC_CALLBACK_URL, passed on without a Context.
     OIDC_CALLBACK_URL: https://app.family-agenda.cloud/sso/callback
+    # The cores' Management API client: `routing delete` deletes the Family's Organization.
+    IDP_MANAGEMENT_ENDPOINT: http://logto:3001
+    IDP_MANAGEMENT_CLIENT_ID: ${IDP_MANAGEMENT_CLIENT_ID:?}
+    IDP_MANAGEMENT_CLIENT_SECRET: ${IDP_MANAGEMENT_CLIENT_SECRET:?}
   volumes:
     # Holds one blob location per Family; `routing delete` removes a Family's.
     - *blobs
@@ -196,6 +203,36 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 20s
+
+  # The one Identity Provider of every Family (ADR-0009 of the core), the version the core pins:
+  # sign-in and registration at auth.family-agenda.cloud, through Caddy. Its database is `logto`
+  # on the Directory's Postgres, which `db seed` fills on the first start and leaves alone after.
+  # The admin console listens on the Cube's loopback alone: ssh -L 3002:localhost:3002 (setup.md).
+  logto:
+    image: ghcr.io/logto-io/logto:1.46.0@sha256:d5e208ce705cbcf7c79ddba421216eb65413d0b0531aa658fb22a4ba659be983
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    environment:
+      DB_URL: postgres://logto:${LOGTO_DATABASE_PASSWORD:?}@postgres:5432/logto
+      ENDPOINT: https://auth.family-agenda.cloud
+      ADMIN_ENDPOINT: http://localhost:3002
+      # Caddy sits in front and forwards the browser's scheme and address.
+      TRUST_PROXY_HEADER: "true"
+      # Logto calls no private address unless listed: its PostRegister goes to the Router at
+      # http://router:8080/idp/events, on the edge network.
+      SSRF_ALLOWED_ADDRESSES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    ports:
+      - "127.0.0.1:3002:3002"
+    depends_on:
+      directory-database:
+        condition: service_completed_successfully
+    # The SMTP connector's mail server, on the internet.
+    networks: [edge, directory, outbound]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/status').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
 
   # Starts each Family's due work on a core.
   scheduler:
@@ -311,7 +348,7 @@ services:
       retries: 10
 
   # Runs on every deploy, then exits: the Routing module's role with its current password, and the
-  # Directory's database; the cores' registration role and database likewise. The Routing module
+  # Directory's database; the cores' registration role and database, and Logto's, likewise. The Routing module
   # migrates the Directory itself, the cores the registration database.
   directory-database:
     image: *postgres-image
@@ -319,11 +356,12 @@ services:
     environment:
       DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
       REGISTRATION_DATABASE_PASSWORD: ${REGISTRATION_DATABASE_PASSWORD:?}
+      LOGTO_DATABASE_PASSWORD: ${LOGTO_DATABASE_PASSWORD:?}
     volumes:
       - postgres-socket:/var/run/postgresql
       - ./directory-database.sql:/directory-database.sql:ro
     network_mode: none
-    entrypoint: ["sh", "-c", 'exec psql -U postgres -d postgres -v ON_ERROR_STOP=1 -v password="$$DIRECTORY_DATABASE_PASSWORD" -v registration_password="$$REGISTRATION_DATABASE_PASSWORD" -f /directory-database.sql']
+    entrypoint: ["sh", "-c", 'exec psql -U postgres -d postgres -v ON_ERROR_STOP=1 -v password="$$DIRECTORY_DATABASE_PASSWORD" -v registration_password="$$REGISTRATION_DATABASE_PASSWORD" -v logto_password="$$LOGTO_DATABASE_PASSWORD" -f /directory-database.sql']
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,7 +1,9 @@
 import { rm, stat } from "node:fs/promises";
+import type { Config } from "./config";
 import type { DirectoryEntry } from "./directory";
 import { dropFamilyDatabase, familyDatabaseNames } from "./family-databases";
 import { blobLocationOf, isFamilyId } from "./family-id";
+import { organizations } from "./organizations";
 import { existingEntry, ProvisioningError, withFamilyLock, type ScheduledProvisioning } from "./provisioning";
 
 export type DeleteFamilyInput = {
@@ -17,7 +19,9 @@ export type DeleteFamilyInput = {
  * The first step marks the Family deleted and destroys its wrapped family key and database
  * password, so that from then on nothing routes to it or triggers its due work, and what is left of its
  * data opens with no key the Routing module still has. Its entry stays, as the record that it was
- * deleted, with no secrets in it; the time deleting finished is noted only after the last step, so
+ * deleted, with no secrets in it, nor anything of its Organization but the id. Its Logto
+ * Organization is deleted with its memberships; Logto keeps the users, the Admins' accounts. The
+ * time deleting finished is noted only after the last step, so
  * that a deleted Family without it was not deleted to the end. Old row versions of the Directory
  * not yet vacuumed, its write-ahead log and its backups still hold the wrapped values until they
  * are overwritten or expire; they open only with the Operator key.
@@ -31,6 +35,7 @@ export async function deleteFamily(provisioning: ScheduledProvisioning, input: D
   }
   const entry = await existingEntry(directory, familyId);
   refuseForeign(entry, blobLocationOf(config, familyId));
+  refuseWithoutManagement(entry, config);
   if (entry.deletedAt) {
     log.info("The Family was deleted already", { familyId, deletedAt: entry.deletedAt.toISOString() });
     return;
@@ -52,6 +57,8 @@ export async function deleteFamily(provisioning: ScheduledProvisioning, input: D
   await removeBlobs(config.blobRoot, entry.blobLocation);
   log.info("The Family's blob location is removed", { familyId });
 
+  await deleteOrganization(provisioning, entry);
+
   await directory.finishDeletion(familyId);
   log.info("The Family is deleted", { familyId });
 }
@@ -68,6 +75,20 @@ function refuseForeign(entry: DirectoryEntry, blobLocation: string): void {
   if (entry.blobLocation !== blobLocation) {
     throw new ProvisioningError(`The Family's blob location is not ${blobLocation}; nothing was deleted`);
   }
+}
+
+/** Refuses a Family with an Organization while there is no Management API to delete it in. */
+function refuseWithoutManagement(entry: DirectoryEntry, config: Config): void {
+  if (entry.organizationId !== null && config.idpManagement === null) {
+    throw new ProvisioningError("IDP_MANAGEMENT_* is not set, so the Family's Organization cannot be deleted; nothing was deleted");
+  }
+}
+
+/** Deletes the Family's Logto Organization, if it has one; one gone already is deleted. */
+async function deleteOrganization({ config, log }: ScheduledProvisioning, { familyId, organizationId }: DirectoryEntry): Promise<void> {
+  if (organizationId === null || config.idpManagement === null) return;
+  await organizations(config.idpManagement).delete(organizationId);
+  log.info("The Family's Organization is deleted", { familyId, organizationId });
 }
 
 /**
