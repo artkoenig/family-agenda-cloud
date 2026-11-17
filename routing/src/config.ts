@@ -1,4 +1,5 @@
 import type { IdpManagement } from "./logto-management";
+import type { GoogleClient } from "./sign-in-experience";
 
 /**
  * The Routing module's settings, from the environment only. The Operator key, the Context key and
@@ -50,6 +51,11 @@ export type Config = {
    * deletes its Organization there. Only `delete` needs it.
    */
   idpManagement: IdpManagement | null;
+  /**
+   * The Google OAuth client (GOOGLE_CLIENT_ID, _SECRET) of Logto's Google connector, which
+   * `sign-in-experience` sets; without it Google is left out of the sign-in experience.
+   */
+  google: GoogleClient | null;
   /** Where the Router listens for the browsers' requests. */
   listenHost: string;
   listenPort: number;
@@ -87,6 +93,7 @@ export function readConfig(env: Env): Config {
     familyWebhookSecret: env.FAMILY_WEBHOOK_SECRET ? secret(env, "FAMILY_WEBHOOK_SECRET") : null,
     receiverPort: port(env, "RECEIVER_PORT", "8081"),
     idpManagement: idpManagement(env),
+    google: google(env),
     ...listenSettings(env),
   };
 }
@@ -122,6 +129,14 @@ function idpManagement(env: Env): IdpManagement | null {
   const endpoint = withoutTrailingSlash(required(env, "IDP_MANAGEMENT_ENDPOINT"));
   if (!/^https?:\/\//.test(endpoint) || !URL.canParse(endpoint)) throw new ConfigError("IDP_MANAGEMENT_ENDPOINT must be an http or https address, Logto's");
   return { endpoint, clientId: required(env, "IDP_MANAGEMENT_CLIENT_ID"), clientSecret: required(env, "IDP_MANAGEMENT_CLIENT_SECRET") };
+}
+
+/** GOOGLE_CLIENT_ID and _SECRET: both, or none. */
+function google(env: Env): GoogleClient | null {
+  const { GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret } = env;
+  if (!clientId && !clientSecret) return null;
+  if (!clientId || !clientSecret) throw new ConfigError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set both, or none");
+  return { clientId, clientSecret };
 }
 
 /** Where and how the Router listens. */

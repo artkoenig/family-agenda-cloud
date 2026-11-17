@@ -140,6 +140,9 @@ x-routing: &routing
     IDP_MANAGEMENT_ENDPOINT: http://logto:3001
     IDP_MANAGEMENT_CLIENT_ID: ${IDP_MANAGEMENT_CLIENT_ID:?}
     IDP_MANAGEMENT_CLIENT_SECRET: ${IDP_MANAGEMENT_CLIENT_SECRET:?}
+    # Logto's Google connector, which `routing sign-in-experience` sets; empty leaves Google out.
+    GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   volumes:
     # Holds one blob location per Family; `routing delete` removes a Family's.
     - *blobs
