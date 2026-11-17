@@ -10,6 +10,7 @@ import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { coreClient } from "./core";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
+import { mailTemplates, putMailTemplates } from "./mail-templates";
 import { isFamilyId } from "./family-id";
 import type { Resolve } from "./pool";
 import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
@@ -62,6 +63,9 @@ const USAGE = `Usage:
     Runs the receiver on LISTEN_HOST:RECEIVER_PORT until SIGTERM or SIGINT: it creates the
     Family each family.created of a core announces at POST /family-created, signed with
     FAMILY_WEBHOOK_SECRET, and answers 2xx once the Family is active.
+  routing mail-templates
+    Puts Family Agenda's mails, German and English, into Logto as its email templates, through
+    IDP_MANAGEMENT_*. Deploying runs it; it replaces the templates of the same type and language.
 
 A core prepares a Family's database when it first opens it, so a new core version needs no
 command: a request or operation that a core of an older release refuses is tried on another core.`;
@@ -79,6 +83,7 @@ const COMMANDS: Record<string, Command> = {
   receive: (_args, config, io, log) => receive(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
+  "mail-templates": (_args, config, io) => putTemplates(config, io),
 };
 
 /** The Operator's command line. Answers the exit code. */
@@ -228,6 +233,15 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
 async function families(config: Config, io: Io): Promise<number> {
   const overview = await withDirectory(config, (client) => directory(client).overview());
   for (const family of overview) io.stdout.write(`${familyLine(family)}\n`);
+  return 0;
+}
+
+/** Puts the mails into Logto; needs IDP_MANAGEMENT_*, and no Directory. */
+async function putTemplates(config: Config, io: Io): Promise<number> {
+  if (config.idpManagement === null) throw new ConfigError("mail-templates needs IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET");
+  const templates = mailTemplates();
+  await putMailTemplates(config.idpManagement, templates);
+  io.stdout.write(`Logto has ${templates.length} email templates\n`);
   return 0;
 }
 

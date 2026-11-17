@@ -200,6 +200,11 @@ console listens on the Cube's loopback alone.
 The setup may run again, after a new core version for example; it creates nothing twice and prints the same values.
 It sets the sign-in screen, branding and SMTP connector back to its own on every run.
 
+The mails Logto sends are Family Agenda's own, German and English, not the SMTP connector's plain English texts:
+`scripts/deploy.sh` puts them into Logto with `routing mail-templates` (`routing/src/mail-templates.ts`) as email
+templates, which the setup leaves alone. Logto picks the one of the reader's language, else English. The logo in them
+is `site/mail-logo.png`, served at `https://family-agenda.cloud/mail-logo.png`.
+
 Check: register at `https://app.family-agenda.cloud` with an address of the Operator's; the code mail arrives, and
 after it the new Family's address answers. The console shows the delivery under **Webhooks → Family Agenda**. Logto
 does not retry a webhook: a PostRegister the Router or the cores miss creates no Family. Delete the trial Family
