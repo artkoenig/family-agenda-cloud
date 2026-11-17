@@ -3,9 +3,6 @@
  * the Directory's database password are secrets: they live in the `.env` on the Cube and are read
  * from nowhere else.
  */
-/** The Identity Provider all Families sign in through, named as the core names its `OIDC_*` settings. */
-export type IdentityProviderSettings = { issuerUrl: string; clientId: string; clientSecret: string; requiredGroup: string };
-
 export type Config = {
   /** The Directory's database, without its password. */
   directoryDatabaseUrl: string;
@@ -34,7 +31,18 @@ export type Config = {
   publicUrl: string;
   /** The time zone of a new Family unless the command names one. */
   defaultTimeZone: string;
-  identityProvider: IdentityProviderSettings | null;
+  /**
+   * The path of the cores' one sign-in callback `OIDC_CALLBACK_URL`, which the Router passes on
+   * without a Context; `/sso/callback` unless set.
+   */
+  callbackPath: string;
+  /**
+   * The secret the cores sign `family.created` with (their `FAMILY_WEBHOOK_SECRET`), 32
+   * characters or more; only the receiver needs it.
+   */
+  familyWebhookSecret: string | null;
+  /** Where the receiver listens for the cores' `family.created`. */
+  receiverPort: number;
   /** Where the Router listens for the browsers' requests. */
   listenHost: string;
   listenPort: number;
@@ -68,7 +76,9 @@ export function readConfig(env: Env): Config {
     blobRoot: withoutTrailingSlash(required(env, "BLOB_ROOT")),
     publicUrl: withoutTrailingSlash(env.PUBLIC_URL ?? "https://app.family-agenda.cloud"),
     defaultTimeZone: env.TIME_ZONE ?? "Europe/Berlin",
-    identityProvider: identityProvider(env),
+    callbackPath: callbackPath(env),
+    familyWebhookSecret: env.FAMILY_WEBHOOK_SECRET ? secret(env, "FAMILY_WEBHOOK_SECRET") : null,
+    receiverPort: port(env, "RECEIVER_PORT", "8081"),
     ...listenSettings(env),
   };
 }
@@ -96,10 +106,14 @@ function closeTimeoutMs(env: Env): number {
 
 /** Where and how the Router listens. */
 function listenSettings(env: Env): Pick<Config, "listenHost" | "listenPort" | "trustProxy"> {
-  const port = env.PORT ?? "8080";
-  // 0 lets the system choose a free port.
-  if (!/^\d{1,5}$/.test(port) || Number(port) > 65_535) throw new ConfigError("PORT must be a port number, 0 to 65535");
-  return { listenHost: env.LISTEN_HOST ?? "0.0.0.0", listenPort: Number(port), trustProxy: env.TRUST_PROXY === "true" };
+  return { listenHost: env.LISTEN_HOST ?? "0.0.0.0", listenPort: port(env, "PORT", "8080"), trustProxy: env.TRUST_PROXY === "true" };
+}
+
+/** The port `name` gives, `fallback` unless set; 0 lets the system choose a free port. */
+function port(env: Env, name: string, fallback: string): number {
+  const value = env[name] ?? fallback;
+  if (!/^\d{1,5}$/.test(value) || Number(value) > 65_535) throw new ConfigError(`${name} must be a port number, 0 to 65535`);
+  return Number(value);
 }
 
 /** How to open the Directory's database. */
@@ -114,14 +128,15 @@ export function directoryConnection(config: Config): { host: string; port: numbe
   };
 }
 
-function identityProvider(env: Env): IdentityProviderSettings | null {
-  if (!env.OIDC_ISSUER_URL) return null;
-  return {
-    issuerUrl: env.OIDC_ISSUER_URL,
-    clientId: required(env, "OIDC_CLIENT_ID"),
-    clientSecret: required(env, "OIDC_CLIENT_SECRET"),
-    requiredGroup: required(env, "OIDC_REQUIRED_GROUP"),
-  };
+/** The path of OIDC_CALLBACK_URL, an http or https address with a path; `/sso/callback` unless set. */
+function callbackPath(env: Env): string {
+  const value = env.OIDC_CALLBACK_URL;
+  if (value === undefined) return "/sso/callback";
+  const url = URL.canParse(value) ? new URL(value) : undefined;
+  if (!url || !/^https?:$/.test(url.protocol) || url.pathname === "/" || url.search || url.hash) {
+    throw new ConfigError("OIDC_CALLBACK_URL must be an http or https address with a path, without query or fragment");
+  }
+  return url.pathname;
 }
 
 function required(env: Env, name: string): string {

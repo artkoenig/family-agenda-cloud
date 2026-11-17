@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 async function createFamily(): Promise<string> {
-  const result = await routing.run(["create", "--admin-email", "first.admin@example.org"]);
+  const result = await routing.run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`]);
   expect(result, result.stderr).toMatchObject({ exitCode: 0 });
   return ADDRESS.exec(result.stdout.trim())![1]!;
 }
@@ -42,12 +42,15 @@ async function minutes(clock: TestClock, count: number): Promise<void> {
   for (let minute = 0; minute < count; minute++) await clock.tick(MINUTE);
 }
 
-/** The paths of the scheduled operations that arrived at the stand-in core for the Family. */
+/**
+ * The paths of the scheduled operations that arrived at the stand-in core for the Family: all but
+ * the first, the sweep that opened the Family when it was created.
+ */
 const scheduledCallsOf = (familyId: string): string[] =>
   routing.core.requests
     .filter(({ path, context }) => context?.familyId === familyId && path.startsWith("/operations/"))
     .map(({ path }) => path)
-    .filter((path) => path !== "/operations/enter-admin");
+    .slice(1);
 
 /** What the Family keeps while it is suspended: its entry with its secrets, database, role and blobs. */
 async function dataOf(familyId: string) {
@@ -135,7 +138,7 @@ describe("Resuming a Family", () => {
   });
 
   it("brings back its schedules as creating it made them, in its own time zone", async () => {
-    const created = await routing.run(["create", "--admin-email", "first.admin@example.org", "--time-zone", "America/New_York"]);
+    const created = await routing.run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`, "--time-zone", "America/New_York"]);
     const familyId = ADDRESS.exec(created.stdout.trim())![1]!;
     const before = await schedulesOf(familyId);
     await suspend(familyId);
@@ -276,8 +279,8 @@ describe("A Family that cannot be suspended or resumed", () => {
     ["suspend", "suspended"],
     ["resume", "resumed"],
   ])("is one still being prepared: %s is refused and changes nothing", async (command, change) => {
-    routing.core.failNext("enter-admin");
-    expect((await routing.run(["create", "--admin-email", "first.admin@example.org"])).exitCode).toBe(1);
+    routing.core.failNext("secret-sweep");
+    expect((await routing.run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`])).exitCode).toBe(1);
     const [row] = await routing.directory("SELECT family_id FROM family WHERE status = 'being_prepared'");
     const familyId = String(row?.family_id);
     const before = await everythingOf(familyId);
@@ -379,7 +382,7 @@ describe("Suspending and resuming at the same time", () => {
   it("leaves a deleted Family without schedules when a resume comes at the same time", async () => {
     const blobRoot = await mkdtemp(join(tmpdir(), "routing-blobs-"));
     try {
-      const created = await routing.run(["create", "--admin-email", "first.admin@example.org"], { BLOB_ROOT: blobRoot });
+      const created = await routing.run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`], { BLOB_ROOT: blobRoot });
       const familyId = ADDRESS.exec(created.stdout.trim())![1]!;
       await suspend(familyId);
 

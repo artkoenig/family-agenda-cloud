@@ -110,21 +110,27 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `EGRESS_TICKET_KEY` | signs the Tickets the Egress Proxies check | `openssl rand -base64 32` |
    | `BLOB_BUCKET` | the name of the blob bucket | [step 4](#4-object-storage-contract-owned-buckets) |
    | `BLOB_BUCKET_ACCESS_KEY`, `BLOB_BUCKET_SECRET_KEY` | the Object Storage key the bucket is mounted with | [step 4](#4-object-storage-contract-owned-buckets) |
+   | `FAMILY_WEBHOOK_SECRET` | signs the cores' `family.created` to the receiver | `openssl rand -base64 32` |
+   | `REGISTRATION_DATABASE_PASSWORD` | the cores' role on Postgres for the shared registration database | `openssl rand -hex 32` (it goes into a URL) |
+   | `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Logto's Traditional Web application the cores sign in with; redirect URI `https://app.family-agenda.cloud/sso/callback` | the Logto console |
+   | `IDP_MANAGEMENT_ENDPOINT`, `IDP_MANAGEMENT_CLIENT_ID`, `IDP_MANAGEMENT_CLIENT_SECRET` | Logto's Machine-to-Machine application with the Management API role, which creates the Organizations | the Logto console |
+   | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `https://app.family-agenda.cloud/idp/events` | the Logto console, after creating the webhook |
 
    Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped
-   again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` is
-   set on Postgres at every deploy, so changing it in the `.env` and deploying changes it.
+   again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` and
+   `REGISTRATION_DATABASE_PASSWORD` are set on Postgres at every deploy, so changing one in the `.env` and deploying changes it.
 3. `scripts/deploy.sh`: copies `cube/`, `routing/` and `site/` to the Cube, pulls the images, builds the Routing
    module's, brings the services up and reloads Caddy. This is also the way to redeploy, and to bring a
    [new core version](#8-a-new-core-version) to the Families. What must be up before what, which
    Compose sees to:
-   1. `postgres`, then `directory-database`, which makes the Routing module's role and the Directory's database and
-      ends. `router` and `scheduler` start after it has ended.
+   1. `postgres`, then `directory-database`, which makes the Routing module's role and the Directory's database,
+      and the cores' role and registration database, and ends. `router`, `scheduler` and `receiver` start after it
+      has ended.
    2. `blob-mount`, which mounts the blob bucket at `/var/lib/family-agenda-blobs/bucket` on the Cube
       ([ADR-0002](../adr/0002-the-blob-bucket-is-mounted-with-rclone-as-a-compose-service.md)). It is healthy once
       the bucket is mounted and its folder `families`, the blob root, is there. With a wrong bucket name or key it
       starts over and over, and the deploy fails waiting for it: `docker compose logs blob-mount` says why.
-   3. The cores (`core`, two unless [scaled](#9-scaling-the-pool-of-cores)), `router` and `scheduler` start only
+   3. The cores (`core`, two unless [scaled](#9-scaling-the-pool-of-cores)), `router`, `scheduler` and `receiver` start only
       once `blob-mount` is healthy. A core is healthy only while it sees the blob root.
 
    The plugins, their Egress Proxies and `caddy` wait for nothing, and the Routing module does not wait for the
@@ -136,9 +142,10 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    that deploy delete every Family, the smoke check's included ([Families runbook](families.md)), and create them
    again after it; then `docker volume rm family-agenda_blobs`.
 4. [Check the blob mount](#checking-the-blob-mount), after the first deploy and after every change to `blob-mount`.
-5. Once: create the Family the smoke check opens, with an address of the Operator's, and store its id in the password
+5. Once: create the Family the smoke check opens and store its id in the password
    manager:
-   `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --admin-email <address>'`.
+   `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --organization-id <id>'`,
+   with the id of a Logto Organization made for it in the Logto console.
 6. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
    Basic Auth. It fails when that Family's address does not answer or an unknown Family id does not get 404.
 7. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke

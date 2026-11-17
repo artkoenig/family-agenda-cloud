@@ -29,7 +29,7 @@ _Avoid_: Multi-tenant mode, cloud mode
 ### Routing module
 
 **Routing module**:
-The closed program in front of the pool of cores, made of the Router, the Directory, the Scheduler and Provisioning; the only thing that knows which Families exist.
+The closed program in front of the pool of cores, made of the Router, the Directory, the Scheduler, the Receiver and Provisioning; the only thing that knows which Families exist.
 _Avoid_: Gateway, control plane, proxy
 
 **Router**:
@@ -44,8 +44,12 @@ _Avoid_: Registry, tenant table, control database
 The Routing module's clock, which gives each active Family's core the occasion to run its due work and its purge; the core decides what is due.
 _Avoid_: Cron, job runner, worker
 
+**Receiver**:
+The Routing module's entrance for the cores' `family.created`, which creates the Family a core announces once that Family's Admin has registered; reached by the cores only.
+_Avoid_: Webhook handler, callback
+
 **Provisioning**:
-The Operator's command line into the Routing module, which creates a Family and enters its first Admin, suspends, resumes and deletes it, and resets an Admin's password.
+How the Routing module creates a Family, from the Receiver or the Operator's command line, and the command line that suspends, resumes and deletes it.
 _Avoid_: Onboarding, setup, admin tool
 
 ### Families and keys
@@ -54,12 +58,20 @@ _Avoid_: Onboarding, setup, admin tool
 As in the public glossary; in addition, it is the first path segment of the Family's address.
 _Avoid_: Tenant id, slug, subdomain
 
+**Organization id**:
+The id of the Logto Organization that is a Family at the one Identity Provider of every Family; the Directory holds it per Family, and a Context names it.
+_Avoid_: Tenant id, group
+
+**family.created**:
+What a core posts to the Receiver, signed, once it has created a registered Family and its Organization: the Family id and the Organization id. Posted again until answered with a 2xx.
+_Avoid_: Signup event, registration hook
+
 **Family key**:
 The key, one per Family, that encrypts that Family's Source credentials; a leaked one opens only that Family's.
 _Avoid_: Tenant key
 
 **Context**:
-What a core is given to serve one Family for one request or run: its Family id, database, family key, the blob directory (the folder its blob location lies in, named by the Family id), time zone, public address with the path prefix, and Identity Provider settings.
+What a core is given to serve one Family for one request or run: its Family id, database, family key, the blob directory (the folder its blob location lies in, named by the Family id), time zone, public address with the path prefix, and Organization id.
 _Avoid_: Tenant config, session, request context
 
 **Operator key**:

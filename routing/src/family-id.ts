@@ -28,3 +28,9 @@ export function familyIdInPath(target: string): { familyId: string; path: string
 
 /** The directory, as the cores see it, that holds the Family's blobs. */
 export const blobLocationOf = (config: Pick<Config, "blobRoot">, familyId: string): string => `${config.blobRoot}/${familyId}`;
+
+/** A Logto Organization id as Logto draws them: letters, digits, `_` and `-`, at most 64. */
+const ORGANIZATION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Whether the text can be a Logto Organization id. */
+export const isOrganizationId = (text: string): boolean => ORGANIZATION_ID.test(text);

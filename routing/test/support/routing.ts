@@ -6,6 +6,7 @@ import type { TestClock } from "pg-boss";
 import { run } from "../../src/cli";
 import { readConfig } from "../../src/config";
 import { createLog } from "../../src/log";
+import { startReceiver, type Receiver } from "../../src/receiver";
 import { startRouter, type Router } from "../../src/router";
 import { SCHEDULER_RUNNING } from "../../src/scheduler";
 import { poolOf, resolveStandIns, startStandInCore, type StandInCore } from "./stand-in-core";
@@ -26,6 +27,11 @@ export type TestRouting = {
    * the environment. It logs into the same log as the command line and is stopped by close().
    */
   startRouter(env?: Record<string, string | undefined>): Promise<Router>;
+  /**
+   * Starts the receiver as `routing receive` would, on a free port of localhost, with these
+   * changes to the environment; it logs into the same log and is stopped by close().
+   */
+  startReceiver(env?: Record<string, string | undefined>): Promise<Receiver>;
   /**
    * Starts the Scheduler, as `routing schedule` on the Cube, on a clock the test moves; answers
    * once it is under way, with these changes to the environment. close() stops it.
@@ -132,6 +138,7 @@ export async function setUpRouting(): Promise<TestRouting> {
     TRIGGER_TOKEN: triggerToken,
     ...poolOf(core),
     BLOB_ROOT: "/var/lib/family-agenda/blobs",
+    FAMILY_WEBHOOK_SECRET: key(),
   };
 
   let logged = "";
@@ -142,7 +149,7 @@ export async function setUpRouting(): Promise<TestRouting> {
         done();
       },
     });
-  const routers: Router[] = [];
+  const routers: (Router | Receiver)[] = [];
   const withOverrides = (overrides: Record<string, string | undefined>) =>
     Object.fromEntries(Object.entries({ ...env, ...overrides }).filter((entry): entry is [string, string] => entry[1] !== undefined));
   const schedulers: (() => Promise<void>)[] = [];
@@ -178,6 +185,11 @@ export async function setUpRouting(): Promise<TestRouting> {
       const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()), resolveStandIns);
       routers.push(router);
       return router;
+    },
+    async startReceiver(overrides = {}) {
+      const receiver = await startReceiver(readConfig({ ...withOverrides(overrides), RECEIVER_PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()), resolveStandIns);
+      routers.push(receiver);
+      return receiver;
     },
     async startScheduler(clock, overrides = {}) {
       let stopped = () => {};

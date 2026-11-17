@@ -16,7 +16,7 @@ export type BrowserTarget = { method: string | undefined; target: string };
 export type Refusal = { to: "refused"; status: number; headers: Record<string, string>; body: string };
 
 export type Route<E> =
-  /** The health check: the one path a core answers without a Context. */
+  /** A request a core answers without a Context: the health check, the sign-in callback, the Identity Provider's events. */
   | { to: "core"; path: string }
   /** A request for an active Family, with the path after its Family id. */
   | { to: "family"; familyId: string; path: string; entry: E }
@@ -46,11 +46,16 @@ export const UNAVAILABLE: Refusal = {
   body: "Not available right now. Try again in a moment.\n",
 };
 
+/**
+ * Routes the request. `callbackPath` is the path of the core's OIDC_CALLBACK_URL: the one sign-in
+ * callback of the deployment, which names no Family until the core reads the sign-in it ends.
+ */
 export async function routeRequest<E extends Pick<DirectoryEntry, "status">>(
   { method, target }: BrowserTarget,
   find: (familyId: string) => Promise<E | undefined>,
+  callbackPath: string,
 ): Promise<Route<E>> {
-  if (isFamilyIndependent(method, target)) return { to: "core", path: target };
+  if (isFamilyIndependent(method, target, callbackPath)) return { to: "core", path: target };
   const inPath = familyIdInPath(target);
   if (!inPath || namesOperations(inPath.path)) return NOT_FOUND;
   const { readiness, entry } = readinessOf(await find(inPath.familyId));
@@ -58,19 +63,27 @@ export async function routeRequest<E extends Pick<DirectoryEntry, "status">>(
   return { to: "family", ...inPath, entry };
 }
 
-function isFamilyIndependent(method: string | undefined, target: string): boolean {
+/**
+ * Whether a core answers the request without a Context: the health check and the sign-in
+ * callback, without a body, and the Identity Provider's events (`POST /idp/events`), which the
+ * core checks by their signature. Static files are not: a core in supplied mode serves them only
+ * with a Context, below the Family's prefix, where its pages link to them.
+ */
+function isFamilyIndependent(method: string | undefined, target: string, callbackPath: string): boolean {
   const [pathname = ""] = target.split("?", 1);
+  if (method === "POST") return pathname === IDP_EVENTS_PATH;
   if (!isBodiless(method)) return false;
-  // Static files are not: a core in supplied mode serves them only with a Context, below the
-  // Family's prefix, where its pages link to them.
-  return pathname === "/api/health";
+  return pathname === "/api/health" || pathname === callbackPath;
 }
+
+/** Where the Identity Provider posts its events: the core's IDP_EVENTS_URL, below PUBLIC_URL. */
+const IDP_EVENTS_PATH = "/idp/events";
 
 /**
  * Whether the path below a Family's prefix names the core's triggered operations, as a core could
  * read it once it decodes the path and resolves its dot segments. Only the Routing module triggers
  * them, with a Context of its own: passed on from a browser, they would let anyone who knows a
- * Family's address reset its Admin's password.
+ * Family's address run its operations.
  */
 function namesOperations(rest: string): boolean {
   const [pathname = ""] = rest.split("?", 1);

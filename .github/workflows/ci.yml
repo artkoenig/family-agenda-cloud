@@ -71,7 +71,7 @@ jobs:
           --health-retries 10
     env:
       # The image cube/compose.yaml pins; the core's commit below is the one it was built from.
-      CORE_IMAGE: ghcr.io/artkoenig/family-agenda:sha-1181f1a@sha256:e72fbbff6c2accfc12e8243f576529f38745bbe93f3e1bfd5f7e70628babc3a4
+      CORE_IMAGE: ghcr.io/artkoenig/family-agenda:sha-ac3208f@sha256:ff5a4b4a785ebeab5d4dc1fb1046e82d5474f3104584e04033e10ac77e6ba0fd
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       REAL_CORE_URL: http://localhost:3002
       REAL_CORE_TRIGGER_URL: http://localhost:3001
@@ -80,6 +80,10 @@ jobs:
       # The core refuses PLUGIN_URLS without it; no Egress Proxy runs here.
       REAL_CORE_EGRESS_TICKET_KEY: Y2ktd2Fsay10aHJvdWdoLWVncmVzcy10aWNrZXQta2V5
       REAL_CORE_DATABASE_HOST: postgres
+      # Supplied mode requires the one Identity Provider; the walk-through signs in nowhere, so none
+      # answers at this address. Registration (FAMILY_WEBHOOK_URL) stays off.
+      REAL_CORE_OIDC_ISSUER_URL: https://sign-in.example.invalid/oidc
+      REAL_CORE_OIDC_CALLBACK_URL: https://app.family-agenda.cloud/sso/callback
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
@@ -87,7 +91,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: artkoenig/family-agenda
-          ref: 1181f1a51e0da23c3897bea01f531c692e0661b8
+          ref: ac3208f19c6dfc5ec637260d2df75c8747201b1e
           path: core
           persist-credentials: false
       - name: Start the demo Source plugin and the core
@@ -101,6 +105,9 @@ jobs:
             -e CONTEXT_MODE=supplied -e CONTEXT_KEY="$REAL_CORE_CONTEXT_KEY" -e CALLER_PORT=3002 \
             -e TRIGGER_TOKEN="$REAL_CORE_TRIGGER_TOKEN" -e TRIGGER_PORT=3001 -e TRUST_PROXY=true \
             -e PLUGIN_URLS=demo=http://plugin-demo:8080 -e EGRESS_TICKET_KEY="$REAL_CORE_EGRESS_TICKET_KEY" \
+            -e OIDC_ISSUER_URL="$REAL_CORE_OIDC_ISSUER_URL" -e OIDC_CLIENT_ID=ci-walk-through \
+            -e OIDC_CLIENT_SECRET=ci-walk-through-client-secret -e OIDC_FAMILY_ID_CLAIM=custom_data.familyId \
+            -e OIDC_CALLBACK_URL="$REAL_CORE_OIDC_CALLBACK_URL" \
             --health-cmd "node -e \"fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))\"" \
             --health-interval 2s "$CORE_IMAGE"
           for _ in $(seq 60); do

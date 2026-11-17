@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "./support/routing";
 
-const ADMIN = "first.admin@example.org";
+const ORG = "org_first";
 
 let routing: TestRouting;
 beforeEach(async () => {
@@ -27,7 +27,7 @@ const columns = async () =>
 
 describe("A Directory that holds each Family's core version", () => {
   it("migrates: the core version and the failed preparation are gone, and its Families are as they were", async () => {
-    const created = await routing.run(["create", "--admin-email", ADMIN]);
+    const created = await routing.run(["create", "--organization-id", ORG]);
     const familyId = /\/([0-9a-f-]{36})\/$/.exec(created.stdout.trim())![1]!;
     const before = await routing.run(["families"]);
     const columnsNow = await columns();
@@ -37,17 +37,17 @@ describe("A Directory that holds each Family's core version", () => {
     expect(await routing.run(["migrate"])).toMatchObject({ exitCode: 0 });
 
     expect(await columns()).toEqual(columnsNow);
-    expect(await routing.directory("SELECT max(version) AS version FROM directory_migration")).toEqual([{ version: 6 }]);
+    expect(await routing.directory("SELECT max(version) AS version FROM directory_migration")).toEqual([{ version: 7 }]);
     const after = await routing.run(["families"]);
     expect(after).toMatchObject({ exitCode: 0, stdout: before.stdout });
     expect(after.stdout).toBe(`${familyId}\tactive\tdue work never ran\n`);
     // Its wrapped family key and database password still open: a core is handed its Context.
-    const reset = await routing.run(["reset-admin-password", "--family-id", familyId, "--admin-email", ADMIN]);
-    expect(reset, reset.stderr).toMatchObject({ exitCode: 0 });
+    const router = await routing.startRouter();
+    expect((await fetch(`${router.url}/${familyId}/admin`)).status).toBe(200);
   });
 
   it("is migrated by whichever command runs first, and serves a Family prepared for an older core version", async () => {
-    const created = await routing.run(["create", "--admin-email", ADMIN]);
+    const created = await routing.run(["create", "--organization-id", ORG]);
     const familyId = /\/([0-9a-f-]{36})\/$/.exec(created.stdout.trim())![1]!;
     await asBeforeCoresPreparedOnOpening();
 

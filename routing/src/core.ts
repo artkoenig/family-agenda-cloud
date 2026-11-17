@@ -1,6 +1,6 @@
 import { CONTEXT_HEADER } from "./context";
 import type { Config } from "./config";
-import { answerOf, dueWorkOf, isUnknownAdmin, newPassword, openingRefusal, type Answer, type SourcesPolled } from "./core-answers";
+import { answerOf, dueWorkOf, openingRefusal, type Answer, type SourcesPolled } from "./core-answers";
 import { neverConnected, notServing } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 import { poolAt, type Resolve } from "./pool";
@@ -33,16 +33,16 @@ export const TRIGGERED_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * The operations a core offers to be triggered from outside, each for the Family its Context
- * names. A core prepares a Family's database when it first opens it, so none of them is for that.
+ * names. A core prepares a Family's database when it first opens it, and records the Context's
+ * Organization id then, so none of them is for that.
  */
 export type Core = {
-  /** Enters an Admin by email address, without a password; an Admin who exists already is fine. */
-  enterAdmin(sealedContext: string, email: string): Promise<void>;
   /**
-   * Has the core draw and set a new password for the Admin with this email address, ending their
-   * sessions; answers the new password, or undefined when the Family has no such Admin.
+   * Has a core open the Family, which prepares its database and records its Organization id on
+   * the first opening: the core has no operation of its own for that, so this is the sweep of
+   * unreferenced secrets, which a new Family has none of.
    */
-  resetAdminPassword(sealedContext: string, email: string): Promise<string | undefined>;
+  openFamily(sealedContext: string): Promise<void>;
   /** Polls the Family's Sources the core finds due; answers how many it polled and how many failed. */
   runDueWork(sealedContext: string): Promise<SourcesPolled>;
   /** Deletes the Family's messages past their retention. */
@@ -63,7 +63,7 @@ export type TriggerPool = Pick<Config, "coreTriggerUrl" | "triggerToken">;
  * core it was made to answered that it is not serving; only the Scheduler's operations do, which
  * the next occurrence would make anyway.
  */
-type CallOptions = { body?: unknown; accept?: number[]; timeoutMs?: number; alsoWhenNotServing?: boolean };
+type CallOptions = { timeoutMs?: number; alsoWhenNotServing?: boolean };
 
 /**
  * A call that did not run on the core it was made to, so another core may take it: because the
@@ -93,8 +93,8 @@ export type CoreClientOptions = { timers?: Timers | undefined; resolve?: Resolve
  *   preparing the database (see `openingRefusal`). Every call then goes on to the next core.
  * - A core that could not be connected to, as one stopped a moment ago, has not received the
  *   call. Every call then goes on to the next core too.
- * - Provisioning's operations go on for no other reason: a call that may have run and is made a
- *   second time elsewhere could, for a password reset, hand out a second password.
+ * - Provisioning's operations go on for no other reason: the Operator, or the core that posted
+ *   `family.created`, makes them again.
  * - The Scheduler's operations also go on when a core answered that it is not serving (502, 503, 504).
  * - A core that was reached but did not answer in time may still be at work on the call, so the
  *   call is given up then instead of being made a second time beside it, which could double a run.
@@ -102,11 +102,10 @@ export type CoreClientOptions = { timers?: Timers | undefined; resolve?: Resolve
 export function coreClient({ coreTriggerUrl, triggerToken }: TriggerPool, log: Log, { timers = systemTimers, resolve = systemResolve }: CoreClientOptions = {}): Core {
   const pool = poolAt(coreTriggerUrl, resolve, log);
   /**
-   * Calls the operation and answers its status with its JSON body ({} for none). A status other
-   * than 2xx fails the call unless `accept` names it; so does no answer within `timeoutMs`, and
-   * no core of the pool that runs it.
+   * Calls the operation and answers its JSON body ({} for none). A status other than 2xx fails
+   * the call; so does no answer within `timeoutMs`, and no core of the pool that runs it.
    */
-  const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<{ status: number; answer: Answer }> => {
+  const call = async (operation: string, sealedContext: string, options: CallOptions = {}): Promise<Answer> => {
     const notRun: string[] = [];
     for (const target of await pool.cores()) {
       try {
@@ -121,21 +120,11 @@ export function coreClient({ coreTriggerUrl, triggerToken }: TriggerPool, log: L
   };
   const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS, alsoWhenNotServing: true };
   return {
-    async enterAdmin(sealedContext, email) {
-      await call("enter-admin", sealedContext, { body: { email } });
-    },
-    async resetAdminPassword(sealedContext, email) {
-      const { status, answer } = await call("reset-admin-password", sealedContext, { body: { email }, accept: [404] });
-      if (status === 404) {
-        if (isUnknownAdmin(answer)) return undefined;
-        throw new CoreError("The core answered reset-admin-password with 404");
-      }
-      const password = newPassword(answer);
-      if (password === undefined) throw new CoreError("The core answered reset-admin-password without a new password");
-      return password;
+    async openFamily(sealedContext) {
+      await call("secret-sweep", sealedContext);
     },
     async runDueWork(sealedContext) {
-      const polled = dueWorkOf((await call("due-work", sealedContext, triggered)).answer);
+      const polled = dueWorkOf(await call("due-work", sealedContext, triggered));
       if (!polled) throw new CoreError("The core answered due-work without what ran");
       if ("error" in polled) throw new CoreError(`The core's due work failed, ${polled.error}`);
       return polled;
@@ -155,20 +144,15 @@ async function callCore(
   triggerToken: string,
   operation: string,
   sealedContext: string,
-  { body, accept = [], timeoutMs = CALL_TIMEOUT_MS }: CallOptions,
+  { timeoutMs = CALL_TIMEOUT_MS }: CallOptions,
   timers: Timers,
-): Promise<{ status: number; answer: Answer }> {
+): Promise<Answer> {
   const timeout = deadline(timeoutMs, timers);
   const noAnswer = (error: unknown) => new CoreError(`The core did not answer ${operation}: ${describe(timeout.signal.reason ?? error)}`);
   try {
     const response = await fetch(new URL(`/operations/${operation}`, triggerUrl), {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${triggerToken}`,
-        [CONTEXT_HEADER]: sealedContext,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      headers: { authorization: `Bearer ${triggerToken}`, [CONTEXT_HEADER]: sealedContext },
       signal: timeout.signal,
     }).catch((error: unknown) => {
       const code = reasonOf((error as { cause?: unknown }).cause ?? error);
@@ -178,13 +162,14 @@ async function callCore(
       throw noAnswer(error);
     });
     const answer = answerOf(text);
-    if (!response.ok && !accept.includes(response.status)) {
-      const message = `The core answered ${operation} with ${response.status}`;
+    if (!response.ok) {
+      // A 403 names why the core refused the Context, such as organization-id-differs.
+      const message = `The core answered ${operation} with ${response.status}${typeof answer.error === "string" && response.status === 403 ? ` ${answer.error}` : ""}`;
       const refusal = openingRefusal(response.status, answer.error);
       if (refusal !== undefined) throw new NotRun(message, refusal, "refused");
       throw notServing(response.status) ? new NotRun(message, String(response.status), "not-serving") : new CoreError(message);
     }
-    return { status: response.status, answer };
+    return answer;
   } finally {
     timeout.clear();
   }

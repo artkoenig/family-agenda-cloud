@@ -9,8 +9,16 @@ ALTER ROLE routing LOGIN CREATEDB CREATEROLE NOSUPERUSER PASSWORD :'password';
 
 SELECT 'CREATE DATABASE directory OWNER routing' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'directory') \gexec
 
+-- The cores' role for registration: it owns the one database every core shares for the Identity
+-- Provider's processed events and the pending family.created deliveries, and nothing else.
+SELECT 'CREATE ROLE registration' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'registration') \gexec
+ALTER ROLE registration LOGIN NOCREATEDB NOCREATEROLE NOSUPERUSER PASSWORD :'registration_password';
+
+SELECT 'CREATE DATABASE registration OWNER registration' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'registration') \gexec
+
 -- A Family's role connects to its own database only.
 REVOKE ALL ON DATABASE directory FROM PUBLIC;
+REVOKE ALL ON DATABASE registration FROM PUBLIC;
 REVOKE ALL ON DATABASE postgres FROM PUBLIC;
 
 -- The image set the superuser's password from POSTGRES_PASSWORD on its first start; without it the

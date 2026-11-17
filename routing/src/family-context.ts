@@ -11,6 +11,8 @@ export type Family = {
   databaseRole: string;
   blobLocation: string;
   timeZone: string;
+  /** The Family's Logto Organization; null for a Family created before registration. */
+  organizationId: string | null;
   familyKey: string;
   databasePassword: string;
 };
@@ -34,6 +36,7 @@ export function unwrappedFamily(config: Config, entry: DirectoryEntry): Family {
     databaseRole: entry.databaseRole,
     blobLocation: entry.blobLocation,
     timeZone: entry.timeZone,
+    organizationId: entry.organizationId,
     familyKey: wrapper.unwrap("family-key", entry.wrappedFamilyKey),
     databasePassword: wrapper.unwrap("database-password", entry.wrappedDatabasePassword),
   };
@@ -49,7 +52,7 @@ export function sealedContext(config: Config, family: Family): string {
     blobDirectory: blobDirectoryOf(family),
     timeZone: family.timeZone,
     publicUrl: familyUrl(config, family.familyId),
-    ...(config.identityProvider ? { identityProvider: { ...config.identityProvider, knownAdminsOnly: true as const } } : {}),
+    ...(family.organizationId === null ? {} : { organizationId: family.organizationId }),
   });
 }
 

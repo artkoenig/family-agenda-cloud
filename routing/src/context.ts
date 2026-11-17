@@ -18,15 +18,11 @@ export type ContextClaims = {
   timeZone: string;
   /** The Family's public address, without a trailing slash; its path is the path prefix. */
   publicUrl: string;
-  /** The Identity Provider the Family's Admins sign in through; none offers no single sign-on. */
-  identityProvider?: {
-    issuerUrl: string;
-    clientId: string;
-    clientSecret: string;
-    requiredGroup: string;
-    /** Only an Admin the Family already has signs in, and none is made from a sign-in. */
-    knownAdminsOnly: true;
-  };
+  /**
+   * The Logto Organization of the Family's Admins: the core records it on the first opening and
+   * refuses a Context naming another one (403 `organization-id-differs`).
+   */
+  organizationId?: string;
   /** Milliseconds since the epoch; the core refuses the Context from then on. */
   expiresAt: number;
 };

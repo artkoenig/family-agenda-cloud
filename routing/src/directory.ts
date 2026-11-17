@@ -12,6 +12,11 @@ export type DirectoryEntry = {
   databaseRole: string;
   blobLocation: string;
   timeZone: string;
+  /**
+   * The Logto Organization whose members with the role `admin` are the Family's Admins, as the
+   * core named it in `family.created`; null for a Family created before registration.
+   */
+  organizationId: string | null;
   wrappedFamilyKey: string | null;
   wrappedDatabasePassword: string | null;
   createdAt: Date;
@@ -44,6 +49,7 @@ export type DueWorkOutcome =
 export type FamilyOverview = { familyId: string; status: FamilyStatus; dueWork: DueWorkRun | null };
 
 export type NewDirectoryEntry = Omit<DirectoryEntry, "status" | "createdAt" | "deletedAt"> & {
+  organizationId: string;
   wrappedFamilyKey: string;
   wrappedDatabasePassword: string;
 };
@@ -84,6 +90,8 @@ const MIGRATIONS = [
      DROP COLUMN core_version,
      DROP COLUMN preparation_failed_for,
      DROP COLUMN preparation_error`,
+  // The Family's Logto Organization, named by the core's family.created (#90).
+  "ALTER TABLE family ADD COLUMN IF NOT EXISTS organization_id text UNIQUE",
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */
@@ -146,6 +154,7 @@ type Row = {
   database_role: string;
   blob_location: string;
   time_zone: string;
+  organization_id: string | null;
   wrapped_family_key: string | null;
   wrapped_database_password: string | null;
   created_at: Date;
@@ -206,6 +215,7 @@ function entryOf(row: Row): DirectoryEntry {
     databaseRole: row.database_role,
     blobLocation: row.blob_location,
     timeZone: row.time_zone,
+    organizationId: row.organization_id,
     wrappedFamilyKey: row.wrapped_family_key,
     wrappedDatabasePassword: row.wrapped_database_password,
     createdAt: row.created_at,
@@ -228,8 +238,8 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async add(entry) {
       await client.query(
-        `INSERT INTO family (family_id, status, database_name, database_role, blob_location, time_zone, wrapped_family_key, wrapped_database_password)
-         VALUES ($1, 'being_prepared', $2, $3, $4, $5, $6, $7)
+        `INSERT INTO family (family_id, status, database_name, database_role, blob_location, time_zone, organization_id, wrapped_family_key, wrapped_database_password)
+         VALUES ($1, 'being_prepared', $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (family_id) DO NOTHING`,
         [
           entry.familyId,
@@ -237,6 +247,7 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
           entry.databaseRole,
           entry.blobLocation,
           entry.timeZone,
+          entry.organizationId,
           entry.wrappedFamilyKey,
           entry.wrappedDatabasePassword,
         ],

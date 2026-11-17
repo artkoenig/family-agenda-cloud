@@ -8,7 +8,7 @@ import { openContext, poolOf, startStandInCore, type Context, type StandInCore }
 const triggered = () => routing.core.requests.filter(({ on }) => on === "trigger");
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
-const EMAIL = "first.admin@example.org";
+const ORG = "org_first";
 
 let routing: TestRouting;
 beforeEach(async () => {
@@ -18,8 +18,8 @@ afterEach(async () => {
   await routing.close();
 });
 
-async function createFamily(email = EMAIL, args: string[] = [], env: Record<string, string> = {}) {
-  const result = await routing.run(["create", "--admin-email", email, ...args], env);
+async function createFamily(organizationId = ORG, args: string[] = [], env: Record<string, string> = {}) {
+  const result = await routing.run(["create", "--organization-id", organizationId, ...args], env);
   expect(result, result.stderr).toMatchObject({ exitCode: 0 });
   const familyId = ADDRESS.exec(result.stdout.trim())?.[1];
   expect(familyId, result.stdout).toBeDefined();
@@ -40,7 +40,7 @@ async function connect(database: Context["database"], name = database.name) {
 /** What an Operator, a core and Postgres can see of a Family; the same after any run that ended well. */
 async function stateOf(familyId: string) {
   const [entry] = await routing.directory(
-    `SELECT status, blob_location, time_zone,
+    `SELECT status, blob_location, time_zone, organization_id,
             wrapped_family_key IS NOT NULL AS has_family_key, wrapped_database_password IS NOT NULL AS has_database_password
      FROM family WHERE family_id = $1`,
     [familyId],
@@ -64,7 +64,7 @@ async function stateOf(familyId: string) {
       )
     )[0]?.count,
     prepared: routing.core.isPrepared(familyId),
-    admins: routing.core.admins(familyId),
+    organization: routing.core.organizationOf(familyId),
     schedules: await routing.schedules(familyId),
   };
 }
@@ -74,6 +74,7 @@ const expectedState = (familyId: string) => ({
     status: "active",
     blob_location: `/var/lib/family-agenda/blobs/${familyId}`,
     time_zone: "Europe/Berlin",
+    organization_id: ORG,
     has_family_key: true,
     has_database_password: true,
   },
@@ -82,22 +83,23 @@ const expectedState = (familyId: string) => ({
   families: 1,
   familyRoles: 1,
   prepared: true,
-  admins: [EMAIL],
+  organization: ORG,
   schedules: ["due-work", "purge-messages", "sweep-secrets"],
 });
 
 describe("Creating a Family", () => {
-  it("prints the Family's address and leaves it active, with its first Admin entered by the core that opened it first", async () => {
-    const { stdout, familyId } = await createFamily(EMAIL);
+  it("prints the Family's address and leaves it active, opened by a core that recorded its Organization", async () => {
+    const { stdout, familyId } = await createFamily(ORG);
 
     expect(stdout).toBe(`https://app.family-agenda.cloud/${familyId}/\n`);
-    expect(await routing.directory("SELECT status FROM family WHERE family_id = $1", [familyId])).toEqual([{ status: "active" }]);
-    // No step of its own prepares the Family: the core does when it opens it for its first Admin.
+    expect(await routing.directory("SELECT status, organization_id FROM family WHERE family_id = $1", [familyId])).toEqual([
+      { status: "active", organization_id: ORG },
+    ]);
+    // No step of its own prepares the Family: the core does when it first opens it.
     const operations = triggered().map(({ method, path }) => `${method} ${path}`);
-    expect(operations).toEqual(["POST /operations/enter-admin"]);
-    expect(triggered()[0]?.body).toEqual({ email: EMAIL });
+    expect(operations).toEqual(["POST /operations/secret-sweep"]);
     expect(routing.core.isPrepared(familyId)).toBe(true);
-    expect(routing.core.admins(familyId)).toEqual([EMAIL]);
+    expect(routing.core.organizationOf(familyId)).toBe(ORG);
   });
 
   it("leaves the Family's own database, owned by its own role", async () => {
@@ -107,53 +109,42 @@ describe("Creating a Family", () => {
   });
 
   it("hands the core a Context naming the Family's database, key, blob location, time zone and path prefix", async () => {
-    const { familyId } = await createFamily(EMAIL, ["--time-zone", "America/New_York"], {
+    const { familyId } = await createFamily(ORG, ["--time-zone", "America/New_York"], {
       FAMILY_DATABASE_HOST: "postgres",
       FAMILY_DATABASE_PORT: "6543",
     });
 
-    const [enterAdmin, ...more] = contextsOf(familyId);
+    const [opening, ...more] = contextsOf(familyId);
     expect(more).toEqual([]);
     const name = `family_${familyId.replaceAll("-", "")}`;
-    expect(enterAdmin).toMatchObject({
+    expect(opening).toMatchObject({
       familyId,
+      organizationId: ORG,
       database: { host: "postgres", port: 6543, name, user: name },
       blobDirectory: "/var/lib/family-agenda/blobs",
       timeZone: "America/New_York",
       publicUrl: `https://app.family-agenda.cloud/${familyId}`,
     });
-    expect(enterAdmin).not.toHaveProperty("identityProvider");
-    expect(Buffer.from(enterAdmin!.familyKey, "base64url")).toHaveLength(32);
+    expect(opening).not.toHaveProperty("identityProvider");
+    expect(Buffer.from(opening!.familyKey, "base64url")).toHaveLength(32);
     const [entry] = await routing.directory("SELECT time_zone FROM family WHERE family_id = $1", [familyId]);
     expect(entry).toEqual({ time_zone: "America/New_York" });
   });
 
-  it("passes the Identity Provider's settings on in the Context, with sign-in for known Admins only", async () => {
-    const { familyId } = await createFamily(EMAIL, [], {
-      OIDC_ISSUER_URL: "https://auth.family-agenda.cloud",
-      OIDC_CLIENT_ID: "family-agenda",
-      OIDC_CLIENT_SECRET: "client-secret",
-      OIDC_REQUIRED_GROUP: "family-agenda-admins",
-    });
+  it("ignores the OIDC_* variables, which only the cores take", async () => {
+    const { familyId } = await createFamily(ORG, [], { OIDC_ISSUER_URL: "https://auth.family-agenda.cloud", OIDC_CLIENT_SECRET: "client-secret" });
 
-    expect(contextsOf(familyId)[0]).toMatchObject({
-      identityProvider: {
-        issuerUrl: "https://auth.family-agenda.cloud",
-        clientId: "family-agenda",
-        clientSecret: "client-secret",
-        requiredGroup: "family-agenda-admins",
-        knownAdminsOnly: true,
-      },
-    });
+    expect(contextsOf(familyId)[0]).not.toHaveProperty("identityProvider");
+    expect(routing.log()).not.toContain("client-secret");
   });
 
   it("gives each Family a different key, and keys that are unique", async () => {
     const first = await createFamily();
-    const second = await createFamily("second.admin@example.org");
+    const second = await createFamily("org_second");
 
     expect(first.familyId).not.toBe(second.familyId);
     expect(contextsOf(first.familyId)[0]!.familyKey).not.toBe(contextsOf(second.familyId)[0]!.familyKey);
-    expect(routing.core.admins(second.familyId)).toEqual(["second.admin@example.org"]);
+    expect(routing.core.organizationOf(second.familyId)).toBe("org_second");
   });
 });
 
@@ -164,17 +155,16 @@ describe("Creating a Family while a core refuses to open it", () => {
     other = undefined;
   });
 
-  it("has the next core of the pool enter its first Admin", async () => {
+  it("has the next core of the pool open it", async () => {
     other = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
     // The first core cannot reach the new Family's database yet.
     routing.core.refuseEveryFamily("unavailable");
 
-    const { familyId } = await createFamily(EMAIL, [], poolOf(routing.core, other));
+    const { familyId } = await createFamily(ORG, [], poolOf(routing.core, other));
 
-    expect(triggered().map(({ path }) => path)).toEqual(["/operations/enter-admin"]);
-    expect(other.requests.map(({ path }) => path)).toEqual(["/operations/enter-admin"]);
-    expect(routing.core.admins(familyId)).toEqual([]);
-    expect(other.admins(familyId)).toEqual([EMAIL]);
+    expect(triggered().map(({ path }) => path)).toEqual(["/operations/secret-sweep"]);
+    expect(other.requests.map(({ path }) => path)).toEqual(["/operations/secret-sweep"]);
+    expect(other.organizationOf(familyId)).toBe(ORG);
     expect(await routing.directory("SELECT status FROM family WHERE family_id = $1", [familyId])).toEqual([{ status: "active" }]);
   });
 
@@ -183,14 +173,14 @@ describe("Creating a Family while a core refuses to open it", () => {
     routing.core.refuseEveryFamily("unavailable");
     other.refuseEveryFamily("migrating");
 
-    const failed = await routing.run(["create", "--admin-email", EMAIL], poolOf(routing.core, other));
+    const failed = await routing.run(["create", "--organization-id", ORG], poolOf(routing.core, other));
 
     expect(failed.exitCode).toBe(1);
     const hosts = [routing.core, other].map(({ triggerUrl }) => new URL(triggerUrl).host);
-    expect(failed.stderr).toContain(`No core ran enter-admin: ${hosts[0]} 503 unavailable, ${hosts[1]} 503 migrating`);
+    expect(failed.stderr).toContain(`No core ran secret-sweep: ${hosts[0]} 503 unavailable, ${hosts[1]} 503 migrating`);
     const familyId = /"familyId":"([0-9a-f-]{36})"/.exec(failed.stderr)![1]!;
     routing.core.refuseEveryFamily(undefined);
-    await createFamily(EMAIL, ["--family-id", familyId], poolOf(routing.core, other));
+    await createFamily(ORG, ["--family-id", familyId], poolOf(routing.core, other));
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
   });
 });
@@ -220,7 +210,7 @@ describe("The Context", () => {
 describe("Each Family's database", () => {
   it("opens with that Family's credentials only", async () => {
     const first = await createFamily();
-    const second = await createFamily("second.admin@example.org");
+    const second = await createFamily("org_second");
     const own = contextsOf(first.familyId)[0]!.database;
     const others = contextsOf(second.familyId)[0]!.database;
 
@@ -251,14 +241,14 @@ describe("Running create again", () => {
    */
   async function failAndRunAgain(failure: RegExp, breakIt: () => Promise<void> | void, mendIt: () => Promise<void> | void = () => undefined) {
     await breakIt();
-    const failed = await routing.run(["create", "--admin-email", EMAIL]);
+    const failed = await routing.run(["create", "--organization-id", ORG]);
     expect(failed.exitCode, failed.stderr).toBe(1);
     expect(failed.stderr).toMatch(failure);
     expect(failed.stdout).toBe("");
     const familyId = familyIdIn(failed.stderr)!;
     expect(failed.stderr).toContain("--family-id");
     await mendIt();
-    const again = await createFamily(EMAIL, ["--family-id", familyId]);
+    const again = await createFamily(ORG, ["--family-id", familyId]);
     expect(again.familyId).toBe(familyId);
     return familyId;
   }
@@ -280,11 +270,11 @@ describe("Running create again", () => {
 
   it("after the role could not be created, with nothing left to finish, ends as an undisturbed run", async () => {
     await alterRole("NOCREATEROLE")();
-    const failed = await routing.run(["create", "--admin-email", EMAIL]);
+    const failed = await routing.run(["create", "--organization-id", ORG]);
     expect(failed.stderr).toMatch(/permission denied to create role/);
     await alterRole("CREATEROLE")();
 
-    const resumed = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyIdIn(failed.stderr)!]);
+    const resumed = await routing.run(["create", "--organization-id", ORG, "--family-id", familyIdIn(failed.stderr)!]);
     expect(resumed.exitCode).toBe(1);
     expect(resumed.stderr).toContain("run create without --family-id");
     const { familyId } = await createFamily();
@@ -293,38 +283,38 @@ describe("Running create again", () => {
   });
 
   it("with another time zone than the Family was begun with is refused", async () => {
-    routing.core.failNext("enter-admin");
-    const failed = await routing.run(["create", "--admin-email", EMAIL, "--time-zone", "Europe/Vienna"]);
+    routing.core.failNext("secret-sweep");
+    const failed = await routing.run(["create", "--organization-id", ORG, "--time-zone", "Europe/Vienna"]);
     const familyId = familyIdIn(failed.stderr)!;
 
-    const other = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyId, "--time-zone", "Europe/Berlin"]);
+    const other = await routing.run(["create", "--organization-id", ORG, "--family-id", familyId, "--time-zone", "Europe/Berlin"]);
     expect(other.exitCode).toBe(1);
     expect(other.stderr).toContain("begun with the time zone Europe/Vienna, not Europe/Berlin");
     expect(triggered()).toHaveLength(1);
 
-    await createFamily(EMAIL, ["--family-id", familyId, "--time-zone", "Europe/Vienna"]);
+    await createFamily(ORG, ["--family-id", familyId, "--time-zone", "Europe/Vienna"]);
     expect(await stateOf(familyId)).toMatchObject({ entry: { status: "active", time_zone: "Europe/Vienna" } });
   });
 
   it("without --family-id is refused while a Family is being prepared, and names it", async () => {
-    routing.core.failNext("enter-admin");
-    const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL])).stderr)!;
+    routing.core.failNext("secret-sweep");
+    const familyId = familyIdIn((await routing.run(["create", "--organization-id", ORG])).stderr)!;
     const calls = triggered().length;
 
-    const careless = await routing.run(["create", "--admin-email", EMAIL]);
+    const careless = await routing.run(["create", "--organization-id", ORG]);
 
     expect(careless.exitCode).toBe(1);
     expect(careless.stderr).toContain(`The Family ${familyId} is still being prepared; finish it first with create --family-id ${familyId}`);
     expect(triggered()).toHaveLength(calls);
     expect((await routing.directory("SELECT family_id FROM family")).map(({ family_id }) => family_id)).toEqual([familyId]);
-    await createFamily(EMAIL, ["--family-id", familyId]);
+    await createFamily(ORG, ["--family-id", familyId]);
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
   });
 
   it("with a Family id that create never began is refused, and creates nothing", async () => {
     const familyId = "0b6c3b0e-6a3a-4f7e-9d55-2f1f8d2c9a41";
 
-    const result = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyId]);
+    const result = await routing.run(["create", "--organization-id", ORG, "--family-id", familyId]);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain(`Nothing of the Family ${familyId} was created`);
@@ -349,15 +339,15 @@ describe("Running create again", () => {
   });
 
   it("after the core did not answer ends as an undisturbed run", async () => {
-    const familyId = familyIdIn((await routing.run(["create", "--admin-email", EMAIL], { CORE_URL: "http://127.0.0.1:9", CORE_TRIGGER_URL: "http://127.0.0.1:9" })).stderr)!;
-    await createFamily(EMAIL, ["--family-id", familyId]);
+    const familyId = familyIdIn((await routing.run(["create", "--organization-id", ORG], { CORE_URL: "http://127.0.0.1:9", CORE_TRIGGER_URL: "http://127.0.0.1:9" })).stderr)!;
+    await createFamily(ORG, ["--family-id", familyId]);
 
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
   });
 
-  it("after the core failed to enter the first Admin ends as an undisturbed run, with the same keys", async () => {
-    const familyId = await failAndRunAgain(/answered enter-admin with 500/, () => {
-      routing.core.failNext("enter-admin");
+  it("after the core failed to open the Family ends as an undisturbed run, with the same keys", async () => {
+    const familyId = await failAndRunAgain(/answered secret-sweep with 500/, () => {
+      routing.core.failNext("secret-sweep");
     });
 
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
@@ -373,11 +363,38 @@ describe("Running create again", () => {
     expect(await stateOf(familyId)).toEqual(expectedState(familyId));
   });
 
+  it("with another Organization than the Family was begun with is refused", async () => {
+    routing.core.failNext("secret-sweep");
+    const familyId = familyIdIn((await routing.run(["create", "--organization-id", ORG])).stderr)!;
+    const calls = triggered().length;
+
+    const other = await routing.run(["create", "--organization-id", "org_other", "--family-id", familyId]);
+
+    expect(other.exitCode).toBe(1);
+    expect(other.stderr).toContain(`The Family ${familyId} belongs to the Organization ${ORG}, not org_other`);
+    expect(triggered()).toHaveLength(calls);
+  });
+
+  it("fails, without trying another core, when the core holds another Organization for the Family", async () => {
+    // As if the Family's database had been opened for another Organization before.
+    routing.core.failNext("secret-sweep");
+    const familyId = familyIdIn((await routing.run(["create", "--organization-id", "org_other"])).stderr)!;
+    await createFamily("org_other", ["--family-id", familyId]);
+    await routing.directory("UPDATE family SET status = 'being_prepared', organization_id = $2 WHERE family_id = $1", [familyId, ORG]);
+    const calls = triggered().length;
+
+    const refused = await routing.run(["create", "--organization-id", ORG, "--family-id", familyId]);
+
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain("answered secret-sweep with 403 organization-id-differs");
+    expect(triggered()).toHaveLength(calls + 1);
+  });
+
   it("for an active Family changes nothing and prints its address", async () => {
     const { familyId } = await createFamily();
     const calls = triggered().length;
 
-    const again = await createFamily(EMAIL, ["--family-id", familyId]);
+    const again = await createFamily(ORG, ["--family-id", familyId]);
 
     expect(again.stdout).toBe(`https://app.family-agenda.cloud/${familyId}/\n`);
     expect(triggered()).toHaveLength(calls);
@@ -387,10 +404,10 @@ describe("Running create again", () => {
 
 describe("Secrets", () => {
   it("are neither in the Directory's tables nor in the log, which names the Family by its Family id", async () => {
-    routing.core.failNext("enter-admin");
-    const failed = await routing.run(["create", "--admin-email", EMAIL]);
+    routing.core.failNext("secret-sweep");
+    const failed = await routing.run(["create", "--organization-id", ORG]);
     const familyId = /"familyId":"([0-9a-f-]{36})"/.exec(failed.stderr)![1]!;
-    await createFamily(EMAIL, ["--family-id", familyId]);
+    await createFamily(ORG, ["--family-id", familyId]);
 
     const secrets = triggered().flatMap(({ sealedContext, context }) => [
       sealedContext!,
@@ -418,7 +435,7 @@ describe("Secrets", () => {
   });
 
   it.each(["OPERATOR_KEY", "CONTEXT_KEY", "DIRECTORY_DATABASE_PASSWORD"])("come from the environment only: without %s nothing is created", async (name) => {
-    const result = await routing.run(["create", "--admin-email", EMAIL], { [name]: undefined });
+    const result = await routing.run(["create", "--organization-id", ORG], { [name]: undefined });
 
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain(`${name} is not set`);
@@ -427,10 +444,10 @@ describe("Secrets", () => {
   });
 
   it("are not taken from the command line or from the Directory's address", async () => {
-    const asOption = await routing.run(["create", "--admin-email", EMAIL, "--operator-key", routing.env.OPERATOR_KEY!]);
+    const asOption = await routing.run(["create", "--organization-id", ORG, "--operator-key", routing.env.OPERATOR_KEY!]);
     const url = new URL(routing.env.DIRECTORY_DATABASE_URL!);
     url.password = routing.env.DIRECTORY_DATABASE_PASSWORD!;
-    const inUrl = await routing.run(["create", "--admin-email", EMAIL], { DIRECTORY_DATABASE_URL: url.toString() });
+    const inUrl = await routing.run(["create", "--organization-id", ORG], { DIRECTORY_DATABASE_URL: url.toString() });
 
     expect(asOption.exitCode).toBe(2);
     expect(inUrl.exitCode).toBe(2);
@@ -440,7 +457,7 @@ describe("Secrets", () => {
   });
 
   it("refuses a key that is not 32 bytes", async () => {
-    const result = await routing.run(["create", "--admin-email", EMAIL], { CONTEXT_KEY: "c2hvcnQ=" });
+    const result = await routing.run(["create", "--organization-id", ORG], { CONTEXT_KEY: "c2hvcnQ=" });
 
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain("CONTEXT_KEY must be 32 characters or more");
@@ -451,10 +468,10 @@ describe("The command line", () => {
   it.each([
     [[], "No command given"],
     [["destroy"], "Unknown command destroy"],
-    [["create"], "--admin-email"],
-    [["create", "--admin-email", "nobody"], "--admin-email"],
-    [["create", "--admin-email", EMAIL, "--time-zone", "Mars/Olympus"], "Unknown time zone"],
-    [["create", "--admin-email", EMAIL, "--family-id", "family-1"], "--family-id needs a Family id"],
+    [["create"], "--organization-id"],
+    [["create", "--organization-id", "org/1"], "--organization-id"],
+    [["create", "--organization-id", ORG, "--time-zone", "Mars/Olympus"], "Unknown time zone"],
+    [["create", "--organization-id", ORG, "--family-id", "family-1"], "--family-id needs a Family id"],
   ])("refuses %j and says how to use it", async (args, message) => {
     const result = await routing.run(args);
 
@@ -468,7 +485,7 @@ describe("The command line", () => {
     const { familyId } = await createFamily();
     await routing.directory("UPDATE family SET status = 'suspended' WHERE family_id = $1", [familyId]);
 
-    const result = await routing.run(["create", "--admin-email", EMAIL, "--family-id", familyId]);
+    const result = await routing.run(["create", "--organization-id", ORG, "--family-id", familyId]);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("The Family is suspended");

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/cli";
 import type { Router } from "../src/router";
 import { setUpRouting, type TestRouting } from "./support/routing";
-import { clientOf, poolOf, resolveStandIns, scalePool, STAND_IN_CORE_VERSION, startStandInCore, type StandInCore } from "./support/stand-in-core";
+import { CALLBACK_PATH, clientOf, poolOf, resolveStandIns, scalePool, STAND_IN_CORE_VERSION, startStandInCore, type StandInCore } from "./support/stand-in-core";
 
 const ADDRESS = /^https:\/\/app\.family-agenda\.cloud\/([0-9a-f-]{36})\/$/;
 
@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 async function createFamily(): Promise<string> {
-  const result = await routing.run(["create", "--admin-email", "first.admin@example.org"]);
+  const result = await routing.run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`]);
   expect(result, result.stderr).toMatchObject({ exitCode: 0 });
   const familyId = ADDRESS.exec(result.stdout.trim())?.[1];
   expect(familyId, result.stdout).toBeDefined();
@@ -65,8 +65,8 @@ describe("a Family's request", () => {
     expect(toFirst!.database.name).not.toBe(toSecond!.database.name);
     expect(toFirst!.database.password).not.toBe(toSecond!.database.password);
     expect(toFirst!.familyKey).not.toBe(toSecond!.familyKey);
-    // The Context the Router builds is the one Provisioning had the Family's first Admin entered with.
-    const entered = routing.core.requests.find(({ path, context }) => path === "/operations/enter-admin" && context?.familyId === first);
+    // The Context the Router builds is the one Provisioning had a core open the Family with.
+    const entered = routing.core.requests.find(({ path, context }) => path === "/operations/secret-sweep" && context?.familyId === first);
     expect({ ...toFirst, expiresAt: 0 }).toEqual({ ...entered?.context, expiresAt: 0 });
   });
 
@@ -696,6 +696,40 @@ describe("the health check", () => {
   });
 });
 
+describe("the sign-in callback and the Identity Provider's events", () => {
+  it("arrive at a core without a Context, with their query and body, and without the Directory", async () => {
+    const withoutDirectory = await routing.startRouter({ DIRECTORY_DATABASE_PASSWORD: "not-the-password" });
+    const since = routing.core.requests.length;
+
+    const callback = await fetch(`${withoutDirectory.url}${CALLBACK_PATH}?code=abc&state=xyz`, { headers: { "x-family-context": "forged" }, redirect: "manual" });
+    const event = await fetch(`${withoutDirectory.url}/idp/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "logto-signature-sha-256": "signed" },
+      body: JSON.stringify({ event: "PostRegister" }),
+    });
+
+    expect([callback.status, await callback.json()]).toEqual([200, { familyIndependent: CALLBACK_PATH }]);
+    expect([event.status, await event.json()]).toEqual([200, { familyIndependent: "/idp/events" }]);
+    const [toCallback, toEvents, ...more] = arrived(since);
+    expect(more).toEqual([]);
+    expect(toCallback).toMatchObject({ method: "GET", path: CALLBACK_PATH, search: "?code=abc&state=xyz", sealedContext: null });
+    expect(toEvents).toMatchObject({ method: "POST", path: "/idp/events", sealedContext: null });
+    expect(toEvents?.headers["logto-signature-sha-256"]).toBe("signed");
+  });
+
+  it("are the callback OIDC_CALLBACK_URL names, with GET, and the events only with POST", async () => {
+    const elsewhere = await routing.startRouter({ OIDC_CALLBACK_URL: "https://app.family-agenda.cloud/auth/back" });
+    const since = routing.core.requests.length;
+
+    expect((await fetch(`${elsewhere.url}${CALLBACK_PATH}`)).status).toBe(404);
+    expect((await fetch(`${elsewhere.url}/auth/back`, { method: "POST" })).status).toBe(404);
+    expect((await fetch(`${elsewhere.url}/idp/events`)).status).toBe(404);
+    await fetch(`${elsewhere.url}/auth/back`, { redirect: "manual" });
+
+    expect(arrived(since).map(({ method, path }) => `${method} ${path}`)).toEqual(["GET /auth/back"]);
+  });
+});
+
 describe("a path that names no active Family", () => {
   /** Status, type and body of the answer: the same whatever the reason. */
   const answerTo = async (path: string) => {
@@ -742,11 +776,11 @@ describe("a path that names no active Family", () => {
     const since = routing.core.requests.length;
     const unknown = await answerTo(`/${crypto.randomUUID()}`);
 
-    const spellings = ["/operations", "/operations/reset-admin-password", "//operations/due-work", "/OPERATIONS/enter-admin"];
-    const disguised = ["/x/../operations/enter-admin", "/./operations/purge", "/%6Fperations/sweep-secrets", "/%2e/operations/x", "/%zz/../operations/x"];
+    const spellings = ["/operations", "/operations/reset-admin-password", "//operations/due-work", "/OPERATIONS/secret-sweep"];
+    const disguised = ["/x/../operations/secret-sweep", "/./operations/purge", "/%6Fperations/sweep-secrets", "/%2e/operations/x", "/%zz/../operations/x"];
     for (const path of [...spellings, ...disguised]) {
       expect(await answerTo(`/${familyId}${path}`), path).toEqual(unknown);
-      const response = await browse(`/${familyId}${path}`, { method: "POST", body: JSON.stringify({ email: "first.admin@example.org" }) });
+      const response = await browse(`/${familyId}${path}`, { method: "POST", body: JSON.stringify({}) });
       expect(response.status, path).toBe(404);
     }
     expect(arrived(since)).toEqual([]);
@@ -762,8 +796,8 @@ describe("a path that names no active Family", () => {
   });
 
   it("gets the same 404 for a Family still being prepared", async () => {
-    routing.core.failNext("enter-admin");
-    expect((await routing.run(["create", "--admin-email", "first.admin@example.org"])).exitCode).toBe(1);
+    routing.core.failNext("secret-sweep");
+    expect((await routing.run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`])).exitCode).toBe(1);
     const [entry] = await routing.directory("SELECT family_id FROM family WHERE status = 'being_prepared'");
     const since = routing.core.requests.length;
 

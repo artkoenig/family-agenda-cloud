@@ -12,7 +12,7 @@ async function routed(method: string | undefined, target: string, ...entries: En
     lookedUp.push(id);
     return Promise.resolve(entries.find((entry) => entry.familyId === id));
   };
-  return { route: await routeRequest({ method, target }, find), lookedUp };
+  return { route: await routeRequest({ method, target }, find, "/sso/callback"), lookedUp };
 }
 
 const active: Entry = { familyId, status: "active" };
@@ -25,6 +25,9 @@ describe("routeRequest", () => {
       ["GET", "/api/health"],
       ["HEAD", "/api/health"],
       ["GET", "/api/health?probe=1"],
+      ["GET", "/sso/callback?code=c&state=s"],
+      ["HEAD", "/sso/callback"],
+      ["POST", "/idp/events"],
     ])("passes %s %s on as it is, without a Family", async (method, target) => {
       const { route, lookedUp } = await routed(method, target);
       expect(route).toEqual({ to: "core", path: target });
@@ -41,6 +44,11 @@ describe("routeRequest", () => {
       ["GET", "/static"],
       ["GET", "/x/static/app.js"],
       ["GET", "/?/static/"],
+      ["POST", "/sso/callback"],
+      ["GET", "/idp/events"],
+      ["POST", "/idp/events/x"],
+      ["POST", "/api/health"],
+      ["GET", "/sso/callbackx"],
     ])("does not take %s %s for one", async (method, target) => {
       expect((await routed(method, target)).route).toEqual(notFound);
     });
@@ -79,7 +87,7 @@ describe("routeRequest", () => {
       "//operations/run-due-work",
       "/\\operations/run-due-work",
       "/OPERATIONS/due-work",
-      "/x/../operations/enter-admin",
+      "/x/../operations/secret-sweep",
       "/./operations/purge-messages",
       "/%6Fperations/sweep-secrets",
       "/%2e/operations/x",
