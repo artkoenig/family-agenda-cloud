@@ -22,7 +22,7 @@ name: family-agenda
 # module tries another core while one of the release before still refuses a Family (docs/runbook).
 # Until the core release whose registration takes the Context's Organization (artkoenig/family-agenda#448)
 # is out, this is the build of that commit on main; then it is that release's tag and digest.
-x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-ac3208f@sha256:ff5a4b4a785ebeab5d4dc1fb1046e82d5474f3104584e04033e10ac77e6ba0fd
+x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-e43f6ac@sha256:ec3966b115714ad73539cb6ce225f2f33cd914fcdcc20541bd4ccb64e29d310f
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
 
 # Every Family's blobs lie in the Object Storage bucket, which the `blob-mount` service mounts as
