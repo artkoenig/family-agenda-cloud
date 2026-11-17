@@ -118,6 +118,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `IDP_MANAGEMENT_CLIENT_ID`, `IDP_MANAGEMENT_CLIENT_SECRET` | Logto's Machine-to-Machine application with the Management API role: the cores create the Organizations with it, `routing delete` deletes them | `pending` at first; [Setting up Logto](#setting-up-logto) |
    | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Logto's Traditional Web application "Family Agenda" the cores sign in with; redirect URI `https://app.family-agenda.cloud/sso/callback` | `pending` at first; the core's `logto-setup` prints them |
    | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events` | `pending` at first; the core's `logto-setup` prints it |
+   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the Google OAuth client of Logto's Google connector; optional, empty leaves Google off the sign-in screen | empty at first; [Google sign-in](#google-sign-in) |
 
    Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped
    again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` and
@@ -198,7 +199,19 @@ console listens on the Cube's loopback alone.
    `IDP_MANAGEMENT_ENDPOINT=http://logto:3001`). Then `scripts/deploy.sh`.
 
 The setup may run again, after a new core version for example; it creates nothing twice and prints the same values.
-It sets the sign-in screen, branding and SMTP connector back to its own on every run.
+It sets the sign-in methods, branding and SMTP connector back to its own on every run, so **deploy after every run of
+the setup** (the wizard does).
+
+The sign-in screen is Family Agenda's own ([#132](https://github.com/artkoenig/family-agenda-cloud/issues/132)):
+`scripts/deploy.sh` sets it with `routing sign-in-experience` (`routing/src/sign-in-experience.ts`) after the setup's.
+Sign-up stays the setup's: email, verified by a code, with a password; the terms and privacy policy
+(`https://family-agenda.cloud/agb`, `/datenschutz`) must be accepted, for Google and invitations too. Sign-in is by
+email and password, email and code, or passkey; a forgotten password is reset by a code. Google signs in when
+`GOOGLE_CLIENT_*` are set and links to the account of the same verified email without asking. Screens follow the
+browser's language, German otherwise. The Account Center at `https://auth.family-agenda.cloud/account` changes the
+password and passkeys and shows the email. MFA is off. To run it alone:
+`docker compose exec -T router routing sign-in-experience`; it ends with `Logto's sign-in experience is set`, and says
+whether with Google.
 
 The mails Logto sends are Family Agenda's own, German and English, not the SMTP connector's plain English texts:
 `scripts/deploy.sh` puts them into Logto with `routing mail-templates` (`routing/src/mail-templates.ts`) as email
@@ -214,6 +227,30 @@ with an address of the Operator's; the code mail arrives, and after it the new F
 callback may then show an error, since the sign-in started at Logto; `routing families` lists the Family anyway. The console shows the delivery under **Webhooks → Family Agenda**. Logto
 does not retry a webhook: a PostRegister the Router or the cores miss creates no Family. Delete the trial Family
 ([Families runbook](families.md)).
+
+### Google sign-in
+
+Once, by the Operator; until then the sign-in screen offers no Google, and the deploy says so.
+
+1. [Google Cloud console](https://console.cloud.google.com/), a project `Family Agenda`: **Google Auth Platform →
+   Branding**: app name `Family Agenda`, support and developer email the Operator's, home page
+   `https://family-agenda.cloud`, privacy policy `https://family-agenda.cloud/datenschutz`, terms
+   `https://family-agenda.cloud/agb`, authorised domain `family-agenda.cloud`. **Audience**: External. **Data access**:
+   `openid`, `…/auth/userinfo.email`, `…/auth/userinfo.profile` only, so no review beyond brand verification is needed.
+2. **Clients → Create client → Web application**, name `Logto`. The redirect URI names Logto's connector id, which
+   exists only after the first run with the client: enter `https://auth.family-agenda.cloud/callback/pending` for now.
+3. Put its client id and secret into the `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, store them in the
+   password manager, and `scripts/deploy.sh`; it must say `with Google (connector created)`.
+4. The connector id: in the Logto console (**Connectors → Social connectors → Google**), or
+   `docker compose exec -T postgres psql -U postgres -d logto -Atc "select id from connectors where connector_id = 'google-universal'"`.
+   Replace the redirect URI of step 2 with `https://auth.family-agenda.cloud/callback/<connector id>`.
+5. Check: sign in with Google at the address the wizard prints last (with `first_screen=sign_in` instead of
+   `register`), with a Google account whose email already has an account at Logto: no extra screen, the same account.
+
+Google shows the app's name and logo on its screen only after brand verification, which needs the landing page and
+privacy policy reachable without Basic Auth; until launch Google's screen names the domain instead. Rotating the
+secret: change the `.env`, deploy; the run says `connector updated`. Emptying both keys leaves the connector and its
+button as they are: remove it in the console.
 
 ### Checking the blob mount
 

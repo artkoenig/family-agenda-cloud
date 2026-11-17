@@ -164,6 +164,12 @@ Admins sign in at Logto, and reset a lost password there themselves ("Forgot pas
 password and has no command for it. When that does not help, the Operator finds the person in the Logto console and
 sets a password or sends a reset; the Family is not touched.
 
+## An invitation that no longer works
+
+An invitee who cancels the terms dialog on opening the invitation link uses up its one-time token: Logto shows
+"Invalid link" and creates no account. Nothing is wrong with the Family; an Admin of it invites the person again on
+the Admins page, and the new link works once.
+
 ## When a Family's due work last ran
 
 ```

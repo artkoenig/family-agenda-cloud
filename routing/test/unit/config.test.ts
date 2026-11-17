@@ -43,6 +43,7 @@ describe("readConfig", () => {
       familyWebhookSecret: null,
       receiverPort: 8081,
       idpManagement: null,
+      google: null,
       listenHost: "0.0.0.0",
       listenPort: 8080,
       trustProxy: false,
@@ -66,6 +67,8 @@ describe("readConfig", () => {
       IDP_MANAGEMENT_ENDPOINT: "http://logto:3001/",
       IDP_MANAGEMENT_CLIENT_ID: "m2m",
       IDP_MANAGEMENT_CLIENT_SECRET: "m2m-secret",
+      GOOGLE_CLIENT_ID: "client.apps.googleusercontent.com",
+      GOOGLE_CLIENT_SECRET: "google-secret",
     });
     expect(config).toMatchObject({
       familyDatabaseHost: "families.internal",
@@ -80,7 +83,18 @@ describe("readConfig", () => {
       familyWebhookSecret: "a webhook secret of 32 characters or more",
       receiverPort: 9000,
       idpManagement: { endpoint: "http://logto:3001", clientId: "m2m", clientSecret: "m2m-secret" },
+      google: { clientId: "client.apps.googleusercontent.com", clientSecret: "google-secret" },
     });
+  });
+
+  it("takes empty GOOGLE_CLIENT_* as not set, as Compose passes them unset", () => {
+    expect(readConfig({ ...minimal, GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" }).google).toBeNull();
+  });
+
+  it.each(["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"])("refuses a Google client without %s", (name) => {
+    const env: Record<string, string | undefined> = { ...minimal, GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "secret" };
+    env[name] = undefined;
+    expect(() => readConfig(env)).toThrow(new ConfigError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set both, or none"));
   });
 
   it("uses Postgres' default port for the Families' databases when the Directory's address names none", () => {

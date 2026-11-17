@@ -11,6 +11,7 @@ import { coreClient } from "./core";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { mailTemplates, putMailTemplates } from "./mail-templates";
+import { setSignInExperience } from "./sign-in-experience";
 import { isFamilyId } from "./family-id";
 import type { Resolve } from "./pool";
 import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
@@ -66,6 +67,11 @@ const USAGE = `Usage:
   routing mail-templates
     Puts Family Agenda's mails, German and English, into Logto as its email templates, through
     IDP_MANAGEMENT_*. Deploying runs it; it replaces the templates of the same type and language.
+  routing sign-in-experience
+    Sets Logto's sign-in screen through IDP_MANAGEMENT_*: email with password or code, passkey,
+    Google (with GOOGLE_CLIENT_ID and _SECRET, else left out), terms and privacy at sign-up,
+    German unless the browser asks otherwise, and the Account Center. Deploying runs it, since
+    the core's logto-setup resets the sign-in methods.
 
 A core prepares a Family's database when it first opens it, so a new core version needs no
 command: a request or operation that a core of an older release refuses is tried on another core.`;
@@ -84,6 +90,7 @@ const COMMANDS: Record<string, Command> = {
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
   "mail-templates": (_args, config, io) => putTemplates(config, io),
+  "sign-in-experience": (_args, config, io) => signInExperience(config, io),
 };
 
 /** The Operator's command line. Answers the exit code. */
@@ -266,4 +273,16 @@ async function withDirectory<T>(config: Config, work: (client: pg.Client) => Pro
   } finally {
     await client.end();
   }
+}
+
+/** Sets Logto's sign-in experience; needs IDP_MANAGEMENT_*, and no Directory. */
+async function signInExperience(config: Config, io: Io): Promise<number> {
+  if (config.idpManagement === null) throw new ConfigError("sign-in-experience needs IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET");
+  const { google } = await setSignInExperience(config.idpManagement, config.google);
+  io.stdout.write(
+    google === "skipped"
+      ? "Logto's sign-in experience is set, without Google: GOOGLE_CLIENT_ID and _SECRET are not set\n"
+      : `Logto's sign-in experience is set, with Google (connector ${google})\n`,
+  );
+  return 0;
 }
