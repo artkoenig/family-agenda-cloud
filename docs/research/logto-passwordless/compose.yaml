@@ -1,0 +1,52 @@
+# Throwaway Logto for issue #132. Start: docker compose -p logto-trial up -d
+# Ports: Logto 3201 (sign-in) / 127.0.0.1:3202 (console), Mailpit UI 8225, webhook receiver 8226,
+# mock OIDC provider 8227 (stands in for Google, see logto-passwordless.md).
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: logto
+      POSTGRES_PASSWORD: logto
+      POSTGRES_DB: logto
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "logto"]
+      interval: 3s
+      retries: 20
+
+  logto:
+    # Same version as the core's compose.yaml.
+    image: ghcr.io/logto-io/logto:1.46.0
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    environment:
+      DB_URL: postgres://logto:logto@postgres:5432/logto
+      ENDPOINT: http://localhost:3201
+      ADMIN_ENDPOINT: http://localhost:3202
+      SSRF_ALLOWED_ADDRESSES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    ports:
+      - "3201:3001"
+      - "127.0.0.1:3202:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "8225:8025"
+
+  receiver:
+    image: node:24-alpine
+    command: ["node", "/app/receiver.mjs"]
+    volumes:
+      - ./receiver.mjs:/app/receiver.mjs:ro
+    ports:
+      - "8226:8080"
+
+  mock-oidc:
+    # Generic OIDC provider whose login form takes arbitrary claims (email_verified, hd).
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    environment:
+      SERVER_PORT: "8080"
+      JSON_CONFIG: '{"interactiveLogin": true}'
+    ports:
+      - "8227:8080"
