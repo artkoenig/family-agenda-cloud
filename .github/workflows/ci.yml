@@ -71,7 +71,7 @@ jobs:
           --health-retries 10
     env:
       # The image cube/compose.yaml pins; the core's commit below is the one it was built from.
-      CORE_IMAGE: ghcr.io/artkoenig/family-agenda:sha-ac3208f@sha256:ff5a4b4a785ebeab5d4dc1fb1046e82d5474f3104584e04033e10ac77e6ba0fd
+      CORE_IMAGE: ghcr.io/artkoenig/family-agenda:sha-e43f6ac@sha256:ec3966b115714ad73539cb6ce225f2f33cd914fcdcc20541bd4ccb64e29d310f
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       REAL_CORE_URL: http://localhost:3002
       REAL_CORE_TRIGGER_URL: http://localhost:3001
@@ -91,7 +91,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: artkoenig/family-agenda
-          ref: ac3208f19c6dfc5ec637260d2df75c8747201b1e
+          ref: e43f6ac4c49ff66cc87c61bfb501ce14d87d9d23
           path: core
           persist-credentials: false
       - name: Start the demo Source plugin and the core

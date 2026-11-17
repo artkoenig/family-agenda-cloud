@@ -205,8 +205,13 @@ The mails Logto sends are Family Agenda's own, German and English, not the SMTP 
 templates, which the setup leaves alone. Logto picks the one of the reader's language, else English. The logo in them
 is `site/mail-logo.png`, served at `https://family-agenda.cloud/mail-logo.png`.
 
-Check: register at `https://app.family-agenda.cloud` with an address of the Operator's; the code mail arrives, and
-after it the new Family's address answers. The console shows the delivery under **Webhooks → Family Agenda**. Logto
+`scripts/logto-setup-wizard.sh` walks steps 1 to 4 and the deploy; it reads the secrets hidden and writes them
+straight into the Cube's `.env`.
+
+Check: until the landing page links to it ([#130](https://github.com/artkoenig/family-agenda-cloud/issues/130)),
+register at the address the wizard prints last (`https://auth.family-agenda.cloud/oidc/auth?client_id=<OIDC_CLIENT_ID>&…&first_screen=register`)
+with an address of the Operator's; the code mail arrives, and after it the new Family's address answers. The
+callback may then show an error, since the sign-in started at Logto; `routing families` lists the Family anyway. The console shows the delivery under **Webhooks → Family Agenda**. Logto
 does not retry a webhook: a PostRegister the Router or the cores miss creates no Family. Delete the trial Family
 ([Families runbook](families.md)).
 
