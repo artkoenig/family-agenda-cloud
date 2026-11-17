@@ -85,7 +85,9 @@ Generate a new token in the DCD (Management → Token Manager) and save it witho
 pbpaste | tr -d '[:space:]' > ~/.config/ionos/ai-model-hub.token && chmod 600 ~/.config/ionos/ai-model-hub.token
 ```
 
-Set a calendar reminder two weeks before it expires.
+Set a calendar reminder two weeks before it expires. It is the cores' `LLM_API_KEY` in the `.env`
+([step 7](#7-host-and-first-deploy)); a new token is that value changed and `scripts/deploy.sh`. An expired one fails
+every Family's Extraction as `unauthorized`.
 
 Check:
 
@@ -119,6 +121,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Logto's Traditional Web application "Family Agenda" the cores sign in with; redirect URI `https://app.family-agenda.cloud/sso/callback` | `pending` at first; the core's `logto-setup` prints them |
    | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events` | `pending` at first; the core's `logto-setup` prints it |
    | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the Google OAuth client of Logto's Google connector; optional, empty leaves Google off the sign-in screen | empty at first; [Google sign-in](#google-sign-in) |
+   | `LLM_API_KEY` | the AI Model Hub token every core extracts with | [step 6](#6-ai-model-hub-token) |
+   | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
 
    Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped
    again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` and
