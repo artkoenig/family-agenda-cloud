@@ -46,6 +46,8 @@ A records, TTL 1 hour, all pointing to the reserved IPv4:
 | `app` | A | `<IP>` |
 | `auth` | A | `<IP>` |
 
+`app` is every Family's address, `auth` Logto's sign-in and registration.
+
 Remove the default A/AAAA records of the IONOS parking page on the apex and on `www`. No wildcard. No AAAA records:
 the Cube has IPv4 only. Do not activate the IONOS SSL certificate; Caddy gets its own from Let's Encrypt. Leave the
 mail records IONOS created (MX, SPF, DKIM) untouched.
@@ -112,20 +114,23 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `BLOB_BUCKET_ACCESS_KEY`, `BLOB_BUCKET_SECRET_KEY` | the Object Storage key the bucket is mounted with | [step 4](#4-object-storage-contract-owned-buckets) |
    | `FAMILY_WEBHOOK_SECRET` | signs the cores' `family.created` to the receiver | `openssl rand -base64 32` |
    | `REGISTRATION_DATABASE_PASSWORD` | the cores' role on Postgres for the shared registration database | `openssl rand -hex 32` (it goes into a URL) |
-   | `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Logto's Traditional Web application the cores sign in with; redirect URI `https://app.family-agenda.cloud/sso/callback` | the Logto console |
-   | `IDP_MANAGEMENT_ENDPOINT`, `IDP_MANAGEMENT_CLIENT_ID`, `IDP_MANAGEMENT_CLIENT_SECRET` | Logto's Machine-to-Machine application with the Management API role, which creates the Organizations | the Logto console |
-   | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `https://app.family-agenda.cloud/idp/events` | the Logto console, after creating the webhook |
+   | `LOGTO_DATABASE_PASSWORD` | Logto's role on Postgres, which owns Logto's database | `openssl rand -hex 32` (it goes into a URL) |
+   | `IDP_MANAGEMENT_CLIENT_ID`, `IDP_MANAGEMENT_CLIENT_SECRET` | Logto's Machine-to-Machine application with the Management API role: the cores create the Organizations with it, `routing delete` deletes them | `pending` at first; [Setting up Logto](#setting-up-logto) |
+   | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Logto's Traditional Web application "Family Agenda" the cores sign in with; redirect URI `https://app.family-agenda.cloud/sso/callback` | `pending` at first; the core's `logto-setup` prints them |
+   | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events` | `pending` at first; the core's `logto-setup` prints it |
 
    Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped
    again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` and
-   `REGISTRATION_DATABASE_PASSWORD` are set on Postgres at every deploy, so changing one in the `.env` and deploying changes it.
+   `REGISTRATION_DATABASE_PASSWORD` are set on Postgres at every deploy, so changing one in the `.env` and deploying changes it;
+   so is `LOGTO_DATABASE_PASSWORD`. The cores ask Logto nothing before the first sign-in, so the first deploy comes
+   up with the Logto keys at `pending`.
 3. `scripts/deploy.sh`: copies `cube/`, `routing/` and `site/` to the Cube, pulls the images, builds the Routing
    module's, brings the services up and reloads Caddy. This is also the way to redeploy, and to bring a
    [new core version](#8-a-new-core-version) to the Families. What must be up before what, which
    Compose sees to:
    1. `postgres`, then `directory-database`, which makes the Routing module's role and the Directory's database,
-      and the cores' role and registration database, and ends. `router`, `scheduler` and `receiver` start after it
-      has ended.
+      the cores' role and registration database, and Logto's role and database, and ends. `router`, `scheduler`,
+      `receiver` and `logto` start after it has ended. `logto` seeds its database on its first start.
    2. `blob-mount`, which mounts the blob bucket at `/var/lib/family-agenda-blobs/bucket` on the Cube
       ([ADR-0002](../adr/0002-the-blob-bucket-is-mounted-with-rclone-as-a-compose-service.md)). It is healthy once
       the bucket is mounted and its folder `families`, the blob root, is there. With a wrong bucket name or key it
@@ -142,13 +147,14 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    that deploy delete every Family, the smoke check's included ([Families runbook](families.md)), and create them
    again after it; then `docker volume rm family-agenda_blobs`.
 4. [Check the blob mount](#checking-the-blob-mount), after the first deploy and after every change to `blob-mount`.
-5. Once: create the Family the smoke check opens and store its id in the password
+5. Once, after the first deploy: [set up Logto](#setting-up-logto).
+6. Once: create the Family the smoke check opens and store its id in the password
    manager:
    `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --organization-id <id>'`,
    with the id of a Logto Organization made for it in the Logto console.
-6. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
+7. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
    Basic Auth. It fails when that Family's address does not answer or an unknown Family id does not get 404.
-7. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke
+8. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke
    check again, which must pass; then `docker start family-agenda-core-1`.
 
 The plugins and their Egress Proxies share a network with the cores and can reach the cores' ports 3002 (requests
@@ -156,6 +162,48 @@ with a Context) and 3001 (the Routing module's triggered operations); only the C
 they do not hold, protect them.
 
 The scripts reach the Cube as `root@family-agenda.cloud`; `CUBE_HOST` overrides it.
+
+### Setting up Logto
+
+Logto ([ADR-0009 of the core](https://github.com/artkoenig/family-agenda/blob/main/docs/adr/0009-admins-exist-only-in-the-identity-provider.md))
+holds every Family's Admins; each Family is a Logto Organization. Its database is `logto` on the same Postgres as
+the Directory, and is in the Operator's backups with it. The pages are at `https://auth.family-agenda.cloud`; the admin
+console listens on the Cube's loopback alone.
+
+1. `ssh -L 3002:localhost:3002 root@family-agenda.cloud`, open `http://localhost:3002`, create the console's
+   administrator and store it in the password manager.
+2. **Applications → Create → Machine-to-machine**, name `Family Agenda management`, role **Logto Management API access**. Put
+   its App ID and App secret into the `.env` as `IDP_MANAGEMENT_CLIENT_ID` and `IDP_MANAGEMENT_CLIENT_SECRET`.
+   Logto offers no way to create this application without the console.
+3. On the Cube, the core's setup, with the mailbox of [step 5](#5-mailbox) for the codes that verify an email
+   address:
+
+   ```bash
+   cd /opt/family-agenda && read -rs SMTP_PASSWORD && export SMTP_PASSWORD \
+     LOGTO_M2M_APP_ID=$(sed -n 's/^IDP_MANAGEMENT_CLIENT_ID=//p' .env) \
+     LOGTO_M2M_APP_SECRET=$(sed -n 's/^IDP_MANAGEMENT_CLIENT_SECRET=//p' .env) \
+     && docker compose run --rm --no-deps -e LOGTO_M2M_APP_ID -e LOGTO_M2M_APP_SECRET \
+       -e LOGTO_ENDPOINT=https://auth.family-agenda.cloud -e IDP_EVENTS_URL=http://router:8080/idp/events \
+       -e SMTP_HOST=smtp.ionos.de -e SMTP_PORT=465 -e SMTP_USER=no-reply@family-agenda.cloud -e SMTP_PASSWORD \
+       -e SMTP_FROM=no-reply@family-agenda.cloud core logto-setup
+   ```
+
+   The `core` service brings the rest: `CONTEXT_MODE=supplied`, the callback `OIDC_CALLBACK_URL`, and
+   `IDP_MANAGEMENT_*`. It creates the Traditional Web application "Family Agenda" with that redirect URI, the
+   PostRegister webhook to the Router (`/idp/events`, passed on to a core), the Organization role `admin`, the SMTP
+   connector, and opens registration: email and password, the email verified by a code before the account exists.
+   It must say `Registration open`.
+4. Put the printed `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `IDP_WEBHOOK_SECRET` into the `.env`; the other printed
+   values are in `cube/compose.yaml` already and must match it (`OIDC_ISSUER_URL=https://auth.family-agenda.cloud/oidc`,
+   `IDP_MANAGEMENT_ENDPOINT=http://logto:3001`). Then `scripts/deploy.sh`.
+
+The setup may run again, after a new core version for example; it creates nothing twice and prints the same values.
+It sets the sign-in screen, branding and SMTP connector back to its own on every run.
+
+Check: register at `https://app.family-agenda.cloud` with an address of the Operator's; the code mail arrives, and
+after it the new Family's address answers. The console shows the delivery under **Webhooks → Family Agenda**. Logto
+does not retry a webhook: a PostRegister the Router or the cores miss creates no Family. Delete the trial Family
+([Families runbook](families.md)).
 
 ### Checking the blob mount
 

@@ -42,6 +42,7 @@ describe("readConfig", () => {
       callbackPath: "/sso/callback",
       familyWebhookSecret: null,
       receiverPort: 8081,
+      idpManagement: null,
       listenHost: "0.0.0.0",
       listenPort: 8080,
       trustProxy: false,
@@ -62,6 +63,9 @@ describe("readConfig", () => {
       OIDC_CALLBACK_URL: "https://app.family-agenda.cloud/auth/callback",
       FAMILY_WEBHOOK_SECRET: "a webhook secret of 32 characters or more",
       RECEIVER_PORT: "9000",
+      IDP_MANAGEMENT_ENDPOINT: "http://logto:3001/",
+      IDP_MANAGEMENT_CLIENT_ID: "m2m",
+      IDP_MANAGEMENT_CLIENT_SECRET: "m2m-secret",
     });
     expect(config).toMatchObject({
       familyDatabaseHost: "families.internal",
@@ -75,6 +79,7 @@ describe("readConfig", () => {
       callbackPath: "/auth/callback",
       familyWebhookSecret: "a webhook secret of 32 characters or more",
       receiverPort: 9000,
+      idpManagement: { endpoint: "http://logto:3001", clientId: "m2m", clientSecret: "m2m-secret" },
     });
   });
 
@@ -175,6 +180,25 @@ describe("readConfig", () => {
   it("refuses a FAMILY_WEBHOOK_SECRET shorter than 32 characters, as the core does", () => {
     expect(() => readConfig({ ...minimal, FAMILY_WEBHOOK_SECRET: "x".repeat(31) })).toThrow(
       new ConfigError("FAMILY_WEBHOOK_SECRET must be 32 characters or more (openssl rand -base64 32)"),
+    );
+  });
+
+  it.each(["IDP_MANAGEMENT_ENDPOINT", "IDP_MANAGEMENT_CLIENT_ID", "IDP_MANAGEMENT_CLIENT_SECRET"])("refuses IDP_MANAGEMENT_* without %s", (name) => {
+    const env: Record<string, string | undefined> = {
+      ...minimal,
+      IDP_MANAGEMENT_ENDPOINT: "http://logto:3001",
+      IDP_MANAGEMENT_CLIENT_ID: "m2m",
+      IDP_MANAGEMENT_CLIENT_SECRET: "m2m-secret",
+    };
+    env[name] = undefined;
+    expect(() => readConfig(env)).toThrow(
+      new ConfigError("IDP_MANAGEMENT_ENDPOINT, IDP_MANAGEMENT_CLIENT_ID, IDP_MANAGEMENT_CLIENT_SECRET must be set all three, or none"),
+    );
+  });
+
+  it.each(["logto:3001", "ftp://logto", "http://"])("refuses IDP_MANAGEMENT_ENDPOINT %j", (endpoint) => {
+    expect(() => readConfig({ ...minimal, IDP_MANAGEMENT_ENDPOINT: endpoint, IDP_MANAGEMENT_CLIENT_ID: "m2m", IDP_MANAGEMENT_CLIENT_SECRET: "s" })).toThrow(
+      new ConfigError("IDP_MANAGEMENT_ENDPOINT must be an http or https address, Logto's"),
     );
   });
 

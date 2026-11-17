@@ -26,8 +26,8 @@ afterEach(async () => {
 const run = (args: string[], env: Record<string, string | undefined> = {}) => routing.run(args, { BLOB_ROOT: blobRoot, ...env });
 
 /** Creates a Family and puts blobs into its blob location, as its core would. */
-async function createFamily() {
-  const created = await run(["create", "--organization-id", `org_${crypto.randomUUID().slice(0, 8)}`]);
+async function createFamily(organizationId = `org_${crypto.randomUUID().slice(0, 8)}`) {
+  const created = await run(["create", "--organization-id", organizationId]);
   expect(created, created.stderr).toMatchObject({ exitCode: 0 });
   const familyId = ADDRESS.exec(created.stdout.trim())![1]!;
   await mkdir(join(blobRoot, familyId, "attachments"), { recursive: true });
@@ -121,6 +121,39 @@ describe("Deleting a Family", () => {
     const result = await deleteFamily(familyId);
 
     expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: `The Family ${familyId} is deleted\n` });
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+  });
+
+  it("deletes its Logto Organization, and no other", async () => {
+    const familyId = await createFamily("org_todelete");
+    await createFamily("org_tokeep");
+
+    const result = await deleteFamily(familyId);
+
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(routing.logto.deleted).toEqual(["org_todelete"]);
+    expect(result.stderr).toContain(`"message":"The Family's Organization is deleted","familyId":"${familyId}","organizationId":"org_todelete"`);
+  });
+
+  it("takes an Organization that is gone already at Logto as deleted", async () => {
+    const familyId = await createFamily("org_gone");
+    routing.logto.deleted.push("org_gone");
+
+    const result = await deleteFamily(familyId);
+
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+  });
+
+  it("of a Family without an Organization, made before registration, calls no Logto", async () => {
+    const familyId = await createFamily();
+    await routing.directory("UPDATE family SET organization_id = NULL WHERE family_id = $1", [familyId]);
+    const noManagement = { IDP_MANAGEMENT_ENDPOINT: undefined, IDP_MANAGEMENT_CLIENT_ID: undefined, IDP_MANAGEMENT_CLIENT_SECRET: undefined };
+
+    const result = await deleteFamily(familyId, familyId, noManagement);
+
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(routing.logto.deleted).toEqual([]);
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
   });
 
@@ -240,6 +273,14 @@ describe("Deleting a Family is refused, and changes nothing,", () => {
     expect(await routing.server("SELECT 1 FROM pg_database WHERE datname = 'postgres'")).toHaveLength(1);
   });
 
+  it("for a Family with an Organization, without IDP_MANAGEMENT_*", async () => {
+    const familyId = await createFamily();
+    const noManagement = { IDP_MANAGEMENT_ENDPOINT: undefined, IDP_MANAGEMENT_CLIENT_ID: undefined, IDP_MANAGEMENT_CLIENT_SECRET: undefined };
+
+    await expectUnchanged(familyId, () => deleteFamily(familyId, familyId, noManagement), "IDP_MANAGEMENT_* is not set");
+    expect(routing.logto.deleted).toEqual([]);
+  });
+
   it("for text that is not a Family id, which it does not log", async () => {
     const result = await run(["delete", "--family-id", "family-1", "--confirm", "family-1"]);
 
@@ -346,6 +387,34 @@ describe("Running delete again", () => {
       /The blob root .* is not there/,
       async () => rename(blobRoot, away),
       async () => rename(away, blobRoot),
+    );
+
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+  });
+
+  it("after Logto failed to delete the Organization ends as an undisturbed run", async () => {
+    const familyId = await failAndRunAgain(
+      /answered deleting the Organization with 503/,
+      () => {
+        routing.logto.failWith(503);
+        return Promise.resolve();
+      },
+      () => {
+        routing.logto.failWith(null);
+        return Promise.resolve();
+      },
+    );
+
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+    expect(routing.logto.deleted).toHaveLength(1);
+  });
+
+  it("after Logto refused the management client ends as an undisturbed run", async () => {
+    const familyId = await failAndRunAgain(
+      /Logto refused the management client's credentials with 401/,
+      () => Promise.resolve(),
+      () => Promise.resolve(),
+      { IDP_MANAGEMENT_CLIENT_SECRET: "a wrong secret" },
     );
 
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));

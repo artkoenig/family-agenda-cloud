@@ -22,3 +22,14 @@ app.family-agenda.cloud {
 
 	reverse_proxy router:8080
 }
+
+# Logto's sign-in and registration pages, its OIDC endpoints and its Management API, for every
+# Family. The admin console is not here: it listens on the Cube's loopback alone.
+auth.family-agenda.cloud {
+	encode zstd gzip
+
+	# Until launch.
+	header X-Robots-Tag "noindex, nofollow"
+
+	reverse_proxy logto:3001
+}

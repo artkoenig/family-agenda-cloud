@@ -1,3 +1,5 @@
+import type { IdpManagement } from "./organizations";
+
 /**
  * The Routing module's settings, from the environment only. The Operator key, the Context key and
  * the Directory's database password are secrets: they live in the `.env` on the Cube and are read
@@ -43,6 +45,11 @@ export type Config = {
   familyWebhookSecret: string | null;
   /** Where the receiver listens for the cores' `family.created`. */
   receiverPort: number;
+  /**
+   * Logto's Management API, as the cores reach it (their IDP_MANAGEMENT_*): deleting a Family
+   * deletes its Organization there. Only `delete` needs it.
+   */
+  idpManagement: IdpManagement | null;
   /** Where the Router listens for the browsers' requests. */
   listenHost: string;
   listenPort: number;
@@ -79,6 +86,7 @@ export function readConfig(env: Env): Config {
     callbackPath: callbackPath(env),
     familyWebhookSecret: env.FAMILY_WEBHOOK_SECRET ? secret(env, "FAMILY_WEBHOOK_SECRET") : null,
     receiverPort: port(env, "RECEIVER_PORT", "8081"),
+    idpManagement: idpManagement(env),
     ...listenSettings(env),
   };
 }
@@ -102,6 +110,18 @@ function closeTimeoutMs(env: Env): number {
     throw new ConfigError("FAMILY_DATABASE_CLOSE_TIMEOUT_SECONDS must be a whole number of seconds, 1 to 9999");
   }
   return Number(seconds) * 1000;
+}
+
+const IDP_MANAGEMENT = ["IDP_MANAGEMENT_ENDPOINT", "IDP_MANAGEMENT_CLIENT_ID", "IDP_MANAGEMENT_CLIENT_SECRET"] as const;
+
+/** IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET: all three, or none. */
+function idpManagement(env: Env): IdpManagement | null {
+  const given = IDP_MANAGEMENT.filter((name) => env[name]);
+  if (given.length === 0) return null;
+  if (given.length < IDP_MANAGEMENT.length) throw new ConfigError(`${IDP_MANAGEMENT.join(", ")} must be set all three, or none`);
+  const endpoint = withoutTrailingSlash(required(env, "IDP_MANAGEMENT_ENDPOINT"));
+  if (!/^https?:\/\//.test(endpoint) || !URL.canParse(endpoint)) throw new ConfigError("IDP_MANAGEMENT_ENDPOINT must be an http or https address, Logto's");
+  return { endpoint, clientId: required(env, "IDP_MANAGEMENT_CLIENT_ID"), clientSecret: required(env, "IDP_MANAGEMENT_CLIENT_SECRET") };
 }
 
 /** Where and how the Router listens. */

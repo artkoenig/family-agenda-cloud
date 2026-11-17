@@ -16,7 +16,15 @@ ALTER ROLE registration LOGIN NOCREATEDB NOCREATEROLE NOSUPERUSER PASSWORD :'reg
 
 SELECT 'CREATE DATABASE registration OWNER registration' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'registration') \gexec
 
--- A Family's role connects to its own database only.
+-- Logto's role: it owns Logto's database, and creates the roles Logto's tables are guarded with
+-- (logto_tenant_*), over which alone it has a say. `db seed` refuses to run without CREATEROLE.
+SELECT 'CREATE ROLE logto' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'logto') \gexec
+ALTER ROLE logto LOGIN NOCREATEDB CREATEROLE NOSUPERUSER PASSWORD :'logto_password';
+
+SELECT 'CREATE DATABASE logto OWNER logto' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'logto') \gexec
+
+-- A Family's role connects to its own database only. Logto's database keeps PUBLIC's CONNECT: the
+-- logto_tenant_* roles `db seed` creates connect with it; its tables grant PUBLIC nothing.
 REVOKE ALL ON DATABASE directory FROM PUBLIC;
 REVOKE ALL ON DATABASE registration FROM PUBLIC;
 REVOKE ALL ON DATABASE postgres FROM PUBLIC;
