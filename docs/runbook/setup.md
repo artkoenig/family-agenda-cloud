@@ -200,6 +200,11 @@ console listens on the Cube's loopback alone.
 The setup may run again, after a new core version for example; it creates nothing twice and prints the same values.
 It sets the sign-in screen, branding and SMTP connector back to its own on every run.
 
+The mails Logto sends are Family Agenda's own, German and English, not the SMTP connector's plain English texts:
+`scripts/deploy.sh` puts them into Logto with `routing mail-templates` (`routing/src/mail-templates.ts`) as email
+templates, which the setup leaves alone. Logto picks the one of the reader's language, else English. The logo in them
+is `site/mail-logo.png`, served at `https://family-agenda.cloud/mail-logo.png`.
+
 `scripts/logto-setup-wizard.sh` walks steps 1 to 4 and the deploy; it reads the secrets hidden and writes them
 straight into the Cube's `.env`.
 

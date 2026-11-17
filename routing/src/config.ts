@@ -1,4 +1,4 @@
-import type { IdpManagement } from "./organizations";
+import type { IdpManagement } from "./logto-management";
 
 /**
  * The Routing module's settings, from the environment only. The Operator key, the Context key and
