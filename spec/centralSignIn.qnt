@@ -3,14 +3,17 @@
  * How the Routing module finds a person's Family after central sign-in (#128, map #125).
  *
  * WHAT IT MODELS
- * - Logto: accounts and Organizations (customData.familyId, members with the role admin);
- *   Organization ids are never reused (`issued`).
+ * - Logto: accounts, Organizations (customData.familyId, members with the role admin) and
+ *   pending invitations; Organization ids are never reused (`issued`).
  * - Registration: Logto's sign-up sends PostRegister once (may be lost, Logto does not retry);
  *   the core creates the Organization and posts family.created, retried until taken (never lost);
  *   the Receiver writes the Directory entry (BeingPrepared), Provisioning makes it Active.
  * - Life of a Family: Admins invited in two steps (the core sends, the invitee accepts; accepting
- *   may create the account), added past the core in Logto's console, and removed (the last one too), suspend / resume, delete in two steps (entry marked Deleted, then the
- *   Organization deleted), as routing/src/delete-family.ts does.
+ *   may create the account) and removed on the Admins page, never the last one; suspend / resume;
+ *   delete in two steps (entry marked Deleted, then the Organization deleted) by the Operator or
+ *   when an Admin ends the subscription; then, on a DSGVO request, the person's account deleted.
+ * - Logto's console: no one edits people there by hand (CONSOLE_EDITS = false in the proposal;
+ *   consoleAddMember models what happens if someone did).
  * - Central sign-in in two steps: Logto issues the ID token (its `organizations` claim frozen),
  *   then the Routing module lands the person (`landingOf`).
  * - The open choice of #128 as a variant `MAPPING`: Organization id -> Family id from the
@@ -19,33 +22,28 @@
  * PROPOSED FLOW (instance centralSignIn_proposed; stories in centralSignIn_test.qnt)
  * - Look the Family up in the Directory (MAPPING = FromDirectory).
  * - Pages: InFamily -> redirect; Preparing / UnknownOrganization -> "wird vorbereitet", which asks
- *   again with the same claim (retry); SeveralFamilies -> chooser (choose); Unavailable -> notice;
- *   NoFamily -> "Reparieren" (repair: the core runs PostRegister once more, the person is signed
- *   out and signs in again for a fresh claim).
- * - Core change (CORE_SKIPS_MEMBERS): PostRegister for someone already in an Organization
- *   creates nothing. Without it, a repair while the first PostRegister is only slow, or an
- *   invitation while one is in flight, gives the person a second Family of their own.
+ *   again with the same claim (retry); Unavailable -> notice; NoFamily -> "Reparieren" (repair: the
+ *   core runs PostRegister once more, the person is signed out and signs in again for a fresh
+ *   claim). SeveralFamilies is unreachable here; a plain error page is enough for it.
+ * - Core change (CORE_SKIPS_MEMBERS): PostRegister for someone already in an Organization, or
+ *   whose account is deleted, creates nothing. Without it, a repair while the first PostRegister
+ *   is only slow, or an invitation while one is in flight, gives the person a second Family, and
+ *   a DSGVO deletion before PostRegister arrives leaves a Family for an account that is gone.
  * - Core change (INVITE_CHECK = AtSendAndAccept): someone who already is an Admin of a Family is
  *   not invited into another, neither when the invitation is sent nor when it is accepted.
  *   Checking at sending only (AtSend) is not enough: invited, then registered, then accepted.
- *   Logto's console stays past every check; SeveralFamilies -> chooser is its fallback.
- *   Assumes the core's two checks and its PostRegister run one at a time per person.
+ *   Assumes the core's checks and its PostRegister run one at a time per person.
  *
  * PROPERTIES (10000 sampled runs of 30 steps, seed 42; 2 people, 2 Organization ids, 2 Family ids)
- *   holds in every variant:   landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto,
- *                             orgIdsUnique
- *   holds FromDirectory only: unknownMeansInFlight - an unknown Organization is always one whose
- *                             family.created is in flight, so it can be shown as Preparing.
- *                             FromLogto breaks it: markDeleted -> issueToken -> deleteOrganization
- *                             -> land finds no Organization, and cannot tell deleted from new.
- *   holds with CORE_SKIPS_MEMBERS only: registrationMakesOneFamily.
- *   holds with INVITE_CHECK = AtSendAndAccept only: oneFamilyUnlessConsole.
- *   violated everywhere, on purpose (findings, not bugs of the model):
- *     landsOnlyWhereAdmin  - issueToken -> removeAdmin -> land: a claim gone stale between the
- *                            token and the callback sends a removed Admin into the Family; the
- *                            core's own OIDC check is what refuses them.
- *     oneFamilyPerPerson   - with the core changes, only through Logto's console.
- *   every action, page and Landing is witnessed (> 0 traces).
+ *   no counterexample in the proposal: oneFamilyPerPerson, registrationMakesOneFamily,
+ *     landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto, orgIdsUnique,
+ *     unknownMeansInFlight, everyOrganizationHasAdmin, adminsHaveAccounts;
+ *     never reached: SeveralFamilies, the chooser, an Active Family without Admins.
+ *   FromLogto breaks unknownMeansInFlight: markDeleted -> issueToken -> deleteOrganization -> land
+ *     finds no Organization, and cannot tell deleted from new.
+ *   violated everywhere, on purpose: landsOnlyWhereAdmin - issueToken -> removeAdmin -> land: a
+ *     claim gone stale between the token and the callback; the core's own OIDC check refuses them.
+ *   every action, page and Landing the proposal can reach is witnessed (> 0 traces).
  *
  * WHAT IT DOES NOT COVER
  * - The core's own sign-in, its 12-hour session and sign-out (#129); the 403 the core answers.
@@ -135,6 +133,7 @@ module centralSignInTypes {
     | DidSendInvitation
     | DidAcceptInvitation
     | DidConsoleAddMember
+    | DidDeleteAccount
     | DidRemoveAdmin
     | DidSuspend
     | DidResume
@@ -165,10 +164,15 @@ module centralSignIn {
   const ORG_IDS:    Set[OrgId]     // pool Logto draws Organization ids from
   const FAMILY_IDS: Set[FamilyId]  // pool the core draws Family ids from
   const MAPPING:    Mapping
-  /** Proposed core change: PostRegister for someone already in an Organization creates nothing. */
+  /** Proposed core change: PostRegister for a member, or for a deleted account, creates nothing. */
   const CORE_SKIPS_MEMBERS: bool
   /** Proposed core change: no invitation for someone who already is an Admin of a Family. */
   const INVITE_CHECK: InviteCheck
+  /**
+   * Whether people are edited by hand in Logto's console (members added, users created or
+   * deleted). The Operator says: never (2026-11-18). Only consoleAddMember models it.
+   */
+  const CONSOLE_EDITS: bool
 
   // ---------------------------------------------------------------- state
   var logto:         Logto
@@ -241,11 +245,15 @@ module centralSignIn {
     { ...l, orgs: l.orgs.put(o, { familyId: f, admins: Set(p), registeredBy: p }),
             issued: l.issued.union(Set(o)) }
 
+  /** With the proposed core: PostRegister creates nothing for a member, or for a deleted account. */
+  pure def skipsPostRegister(l: Logto, p: Person): bool =
+    claimOf(l, p) != Set() or not(l.accounts.contains(p))
+
   /** Whether the core may create a Family `f` with Organization `o` for `p`'s PostRegister. */
   pure def canCreateFamily(skipsMembers: bool, l: Logto, d: FamilyId -> DirectoryEntry,
                            pending: Person -> int, p: Person, o: OrgId, f: FamilyId): bool = and {
     pending.get(p) > 0,
-    not(skipsMembers and claimOf(l, p) != Set()),
+    not(skipsMembers and skipsPostRegister(l, p)),
     not(l.issued.contains(o)),
     not(familyIdsInUse(l).contains(f)),
     d.get(f).status == Absent,
@@ -343,11 +351,11 @@ module centralSignIn {
     lastEvent' = Created({ person: p, wasMember: claimOf(logto, p) != Set() }),
   }
 
-  /** With CORE_SKIPS_MEMBERS: the core takes PostRegister for a member and creates nothing. */
+  /** With CORE_SKIPS_MEMBERS: PostRegister for a member, or a deleted account, creates nothing. */
   action coreSkipsPostRegister(p: Person): bool = all {
     CORE_SKIPS_MEMBERS,
     postRegister.get(p) > 0,
-    claimOf(logto, p) != Set(),
+    skipsPostRegister(logto, p),
     postRegister' = postRegister.setBy(p, n => n - 1),
     logto' = logto, familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
     lostPostRegister' = lostPostRegister,
@@ -393,6 +401,7 @@ module centralSignIn {
 
   /** A member added in Logto's console: no check of the core is in the way. */
   action consoleAddMember(o: OrgId, p: Person): bool = all {
+    CONSOLE_EDITS,
     logto.orgs.keys().contains(o),
     not(logto.orgs.get(o).admins.contains(p)),
     logto' = withConsoleMember(logto, o, p),
@@ -401,10 +410,11 @@ module centralSignIn {
     lastEvent' = OtherStep(DidConsoleAddMember),
   }
 
-  /** An Admin is removed, on the Admins page or in Logto's console; the last one too. */
+  /** An Admin is removed on the core's Admins page; never the last one. */
   action removeAdmin(o: OrgId, p: Person): bool = all {
     logto.orgs.keys().contains(o),
     logto.orgs.get(o).admins.contains(p),
+    logto.orgs.get(o).admins.size() > 1,
     logto' = withoutAdmin(logto, o, p),
     postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
@@ -427,7 +437,21 @@ module centralSignIn {
     lastEvent' = OtherStep(DidResume),
   }
 
-  /** Deleting, first step: the entry is marked deleted (database, blobs follow, not modelled). */
+  /**
+   * DSGVO: after the subscription has ended and the Family is deleted, the person's Logto account
+   * is deleted on request (through the Management API, not by hand). Their session ends.
+   */
+  action deleteAccount(p: Person): bool = all {
+    logto.accounts.contains(p),
+    claimOf(logto, p) == Set(),
+    logto' = { ...logto, accounts: logto.accounts.exclude(Set(p)) },
+    signIns' = signIns.set(p, SignedOut),
+    postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
+    lostPostRegister' = lostPostRegister,
+    lastEvent' = OtherStep(DidDeleteAccount),
+  }
+
+  /** Deleting, first step (the Operator, or an Admin ending the subscription): the entry is marked deleted (database, blobs follow, not modelled). */
   action markDeleted(f: FamilyId): bool = all {
     Set(Active, Suspended).contains(directory.get(f).status),
     directory' = withStatus(directory, f, Deleted),
@@ -519,7 +543,7 @@ module centralSignIn {
     nondet f = FAMILY_IDS.oneOf()
     any {
       register(p), losePostRegister(p), coreCreatesFamily(p, o, f), coreSkipsPostRegister(p), receive(f, o),
-      prepare(f), sendInvitation(o, p), acceptInvitation(o, p), consoleAddMember(o, p), removeAdmin(o, p),
+      prepare(f), sendInvitation(o, p), acceptInvitation(o, p), consoleAddMember(o, p), removeAdmin(o, p), deleteAccount(p),
       suspend(f), resume(f), markDeleted(f), deleteOrganization(f),
       issueToken(p), land(p),
       retry(p), choose(p, f), repair(p),
@@ -612,6 +636,16 @@ module centralSignIn {
   val wAcceptInvitation = did(DidAcceptInvitation)
   val wConsoleAdd = did(DidConsoleAddMember)
 
+  val wDeleteAccount = did(DidDeleteAccount)
+
+  /** Every Organization still in Logto has an Admin. */
+  val everyOrganizationHasAdmin: bool =
+    logto.orgs.keys().forall(o => logto.orgs.get(o).admins != Set())
+
+  /** Every Admin has a Logto account. */
+  val adminsHaveAccounts: bool =
+    logto.orgs.keys().forall(o => logto.orgs.get(o).admins.subseteq(logto.accounts))
+
   /** The rule of #128, except where someone went past the core in Logto's console. */
   val oneFamilyUnlessConsole: bool =
     PEOPLE.forall(p => claimOf(logto, p).size() <= 1 or logto.consoleAdded.contains(p))
@@ -650,7 +684,8 @@ module centralSignIn_directory {
     FAMILY_IDS = Set("f1", "f2"),
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = false,
-    INVITE_CHECK = NoCheck
+    INVITE_CHECK = NoCheck,
+    CONSOLE_EDITS = true
   ).*
 }
 
@@ -662,7 +697,8 @@ module centralSignIn_logto {
     FAMILY_IDS = Set("f1", "f2"),
     MAPPING = FromLogto,
     CORE_SKIPS_MEMBERS = false,
-    INVITE_CHECK = NoCheck
+    INVITE_CHECK = NoCheck,
+    CONSOLE_EDITS = true
   ).*
 }
 
@@ -676,7 +712,8 @@ module centralSignIn_proposed {
     FAMILY_IDS = Set("f1", "f2"),
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
-    INVITE_CHECK = AtSendAndAccept
+    INVITE_CHECK = AtSendAndAccept,
+    CONSOLE_EDITS = false
   ).*
 }
 
@@ -689,6 +726,7 @@ module centralSignIn_proposedSendOnly {
     FAMILY_IDS = Set("f1", "f2"),
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
-    INVITE_CHECK = AtSend
+    INVITE_CHECK = AtSend,
+    CONSOLE_EDITS = false
   ).*
 }

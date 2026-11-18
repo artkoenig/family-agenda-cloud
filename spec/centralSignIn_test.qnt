@@ -11,7 +11,8 @@ module centralSignIn_test {
     FAMILY_IDS = Set("f1", "f2", "f3"),
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = false,
-    INVITE_CHECK = NoCheck
+    INVITE_CHECK = NoCheck,
+    CONSOLE_EDITS = true
   ).* from "./centralSignIn"
 
   def landedAt(p: Person): Landing = landingIn(signIns.get(p))
@@ -92,6 +93,14 @@ module centralSignIn_test {
       .expect(postRegister.get("alice") == 1)             // the repair's copy waits as well
       .then(coreCreatesFamily("alice", "o2", "f2"))
       .expect(not(oneFamilyPerPerson) and not(registrationMakesOneFamily))
+
+  /** DSGVO deletion while PostRegister is on its way: a Family for an account that is gone. */
+  run deletedBeforePostRegisterTest =
+    init
+      .then(register("alice"))
+      .then(deleteAccount("alice"))
+      .then(coreCreatesFamily("alice", "o1", "f1"))
+      .expect(not(adminsHaveAccounts))
 }
 
 /** The same stories with the proposed core changes: PostRegister for a member creates nothing,
@@ -104,7 +113,8 @@ module centralSignIn_proposed_test {
     FAMILY_IDS = Set("f1", "f2", "f3"),
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
-    INVITE_CHECK = AtSendAndAccept
+    INVITE_CHECK = AtSendAndAccept,
+    CONSOLE_EDITS = false
   ).* from "./centralSignIn"
 
   /** 5 again: the slow first PostRegister creates the Family, the repair's copy is skipped. */
@@ -154,17 +164,28 @@ module centralSignIn_proposed_test {
       .expect(oneFamilyPerPerson and logto.invitations.contains({ orgId: "o2", invitee: "alice" }))
       .then(acceptInvitation("o2", "alice").fail())
 
-  /** Logto's console is past every check of the core: the chooser stays as the fallback. */
+  /** No one adds members in Logto's console. */
   run consoleAddTest =
     init
       .then(register("alice")).then(coreCreatesFamily("alice", "o1", "f1"))
-      .then(receive("f1", "o1")).then(prepare("f1"))
-      .then(register("bob")).then(coreCreatesFamily("bob", "o2", "f2"))
-      .then(receive("f2", "o2")).then(prepare("f2"))
-      .then(consoleAddMember("o2", "alice"))
-      .expect(not(oneFamilyPerPerson) and oneFamilyUnlessConsole)
-      .then(issueToken("alice")).then(land("alice"))
-      .expect(landingIn(signIns.get("alice")) == SeveralFamilies)
+      .then(consoleAddMember("o1", "bob").fail())
+
+  /** The same with the proposed core: PostRegister for a deleted account creates nothing. */
+  run deletedBeforePostRegisterTest =
+    init
+      .then(register("alice"))
+      .then(deleteAccount("alice"))
+      .expect(adminsHaveAccounts)
+      .then(coreCreatesFamily("alice", "o1", "f1").fail())
+
+  /** The last Admin cannot be removed; one of two can. */
+  run lastAdminStaysTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o1", "f1"))
+      .then(sendInvitation("o1", "alice")).then(acceptInvitation("o1", "alice"))
+      .then(removeAdmin("o1", "alice"))
+      .expect(everyOrganizationHasAdmin)
+      .then(removeAdmin("o1", "bob").fail())
 }
 
 /** The core checks only when the invitation is sent. */
@@ -176,7 +197,8 @@ module centralSignIn_sendOnly_test {
     FAMILY_IDS = Set("f1", "f2", "f3"),
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
-    INVITE_CHECK = AtSend
+    INVITE_CHECK = AtSend,
+    CONSOLE_EDITS = false
   ).* from "./centralSignIn"
 
   /** Invited before she registered, accepted after: two Families, without the console. */
