@@ -1,6 +1,6 @@
 # The Routing module's image: `routing serve` by default; the Scheduler and the Operator's commands
 # run the same image (cube/compose.yaml). The base is the one the public core's image uses.
-FROM node:26-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68
+FROM node:26-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1
 
 ENV NODE_ENV=production
 # Node.js has not shipped Corepack since version 25, so it comes from npm. It reads the pnpm version
