@@ -70,7 +70,7 @@
  *   defaults to 1, so always pass it. "No violation" is a sampling result, not a proof.
  *   quint test centralSignIn_test.qnt --backend=typescript --main=centralSignIn_test
  *   (and --main=centralSignIn_proposed_test, centralSignIn_sendOnly_test, centralSignIn_orgFirst_test).
- *   Update this spec before changing the code it grounds.
+ *   A design record of #128, not kept in step with the code and not checked in CI.
  */
 module centralSignInTypes {
 
