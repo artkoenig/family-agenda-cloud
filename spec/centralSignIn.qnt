@@ -39,7 +39,8 @@
  *   not invited into another, neither when the invitation is sent nor when it is accepted.
  *   Checking at sending only (AtSend) is not enough: invited, then registered, then accepted.
  *   Assumes the core's checks and its PostRegister run one at a time per person.
- * - Assumed: a former Admin does not sign up again; one invited again is an Admin again.
+ * - A former Admin may sign up again (a new account and Family) or be invited again (an Admin
+ *   again): both are allowed (the Operator, 2026-11-18).
  *
  * PROPERTIES (10000 sampled runs of 30 steps, seed 42; 2 people, 2 Organization ids, 2 Family ids)
  *   no counterexample in the proposal: oneFamilyPerPerson, registrationMakesOneFamily,
@@ -325,7 +326,7 @@ module centralSignIn {
 
   /**
    * An Admin by invitation: a member, with an account made by the invitation if needed. A former
-   * Admin invited again is an Admin again (assumed: inviting them back is the inviter's decision).
+   * Admin invited again is an Admin again (allowed: the Operator, 2026-11-18).
    */
   pure def withAdmin(l: Logto, o: OrgId, p: Person): Logto =
     { ...l, accounts: l.accounts.union(Set(p)),
@@ -373,8 +374,9 @@ module centralSignIn {
   /** Logto's sign-up: the account exists with a confirmed email, PostRegister goes to the core. */
   action register(p: Person): bool = all {
     not(logto.accounts.contains(p)),
-    not(logto.formerAdmins.contains(p)),   // assumed: a former Admin does not sign up again
-    logto' = { ...logto, accounts: logto.accounts.union(Set(p)) },
+    // a former Admin may sign up again (the Operator, 2026-11-18): a new account, a new Family
+    logto' = { ...logto, accounts: logto.accounts.union(Set(p)),
+                         formerAdmins: logto.formerAdmins.exclude(Set(p)) },
     postRegister' = postRegister.setBy(p, n => n + 1),
     familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
     lostPostRegister' = lostPostRegister,

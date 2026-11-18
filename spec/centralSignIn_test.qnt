@@ -170,6 +170,18 @@ module centralSignIn_proposed_test {
       .then(deleteOrganization("f1"))
       .expect(logto.accounts == Set() and formerAdminsCannotSignIn and logto.orgs == Map())
 
+  /** A founder who closed the Family may sign up again and gets a new one. */
+  run founderSignsUpAgainTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(markDeleted("f1")).then(deleteAdminAccounts("f1")).then(deleteOrganization("f1"))
+      .expect(not(logto.accounts.contains("bob")))
+      .then(register("bob")).then(coreCreatesFamily("bob", "o2", "f2"))
+      .then(receive("f2", "o2")).then(prepare("f2"))
+      .then(issueToken("bob")).then(land("bob"))
+      .expect(landingIn(signIns.get("bob")) == InFamily("f2") and noFamilyForFormerAdmins)
+
   /** The Organization cannot go first: the accounts must be deleted before it. */
   run orgNotFirstTest =
     init
