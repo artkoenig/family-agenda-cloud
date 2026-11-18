@@ -10,7 +10,8 @@ module centralSignIn_test {
     ORG_IDS = Set("o1", "o2", "o3"),
     FAMILY_IDS = Set("f1", "f2", "f3"),
     MAPPING = FromDirectory,
-    CORE_SKIPS_MEMBERS = false
+    CORE_SKIPS_MEMBERS = false,
+    INVITE_CHECK = NoCheck
   ).* from "./centralSignIn"
 
   def landedAt(p: Person): Landing = landingIn(signIns.get(p))
@@ -38,7 +39,8 @@ module centralSignIn_test {
       .then(receive("f1", "o1")).then(prepare("f1"))
       .then(register("bob")).then(coreCreatesFamily("bob", "o2", "f2"))
       .then(receive("f2", "o2")).then(prepare("f2"))
-      .then(inviteAdmin("o2", "alice"))
+      .then(sendInvitation("o2", "alice"))
+      .then(acceptInvitation("o2", "alice"))
       .then(issueToken("alice"))
       .then(land("alice"))
       .expect(landedAt("alice") == SeveralFamilies and not(oneFamilyPerPerson))
@@ -92,7 +94,8 @@ module centralSignIn_test {
       .expect(not(oneFamilyPerPerson) and not(registrationMakesOneFamily))
 }
 
-/** The same stories with the proposed core change: PostRegister for a member creates nothing. */
+/** The same stories with the proposed core changes: PostRegister for a member creates nothing,
+    and a member of one Family is not invited into another. */
 module centralSignIn_proposed_test {
   import centralSignInTypes.* from "./centralSignIn"
   import centralSignIn(
@@ -100,7 +103,8 @@ module centralSignIn_proposed_test {
     ORG_IDS = Set("o1", "o2", "o3"),
     FAMILY_IDS = Set("f1", "f2", "f3"),
     MAPPING = FromDirectory,
-    CORE_SKIPS_MEMBERS = true
+    CORE_SKIPS_MEMBERS = true,
+    INVITE_CHECK = AtSendAndAccept
   ).* from "./centralSignIn"
 
   /** 5 again: the slow first PostRegister creates the Family, the repair's copy is skipped. */
@@ -124,9 +128,63 @@ module centralSignIn_proposed_test {
       .then(register("bob")).then(coreCreatesFamily("bob", "o1", "f1"))
       .then(receive("f1", "o1")).then(prepare("f1"))
       .then(register("alice"))
-      .then(inviteAdmin("o1", "alice"))
+      .then(sendInvitation("o1", "alice"))
+      .then(acceptInvitation("o1", "alice"))
       .then(coreSkipsPostRegister("alice"))
       .expect(oneFamilyPerPerson)
       .then(issueToken("alice")).then(land("alice"))
       .expect(landingIn(signIns.get("alice")) == InFamily("f1"))
+
+  /** 2 again: Bob cannot invite Alice, who already is an Admin of her own Family. */
+  run inviteRefusedTest =
+    init
+      .then(register("alice")).then(coreCreatesFamily("alice", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(register("bob")).then(coreCreatesFamily("bob", "o2", "f2"))
+      .then(receive("f2", "o2")).then(prepare("f2"))
+      .expect(oneFamilyPerPerson)
+      .then(sendInvitation("o2", "alice").fail())
+
+  /** Invited before she registered, accepted after: the check at accepting catches it. */
+  run acceptRefusedTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o2", "f2"))
+      .then(sendInvitation("o2", "alice"))
+      .then(register("alice")).then(coreCreatesFamily("alice", "o1", "f1"))
+      .expect(oneFamilyPerPerson and logto.invitations.contains({ orgId: "o2", invitee: "alice" }))
+      .then(acceptInvitation("o2", "alice").fail())
+
+  /** Logto's console is past every check of the core: the chooser stays as the fallback. */
+  run consoleAddTest =
+    init
+      .then(register("alice")).then(coreCreatesFamily("alice", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(register("bob")).then(coreCreatesFamily("bob", "o2", "f2"))
+      .then(receive("f2", "o2")).then(prepare("f2"))
+      .then(consoleAddMember("o2", "alice"))
+      .expect(not(oneFamilyPerPerson) and oneFamilyUnlessConsole)
+      .then(issueToken("alice")).then(land("alice"))
+      .expect(landingIn(signIns.get("alice")) == SeveralFamilies)
+}
+
+/** The core checks only when the invitation is sent. */
+module centralSignIn_sendOnly_test {
+  import centralSignInTypes.* from "./centralSignIn"
+  import centralSignIn(
+    PEOPLE = Set("alice", "bob"),
+    ORG_IDS = Set("o1", "o2", "o3"),
+    FAMILY_IDS = Set("f1", "f2", "f3"),
+    MAPPING = FromDirectory,
+    CORE_SKIPS_MEMBERS = true,
+    INVITE_CHECK = AtSend
+  ).* from "./centralSignIn"
+
+  /** Invited before she registered, accepted after: two Families, without the console. */
+  run acceptAfterRegisteringTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o2", "f2"))
+      .then(sendInvitation("o2", "alice"))
+      .then(register("alice")).then(coreCreatesFamily("alice", "o1", "f1"))
+      .then(acceptInvitation("o2", "alice"))
+      .expect(not(oneFamilyUnlessConsole))
 }

@@ -8,8 +8,8 @@
  * - Registration: Logto's sign-up sends PostRegister once (may be lost, Logto does not retry);
  *   the core creates the Organization and posts family.created, retried until taken (never lost);
  *   the Receiver writes the Directory entry (BeingPrepared), Provisioning makes it Active.
- * - Life of a Family: Admins invited (the invitation may create the account) and removed (the
- *   last one too), suspend / resume, delete in two steps (entry marked Deleted, then the
+ * - Life of a Family: Admins invited in two steps (the core sends, the invitee accepts; accepting
+ *   may create the account), added past the core in Logto's console, and removed (the last one too), suspend / resume, delete in two steps (entry marked Deleted, then the
  *   Organization deleted), as routing/src/delete-family.ts does.
  * - Central sign-in in two steps: Logto issues the ID token (its `organizations` claim frozen),
  *   then the Routing module lands the person (`landingOf`).
@@ -25,6 +25,11 @@
  * - Core change (CORE_SKIPS_MEMBERS): PostRegister for someone already in an Organization
  *   creates nothing. Without it, a repair while the first PostRegister is only slow, or an
  *   invitation while one is in flight, gives the person a second Family of their own.
+ * - Core change (INVITE_CHECK = AtSendAndAccept): someone who already is an Admin of a Family is
+ *   not invited into another, neither when the invitation is sent nor when it is accepted.
+ *   Checking at sending only (AtSend) is not enough: invited, then registered, then accepted.
+ *   Logto's console stays past every check; SeveralFamilies -> chooser is its fallback.
+ *   Assumes the core's two checks and its PostRegister run one at a time per person.
  *
  * PROPERTIES (10000 sampled runs of 30 steps, seed 42; 2 people, 2 Organization ids, 2 Family ids)
  *   holds in every variant:   landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto,
@@ -34,12 +39,12 @@
  *                             FromLogto breaks it: markDeleted -> issueToken -> deleteOrganization
  *                             -> land finds no Organization, and cannot tell deleted from new.
  *   holds with CORE_SKIPS_MEMBERS only: registrationMakesOneFamily.
+ *   holds with INVITE_CHECK = AtSendAndAccept only: oneFamilyUnlessConsole.
  *   violated everywhere, on purpose (findings, not bugs of the model):
  *     landsOnlyWhereAdmin  - issueToken -> removeAdmin -> land: a claim gone stale between the
  *                            token and the callback sends a removed Admin into the Family; the
  *                            core's own OIDC check is what refuses them.
- *     oneFamilyPerPerson   - an Admin invites someone who is Admin elsewhere; no part of the
- *                            system can refuse that, so the chooser page is needed.
+ *     oneFamilyPerPerson   - with the core changes, only through Logto's console.
  *   every action, page and Landing is witnessed (> 0 traces).
  *
  * WHAT IT DOES NOT COVER
@@ -54,10 +59,10 @@
  *   quint run centralSignIn.qnt --backend=typescript --main=centralSignIn_directory \
  *     --max-steps=30 --max-samples=10000 --seed=42 \
  *     --invariants landsWhereClaimed activeFamilyIsFound directoryAgreesWithLogto orgIdsUnique
- *   (and --main=centralSignIn_logto, --main=centralSignIn_proposed). With --seed, --max-samples
+ *   (and --main=centralSignIn_logto, centralSignIn_proposed, centralSignIn_proposedSendOnly). With --seed, --max-samples
  *   defaults to 1, so always pass it. "No violation" is a sampling result, not a proof.
  *   quint test centralSignIn_test.qnt --backend=typescript --main=centralSignIn_test
- *   (and --main=centralSignIn_proposed_test).
+ *   (and --main=centralSignIn_proposed_test, --main=centralSignIn_sendOnly_test).
  *   Update this spec before changing the code it grounds.
  */
 module centralSignInTypes {
@@ -81,11 +86,22 @@ module centralSignInTypes {
     registeredBy: Person,     // ghost: whose PostRegister created it
   }
 
+  /** An invitation Logto has mailed and the invitee has not accepted yet. */
+  type Invitation = { orgId: OrgId, invitee: Person }
+
   type Logto = {
-    accounts: Set[Person],               // users with a confirmed email
-    orgs:     OrgId -> Organization,     // existing Organizations only
-    issued:   Set[OrgId],                // every id ever given out: Logto never reuses one
+    accounts:    Set[Person],            // users with a confirmed email
+    orgs:        OrgId -> Organization,  // existing Organizations only
+    issued:      Set[OrgId],             // every id ever given out: Logto never reuses one
+    invitations: Set[Invitation],        // pending, sent from the core's Admins page
+    consoleAdded: Set[Person],           // ghost: made a member in Logto's console, past the core
   }
+
+  /** Where the core refuses to invite someone who already is an Admin of a Family. */
+  type InviteCheck =
+    | NoCheck            // core 0.8.0: anyone is invited
+    | AtSend             // the Admins page refuses the invitation
+    | AtSendAndAccept    // ... and accepting it is refused as well
 
   // ---------------------------------------------------------------- Directory
   type FamilyStatus = Absent | BeingPrepared | Active | Suspended | Deleted
@@ -116,7 +132,9 @@ module centralSignInTypes {
     | DidCoreSkipsPostRegister
     | DidReceive
     | DidPrepare
-    | DidInviteAdmin
+    | DidSendInvitation
+    | DidAcceptInvitation
+    | DidConsoleAddMember
     | DidRemoveAdmin
     | DidSuspend
     | DidResume
@@ -149,6 +167,8 @@ module centralSignIn {
   const MAPPING:    Mapping
   /** Proposed core change: PostRegister for someone already in an Organization creates nothing. */
   const CORE_SKIPS_MEMBERS: bool
+  /** Proposed core change: no invitation for someone who already is an Admin of a Family. */
+  const INVITE_CHECK: InviteCheck
 
   // ---------------------------------------------------------------- state
   var logto:         Logto
@@ -238,22 +258,54 @@ module centralSignIn {
   pure def withStatus(d: FamilyId -> DirectoryEntry, f: FamilyId, s: FamilyStatus): FamilyId -> DirectoryEntry =
     d.setBy(f, e => { ...e, status: s })
 
-  /** An invited Admin: a member of the Organization, with an account made by the invitation if needed. */
+  /** Whether the core's check lets `p` into another Family at this stage of the invitation. */
+  pure def inviteAllowed(check: InviteCheck, atAccept: bool, l: Logto, p: Person): bool =
+    val member = claimOf(l, p) != Set()
+    match check {
+      | NoCheck         => true
+      | AtSend          => atAccept or not(member)
+      | AtSendAndAccept => not(member)
+    }
+
+  pure def canSendInvitation(check: InviteCheck, l: Logto, o: OrgId, p: Person): bool = and {
+    l.orgs.keys().contains(o),
+    not(l.orgs.get(o).admins.contains(p)),
+    not(l.invitations.contains({ orgId: o, invitee: p })),
+    inviteAllowed(check, false, l, p),
+  }
+
+  pure def withInvitation(l: Logto, o: OrgId, p: Person): Logto =
+    { ...l, invitations: l.invitations.union(Set({ orgId: o, invitee: p })) }
+
+  /** Accepting needs the invitation and its Organization; the core may check once more. */
+  pure def canAcceptInvitation(check: InviteCheck, l: Logto, o: OrgId, p: Person): bool = and {
+    l.invitations.contains({ orgId: o, invitee: p }),
+    l.orgs.keys().contains(o),
+    inviteAllowed(check, true, l, p),
+  }
+
+  /** An Admin by invitation: a member, with an account made by the invitation if needed. */
   pure def withAdmin(l: Logto, o: OrgId, p: Person): Logto =
     { ...l, accounts: l.accounts.union(Set(p)),
-            orgs: l.orgs.setBy(o, org => { ...org, admins: org.admins.union(Set(p)) }) }
+            orgs: l.orgs.setBy(o, org => { ...org, admins: org.admins.union(Set(p)) }),
+            invitations: l.invitations.exclude(Set({ orgId: o, invitee: p })) }
+
+  /** The Operator (or anyone with console access) makes `p` a member in Logto's console. */
+  pure def withConsoleMember(l: Logto, o: OrgId, p: Person): Logto =
+    { ...withAdmin(l, o, p), consoleAdded: l.consoleAdded.union(Set(p)) }
 
   pure def withoutAdmin(l: Logto, o: OrgId, p: Person): Logto =
     { ...l, orgs: l.orgs.setBy(o, org => { ...org, admins: org.admins.exclude(Set(p)) }) }
 
   /** Logto without the Organization and its memberships; the accounts stay. */
   pure def withoutOrganization(l: Logto, o: OrgId): Logto =
-    { ...l, orgs: l.orgs.keys().exclude(Set(o)).mapBy(k => l.orgs.get(k)) }
+    { ...l, orgs: l.orgs.keys().exclude(Set(o)).mapBy(k => l.orgs.get(k)),
+            invitations: l.invitations.filter(i => i.orgId != o) }
 
   // ================================================================ state machine
 
   action init = all {
-    logto' = { accounts: Set(), orgs: Map(), issued: Set() },
+    logto' = { accounts: Set(), orgs: Map(), issued: Set(), invitations: Set(), consoleAdded: Set() },
     postRegister' = PEOPLE.mapBy(_ => 0),
     familyCreated' = Set(),
     directory' = FAMILY_IDS.mapBy(_ => { status: Absent, orgId: "" }),
@@ -321,14 +373,32 @@ module centralSignIn {
     lastEvent' = OtherStep(DidPrepare),
   }
 
-  /** An Admin invites a person on the core's Admins page; the invitation may create the account. */
-  action inviteAdmin(o: OrgId, p: Person): bool = all {
-    logto.orgs.keys().contains(o),
-    not(logto.orgs.get(o).admins.contains(p)),
+  /** An Admin invites a person on the core's Admins page; Logto mails the invitation. */
+  action sendInvitation(o: OrgId, p: Person): bool = all {
+    canSendInvitation(INVITE_CHECK, logto, o, p),
+    logto' = withInvitation(logto, o, p),
+    postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
+    signIns' = signIns, lostPostRegister' = lostPostRegister,
+    lastEvent' = OtherStep(DidSendInvitation),
+  }
+
+  /** The invitee follows the link (one-time token) and becomes an Admin; it may create the account. */
+  action acceptInvitation(o: OrgId, p: Person): bool = all {
+    canAcceptInvitation(INVITE_CHECK, logto, o, p),
     logto' = withAdmin(logto, o, p),
     postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep(DidInviteAdmin),
+    lastEvent' = OtherStep(DidAcceptInvitation),
+  }
+
+  /** A member added in Logto's console: no check of the core is in the way. */
+  action consoleAddMember(o: OrgId, p: Person): bool = all {
+    logto.orgs.keys().contains(o),
+    not(logto.orgs.get(o).admins.contains(p)),
+    logto' = withConsoleMember(logto, o, p),
+    postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
+    signIns' = signIns, lostPostRegister' = lostPostRegister,
+    lastEvent' = OtherStep(DidConsoleAddMember),
   }
 
   /** An Admin is removed, on the Admins page or in Logto's console; the last one too. */
@@ -449,7 +519,7 @@ module centralSignIn {
     nondet f = FAMILY_IDS.oneOf()
     any {
       register(p), losePostRegister(p), coreCreatesFamily(p, o, f), coreSkipsPostRegister(p), receive(f, o),
-      prepare(f), inviteAdmin(o, p), removeAdmin(o, p),
+      prepare(f), sendInvitation(o, p), acceptInvitation(o, p), consoleAddMember(o, p), removeAdmin(o, p),
       suspend(f), resume(f), markDeleted(f), deleteOrganization(f),
       issueToken(p), land(p),
       retry(p), choose(p, f), repair(p),
@@ -538,7 +608,13 @@ module centralSignIn {
   val wCreate = match lastEvent { | Created(_) => true | _ => false }
   val wReceive = did(DidReceive)
   val wPrepare = did(DidPrepare)
-  val wInvite = did(DidInviteAdmin)
+  val wSendInvitation = did(DidSendInvitation)
+  val wAcceptInvitation = did(DidAcceptInvitation)
+  val wConsoleAdd = did(DidConsoleAddMember)
+
+  /** The rule of #128, except where someone went past the core in Logto's console. */
+  val oneFamilyUnlessConsole: bool =
+    PEOPLE.forall(p => claimOf(logto, p).size() <= 1 or logto.consoleAdded.contains(p))
   val wRemove = did(DidRemoveAdmin)
   val wSuspend = did(DidSuspend)
   val wResume = did(DidResume)
@@ -573,7 +649,8 @@ module centralSignIn_directory {
     ORG_IDS = Set("o1", "o2"),
     FAMILY_IDS = Set("f1", "f2"),
     MAPPING = FromDirectory,
-    CORE_SKIPS_MEMBERS = false
+    CORE_SKIPS_MEMBERS = false,
+    INVITE_CHECK = NoCheck
   ).*
 }
 
@@ -584,11 +661,13 @@ module centralSignIn_logto {
     ORG_IDS = Set("o1", "o2"),
     FAMILY_IDS = Set("f1", "f2"),
     MAPPING = FromLogto,
-    CORE_SKIPS_MEMBERS = false
+    CORE_SKIPS_MEMBERS = false,
+    INVITE_CHECK = NoCheck
   ).*
 }
 
-/** The proposed flow: Directory lookup, and a core that skips PostRegister for members. */
+/** The proposed flow: Directory lookup; a core that skips PostRegister for members and refuses
+    to invite them, when the invitation is sent and when it is accepted. */
 module centralSignIn_proposed {
   import centralSignInTypes.*
   import centralSignIn(
@@ -596,6 +675,20 @@ module centralSignIn_proposed {
     ORG_IDS = Set("o1", "o2"),
     FAMILY_IDS = Set("f1", "f2"),
     MAPPING = FromDirectory,
-    CORE_SKIPS_MEMBERS = true
+    CORE_SKIPS_MEMBERS = true,
+    INVITE_CHECK = AtSendAndAccept
+  ).*
+}
+
+/** The proposed flow, but the core checks only when the invitation is sent. */
+module centralSignIn_proposedSendOnly {
+  import centralSignInTypes.*
+  import centralSignIn(
+    PEOPLE = Set("alice", "bob"),
+    ORG_IDS = Set("o1", "o2"),
+    FAMILY_IDS = Set("f1", "f2"),
+    MAPPING = FromDirectory,
+    CORE_SKIPS_MEMBERS = true,
+    INVITE_CHECK = AtSend
   ).*
 }
