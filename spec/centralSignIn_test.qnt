@@ -186,6 +186,22 @@ module centralSignIn_proposed_test {
       .then(removeAdmin("o1", "alice"))
       .expect(everyOrganizationHasAdmin)
       .then(removeAdmin("o1", "bob").fail())
+
+  // "Keine Family", by cause (witnesses for quint run --main=centralSignIn_proposed_test)
+  def noFamilyFor(cause: Person => bool): bool =
+    match lastEvent { | Land(e) => e.landing == NoFamily and cause(e.person) | _ => false }
+  /** Signed in before the core has created the Family: PostRegister is still on its way. */
+  val wNoFamilyInFlight: bool = noFamilyFor(p => postRegister.get(p) > 0)
+  /** PostRegister was lost, and nothing is on its way. */
+  val wNoFamilyLost: bool = noFamilyFor(p => postRegister.get(p) == 0 and lostPostRegister.contains(p))
+  /** Neither: once an Admin, now in no Family (removed, or the Family was deleted). */
+  val wNoFamilyLeft: bool = noFamilyFor(p => postRegister.get(p) == 0 and not(lostPostRegister.contains(p)))
+  /** ... because the Family was deleted (some deleted entry exists, the person is in none). */
+  val wNoFamilyAfterDelete: bool =
+    wNoFamilyLeft and FAMILY_IDS.exists(f => directory.get(f).status == Deleted)
+  /** ... because they were removed while their Family lives on. */
+  val wNoFamilyAfterRemoval: bool =
+    wNoFamilyLeft and FAMILY_IDS.forall(f => directory.get(f).status != Deleted)
 }
 
 /** The core checks only when the invitation is sent. */
