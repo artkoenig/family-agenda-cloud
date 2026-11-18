@@ -16,33 +16,46 @@
  * - The open choice of #128 as a variant `MAPPING`: Organization id -> Family id from the
  *   Directory (an index is just a query on the entries' orgId) or from Logto's customData.
  *
- * PROPERTIES (quint run, typescript backend, 2 people, 2 Organization ids, 2 Family ids)
- *   holds in both variants:   landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto,
+ * PROPOSED FLOW (instance centralSignIn_proposed; stories in centralSignIn_test.qnt)
+ * - Look the Family up in the Directory (MAPPING = FromDirectory).
+ * - Pages: InFamily -> redirect; Preparing / UnknownOrganization -> "wird vorbereitet", which asks
+ *   again with the same claim (retry); SeveralFamilies -> chooser (choose); Unavailable -> notice;
+ *   NoFamily -> "Reparieren" (repair: the core runs PostRegister once more, the person is signed
+ *   out and signs in again for a fresh claim).
+ * - Core change (CORE_SKIPS_MEMBERS): PostRegister for someone already in an Organization
+ *   creates nothing. Without it, a repair while the first PostRegister is only slow, or an
+ *   invitation while one is in flight, gives the person a second Family of their own.
+ *
+ * PROPERTIES (quint run --backend=typescript, 2 people, 2 Organization ids, 2 Family ids)
+ *   holds in every variant:   landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto,
  *                             orgIdsUnique
  *   holds FromDirectory only: unknownMeansInFlight - an unknown Organization is always one whose
  *                             family.created is in flight, so it can be shown as Preparing.
  *                             FromLogto breaks it: markDeleted -> issueToken -> deleteOrganization
  *                             -> land finds no Organization, and cannot tell deleted from new.
- *   violated in both, on purpose (findings, not bugs of the model):
+ *   holds with CORE_SKIPS_MEMBERS only: registrationMakesOneFamily.
+ *   violated everywhere, on purpose (findings, not bugs of the model):
  *     landsOnlyWhereAdmin  - issueToken -> removeAdmin -> land: a claim gone stale between the
  *                            token and the callback sends a removed Admin into the Family; the
  *                            core's own OIDC check is what refuses them.
- *     oneFamilyPerPerson   - (a) an Admin invites someone who is Admin elsewhere;
- *                            (b) someone is invited while their own PostRegister is in flight,
- *                            and the core then creates their own Family too.
- *   every action and every Landing is witnessed (> 0 traces) in both variants.
+ *     oneFamilyPerPerson   - an Admin invites someone who is Admin elsewhere; no part of the
+ *                            system can refuse that, so the chooser page is needed.
+ *   every action, page and Landing is witnessed (> 0 traces).
  *
  * WHAT IT DOES NOT COVER
  * - The core's own sign-in, its 12-hour session and sign-out (#129); the 403 the core answers.
  * - Databases, blobs, keys, the Scheduler; the Operator's command line beyond status changes.
  * - Failures of the Management API call in FromLogto (it is assumed to answer).
- * - Which page each Landing shows: the model only tells the cases apart.
+ * - What the pages look like, and how the Routing module makes the core run PostRegister again
+ *   (an open question: Logto's webhook re-delivery, or a call of the core's /idp/events).
  * - Time: the window between issueToken and land is one step, however short it is in reality.
  *
  * RUN
  *   quint run centralSignIn.qnt --backend=typescript --main=centralSignIn_directory \
  *     --invariants landsWhereClaimed activeFamilyIsFound directoryAgreesWithLogto orgIdsUnique
- *   (and --main=centralSignIn_logto). Update this spec before changing the code it grounds.
+ *   (and --main=centralSignIn_logto, --main=centralSignIn_proposed);
+ *   quint test centralSignIn_test.qnt --backend=typescript --main=centralSignIn_test
+ *   (and --main=centralSignIn_proposed_test). Update this spec before changing the code it grounds.
  */
 module centralSignInTypes {
 
@@ -62,6 +75,7 @@ module centralSignInTypes {
   type Organization = {
     familyId: FamilyId,       // customData.familyId, set by the core when it creates it
     admins:   Set[Person],    // members with the role `admin`
+    registeredBy: Person,     // ghost: whose PostRegister created it
   }
 
   type Logto = {
@@ -96,12 +110,13 @@ module centralSignInTypes {
   type Event =
     | Init
     | Land({ person: Person, claim: Set[OrgId], landing: Landing })
+    | Created({ person: Person, wasMember: bool })
     | OtherStep(str)
 
   type SignIn =
     | SignedOut
     | TokenIssued(Set[OrgId])     // ID token's `organizations` claim, frozen at issue time
-    | Landed(Landing)
+    | Landed({ claim: Set[OrgId], landing: Landing })   // the page keeps the claim it was shown with
 
 }
 
@@ -113,10 +128,12 @@ module centralSignIn {
   const ORG_IDS:    Set[OrgId]     // pool Logto draws Organization ids from
   const FAMILY_IDS: Set[FamilyId]  // pool the core draws Family ids from
   const MAPPING:    Mapping
+  /** Proposed core change: PostRegister for someone already in an Organization creates nothing. */
+  const CORE_SKIPS_MEMBERS: bool
 
   // ---------------------------------------------------------------- state
   var logto:         Logto
-  var postRegister:  Set[Person]                 // Logto -> core, sent once, may be lost
+  var postRegister:  Person -> int               // Logto -> core: copies in flight, each may be lost
   var familyCreated: Set[FamilyCreated]          // core -> Receiver, in flight until taken
   var directory:     FamilyId -> DirectoryEntry  // pre-populated with Absent for FAMILY_IDS
   var signIns:       Person -> SignIn            // pre-populated with SignedOut for PEOPLE
@@ -168,13 +185,21 @@ module centralSignIn {
       else landingOfFamily(d, fs.getOnlyElement())
 
   pure def hasToken(s: SignIn): bool = match s { | TokenIssued(_) => true | _ => false }
-  pure def claimIn(s: SignIn): Set[OrgId] = match s { | TokenIssued(c) => c | _ => Set() }
+  pure def claimIn(s: SignIn): Set[OrgId] = match s { | TokenIssued(c) => c | Landed(l) => l.claim | _ => Set() }
+  pure def landingIn(s: SignIn): Landing = match s { | Landed(l) => l.landing | _ => NoFamily }
+  pure def isLanded(s: SignIn): bool = match s { | Landed(_) => true | _ => false }
+  pure def isWaiting(l: Landing): bool =
+    match l { | Preparing => true | UnknownOrganization(_) => true | _ => false }
+
+  /** The Families the chooser page offers: those of the claimed Organizations the mapping finds. */
+  pure def choicesOf(m: Mapping, l: Logto, d: FamilyId -> DirectoryEntry, claim: Set[OrgId]): Set[FamilyId] =
+    claim.fold(Set(), (acc, o) => acc.union(familyOf(m, l, d, o)))
 
   // ================================================================ state machine
 
   action init = all {
     logto' = { accounts: Set(), orgs: Map(), issued: Set() },
-    postRegister' = Set(),
+    postRegister' = PEOPLE.mapBy(_ => 0),
     familyCreated' = Set(),
     directory' = FAMILY_IDS.mapBy(_ => { status: Absent, orgId: "" }),
     signIns' = PEOPLE.mapBy(_ => SignedOut),
@@ -186,7 +211,7 @@ module centralSignIn {
   action register(p: Person): bool = all {
     not(logto.accounts.contains(p)),
     logto' = { ...logto, accounts: logto.accounts.union(Set(p)) },
-    postRegister' = postRegister.union(Set(p)),
+    postRegister' = postRegister.setBy(p, n => n + 1),
     familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
     lostPostRegister' = lostPostRegister,
     lastEvent' = OtherStep("register"),
@@ -194,8 +219,8 @@ module centralSignIn {
 
   /** The core misses PostRegister (down, address refused); Logto does not retry. */
   action losePostRegister(p: Person): bool = all {
-    postRegister.contains(p),
-    postRegister' = postRegister.exclude(Set(p)),
+    postRegister.get(p) > 0,
+    postRegister' = postRegister.setBy(p, n => n - 1),
     lostPostRegister' = lostPostRegister.union(Set(p)),
     logto' = logto, familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
     lastEvent' = OtherStep("losePostRegister"),
@@ -203,16 +228,28 @@ module centralSignIn {
 
   /** The core draws a Family id, creates the Organization with the person as Admin, posts family.created. */
   action coreCreatesFamily(p: Person, o: OrgId, f: FamilyId): bool = all {
-    postRegister.contains(p),
+    postRegister.get(p) > 0,
+    not(CORE_SKIPS_MEMBERS and claimOf(logto, p) != Set()),
     not(logto.issued.contains(o)),
     not(familyIdsInUse(logto).contains(f)),
     directory.get(f).status == Absent,
-    logto' = { ...logto, orgs: logto.orgs.put(o, { familyId: f, admins: Set(p) }),
+    logto' = { ...logto, orgs: logto.orgs.put(o, { familyId: f, admins: Set(p), registeredBy: p }),
                          issued: logto.issued.union(Set(o)) },
-    postRegister' = postRegister.exclude(Set(p)),
+    postRegister' = postRegister.setBy(p, n => n - 1),
     familyCreated' = familyCreated.union(Set({ familyId: f, orgId: o })),
     directory' = directory, signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("coreCreatesFamily"),
+    lastEvent' = Created({ person: p, wasMember: claimOf(logto, p) != Set() }),
+  }
+
+  /** With CORE_SKIPS_MEMBERS: the core takes PostRegister for a member and creates nothing. */
+  action coreSkipsPostRegister(p: Person): bool = all {
+    CORE_SKIPS_MEMBERS,
+    postRegister.get(p) > 0,
+    claimOf(logto, p) != Set(),
+    postRegister' = postRegister.setBy(p, n => n - 1),
+    logto' = logto, familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
+    lostPostRegister' = lostPostRegister,
+    lastEvent' = OtherStep("coreSkipsPostRegister"),
   }
 
   /** The Receiver takes family.created and answers 2xx; a repeated delivery changes nothing. */
@@ -307,11 +344,57 @@ module centralSignIn {
     hasToken(signIns.get(p)),
     val landing = landingOf(MAPPING, logto, directory, claimIn(signIns.get(p)))
     all {
-      signIns' = signIns.set(p, Landed(landing)),
+      signIns' = signIns.set(p, Landed({ claim: claimIn(signIns.get(p)), landing: landing })),
       logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
       directory' = directory, lostPostRegister' = lostPostRegister,
       lastEvent' = Land({ person: p, claim: claimIn(signIns.get(p)), landing: landing }),
     },
+  }
+
+  // ---------------------------------------------------------------- proposed flow (pages)
+
+  /** "Deine Family wird vorbereitet" asks again, with the claim it was shown with. */
+  action retry(p: Person): bool = all {
+    isLanded(signIns.get(p)),
+    isWaiting(landingIn(signIns.get(p))),
+    val claim = claimIn(signIns.get(p))
+    val landing = landingOf(MAPPING, logto, directory, claim)
+    all {
+      signIns' = signIns.set(p, Landed({ claim: claim, landing: landing })),
+      logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
+      directory' = directory, lostPostRegister' = lostPostRegister,
+      lastEvent' = Land({ person: p, claim: claim, landing: landing }),
+    },
+  }
+
+  /** The chooser page: the person picks one of the claimed Families. */
+  action choose(p: Person, f: FamilyId): bool = all {
+    isLanded(signIns.get(p)),
+    landingIn(signIns.get(p)) == SeveralFamilies,
+    choicesOf(MAPPING, logto, directory, claimIn(signIns.get(p))).contains(f),
+    val claim = claimIn(signIns.get(p))
+    val landing = landingOfFamily(directory, f)
+    all {
+      signIns' = signIns.set(p, Landed({ claim: claim, landing: landing })),
+      logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
+      directory' = directory, lostPostRegister' = lostPostRegister,
+      lastEvent' = Land({ person: p, claim: claim, landing: landing }),
+    },
+  }
+
+  /**
+   * "Keine Family" -> Reparieren: the Routing module has the core run PostRegister for the
+   * person once more, then signs them out so the next sign-in carries a fresh claim.
+   */
+  action repair(p: Person): bool = all {
+    isLanded(signIns.get(p)),
+    landingIn(signIns.get(p)) == NoFamily,
+    claimOf(logto, p) == Set(),         // checked again now, not by the old claim
+    postRegister' = postRegister.setBy(p, n => n + 1),
+    signIns' = signIns.set(p, SignedOut),
+    logto' = logto, familyCreated' = familyCreated, directory' = directory,
+    lostPostRegister' = lostPostRegister,
+    lastEvent' = OtherStep("repair"),
   }
 
   action step = {
@@ -319,10 +402,11 @@ module centralSignIn {
     nondet o = ORG_IDS.oneOf()
     nondet f = FAMILY_IDS.oneOf()
     any {
-      register(p), losePostRegister(p), coreCreatesFamily(p, o, f), receive(f, o),
+      register(p), losePostRegister(p), coreCreatesFamily(p, o, f), coreSkipsPostRegister(p), receive(f, o),
       prepare(f), inviteAdmin(o, p), removeAdmin(o, p),
       suspend(f), resume(f), markDeleted(f), deleteOrganization(f),
       issueToken(p), land(p),
+      retry(p), choose(p, f), repair(p),
     }
   }
 
@@ -405,7 +489,7 @@ module centralSignIn {
   def did(name: str): bool = lastEvent == OtherStep(name)
   val wRegister = did("register")
   val wLose = did("losePostRegister")
-  val wCreate = did("coreCreatesFamily")
+  val wCreate = match lastEvent { | Created(_) => true | _ => false }
   val wReceive = did("receive")
   val wPrepare = did("prepare")
   val wInvite = did("inviteAdmin")
@@ -415,6 +499,25 @@ module centralSignIn {
   val wMarkDeleted = did("markDeleted")
   val wDeleteOrg = did("deleteOrganization")
   val wIssue = did("issueToken")
+  val wRepair = did("repair")
+  val wSkip = did("coreSkipsPostRegister")
+
+  /** The core never creates a Family for someone who already is an Admin of one. */
+  val registrationMakesOneFamily: bool =
+    match lastEvent { | Created(e) => not(e.wasMember) | _ => true }
+
+  /** A waiting page that turned into a redirect. */
+  val wRetryIntoFamily: bool =
+    match lastEvent { | Land(e) => match e.landing { | InFamily(_) => e.claim.size() == 1 and
+        lostPostRegister.contains(e.person) == false | _ => false } | _ => false }
+  /** Someone whose PostRegister was lost lands in a Family after the repair. */
+  val wRepairedIntoFamily: bool =
+    match lastEvent { | Land(e) => lostPostRegister.contains(e.person) and
+        match e.landing { | InFamily(_) => true | _ => false } | _ => false }
+  /** The chooser page sent someone into a Family. */
+  val wChoseFamily: bool =
+    match lastEvent { | Land(e) => e.claim.size() > 1 and
+        match e.landing { | InFamily(_) => true | _ => false } | _ => false }
 }
 
 module centralSignIn_directory {
@@ -423,7 +526,8 @@ module centralSignIn_directory {
     PEOPLE = Set("alice", "bob"),
     ORG_IDS = Set("o1", "o2"),
     FAMILY_IDS = Set("f1", "f2"),
-    MAPPING = FromDirectory
+    MAPPING = FromDirectory,
+    CORE_SKIPS_MEMBERS = false
   ).*
 }
 
@@ -433,6 +537,19 @@ module centralSignIn_logto {
     PEOPLE = Set("alice", "bob"),
     ORG_IDS = Set("o1", "o2"),
     FAMILY_IDS = Set("f1", "f2"),
-    MAPPING = FromLogto
+    MAPPING = FromLogto,
+    CORE_SKIPS_MEMBERS = false
+  ).*
+}
+
+/** The proposed flow: Directory lookup, and a core that skips PostRegister for members. */
+module centralSignIn_proposed {
+  import centralSignInTypes.*
+  import centralSignIn(
+    PEOPLE = Set("alice", "bob"),
+    ORG_IDS = Set("o1", "o2"),
+    FAMILY_IDS = Set("f1", "f2"),
+    MAPPING = FromDirectory,
+    CORE_SKIPS_MEMBERS = true
   ).*
 }
