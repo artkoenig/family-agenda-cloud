@@ -9,9 +9,10 @@
  *   the core creates the Organization and posts family.created, retried until taken (never lost);
  *   the Receiver writes the Directory entry (BeingPrepared), Provisioning makes it Active.
  * - Life of a Family: Admins invited in two steps (the core sends, the invitee accepts; accepting
- *   may create the account) and removed on the Admins page, never the last one; suspend / resume;
- *   delete in two steps (entry marked Deleted, then the Organization deleted) by the Operator or
- *   when an Admin ends the subscription; then, on a DSGVO request, the person's account deleted.
+ *   may create the account). An invited Admin removed on the Admins page has their Logto user
+ *   deleted and cannot sign in. The founder is never removed: they close the Family and end the
+ *   subscription, which deletes the Family (entry marked Deleted), the accounts of all its Admins,
+ *   then its Organization. Suspend / resume. A DSGVO deletion of an account with no Family.
  * - Logto's console: no one edits people there by hand (CONSOLE_EDITS = false in the proposal;
  *   consoleAddMember models what happens if someone did).
  * - Central sign-in in two steps: Logto issues the ID token (its `organizations` claim frozen),
@@ -22,28 +23,34 @@
  * PROPOSED FLOW (instance centralSignIn_proposed; stories in centralSignIn_test.qnt)
  * - Look the Family up in the Directory (MAPPING = FromDirectory).
  * - Pages: InFamily -> redirect; Preparing / UnknownOrganization -> "wird vorbereitet", which asks
- *   again with the same claim (retry); Unavailable -> notice; NoFamily -> "Reparieren" (repair: the
- *   core runs PostRegister once more, the person is signed out and signs in again for a fresh
- *   claim). SeveralFamilies is unreachable here; a plain error page is enough for it.
+ *   again (retry); Unavailable -> notice. No page with a repair button (the Operator, 2026-11-18):
+ * - AUTO_REPAIR: a sign-in whose claim names no Organization has the core run PostRegister again
+ *   and shows "wird vorbereitet"; the page signs in again silently to see the new Organization.
+ *   With the rules above, an empty claim only means a registration whose PostRegister is on its
+ *   way or lost, so this never makes a Family for someone who had one.
+ * - ACCOUNTS_BEFORE_ORG: closing deletes the Admins' accounts before the Organization. The other
+ *   way round, a founder signing in between the two steps has an empty claim, is given a new
+ *   Family, and the closed Family's Admins are no longer known to delete their accounts.
  * - Core change (CORE_SKIPS_MEMBERS): PostRegister for someone already in an Organization, or
- *   whose account is deleted, creates nothing. Without it, a repair while the first PostRegister
- *   is only slow, or an invitation while one is in flight, gives the person a second Family, and
- *   a DSGVO deletion before PostRegister arrives leaves a Family for an account that is gone.
+ *   whose account is deleted, creates nothing. Without it, a second PostRegister (the automatic
+ *   one while the first is slow, or an invitation while one is in flight) gives a second Family,
+ *   and a DSGVO deletion before PostRegister arrives leaves a Family for an account that is gone.
  * - Core change (INVITE_CHECK = AtSendAndAccept): someone who already is an Admin of a Family is
  *   not invited into another, neither when the invitation is sent nor when it is accepted.
  *   Checking at sending only (AtSend) is not enough: invited, then registered, then accepted.
  *   Assumes the core's checks and its PostRegister run one at a time per person.
+ * - Assumed: a former Admin does not sign up again; one invited again is an Admin again.
  *
  * PROPERTIES (10000 sampled runs of 30 steps, seed 42; 2 people, 2 Organization ids, 2 Family ids)
  *   no counterexample in the proposal: oneFamilyPerPerson, registrationMakesOneFamily,
  *     landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto, orgIdsUnique,
- *     unknownMeansInFlight, everyOrganizationHasAdmin, adminsHaveAccounts;
- *     never reached: SeveralFamilies, the chooser, an Active Family without Admins.
+ *     unknownMeansInFlight, everyOrganizationHasAdmin, adminsHaveAccounts,
+ *     formerAdminsCannotSignIn, noFamilyForFormerAdmins;
+ *     never reached: NoFamily, the repair page, SeveralFamilies, an Active Family without Admins.
  *   FromLogto breaks unknownMeansInFlight: markDeleted -> issueToken -> deleteOrganization -> land
  *     finds no Organization, and cannot tell deleted from new.
  *   violated everywhere, on purpose: landsOnlyWhereAdmin - issueToken -> removeAdmin -> land: a
  *     claim gone stale between the token and the callback; the core's own OIDC check refuses them.
- *   every action, page and Landing the proposal can reach is witnessed (> 0 traces).
  *
  * WHAT IT DOES NOT COVER
  * - The core's own sign-in, its 12-hour session and sign-out (#129); the 403 the core answers.
@@ -57,10 +64,11 @@
  *   quint run centralSignIn.qnt --backend=typescript --main=centralSignIn_directory \
  *     --max-steps=30 --max-samples=10000 --seed=42 \
  *     --invariants landsWhereClaimed activeFamilyIsFound directoryAgreesWithLogto orgIdsUnique
- *   (and --main=centralSignIn_logto, centralSignIn_proposed, centralSignIn_proposedSendOnly). With --seed, --max-samples
+ *   (and --main=centralSignIn_logto, centralSignIn_proposed, centralSignIn_proposedSendOnly,
+ *   centralSignIn_proposedOrgFirst). With --seed, --max-samples
  *   defaults to 1, so always pass it. "No violation" is a sampling result, not a proof.
  *   quint test centralSignIn_test.qnt --backend=typescript --main=centralSignIn_test
- *   (and --main=centralSignIn_proposed_test, --main=centralSignIn_sendOnly_test).
+ *   (and --main=centralSignIn_proposed_test, centralSignIn_sendOnly_test, centralSignIn_orgFirst_test).
  *   Update this spec before changing the code it grounds.
  */
 module centralSignInTypes {
@@ -93,6 +101,7 @@ module centralSignInTypes {
     issued:      Set[OrgId],             // every id ever given out: Logto never reuses one
     invitations: Set[Invitation],        // pending, sent from the core's Admins page
     consoleAdded: Set[Person],           // ghost: made a member in Logto's console, past the core
+    formerAdmins: Set[Person],           // ghost: removed, or their Family closed; account deleted
   }
 
   /** Where the core refuses to invite someone who already is an Admin of a Family. */
@@ -134,6 +143,7 @@ module centralSignInTypes {
     | DidAcceptInvitation
     | DidConsoleAddMember
     | DidDeleteAccount
+    | DidDeleteAdminAccounts
     | DidRemoveAdmin
     | DidSuspend
     | DidResume
@@ -173,6 +183,10 @@ module centralSignIn {
    * deleted). The Operator says: never (2026-11-18). Only consoleAddMember models it.
    */
   const CONSOLE_EDITS: bool
+  /** Proposal: a sign-in with no Organization has the core run PostRegister again, by itself. */
+  const AUTO_REPAIR: bool
+  /** Closing a Family deletes its Admins' accounts before its Organization (else after). */
+  const ACCOUNTS_BEFORE_ORG: bool
 
   // ---------------------------------------------------------------- state
   var logto:         Logto
@@ -226,6 +240,23 @@ module centralSignIn {
       val fs = familyOf(m, l, d, o)
       if (fs.size() != 1) UnknownOrganization(o)   // > 1 cannot happen: see orgIdsUnique
       else landingOfFamily(d, fs.getOnlyElement())
+
+  /**
+   * With AUTO_REPAIR, a sign-in with no Organization waits for the Family it has asked for; there
+   * is no page with a repair button (the Operator, 2026-11-18).
+   */
+  pure def autoRepairs(auto: bool, claim: Set[OrgId]): bool = auto and claim == Set()
+
+  pure def landingAt(auto: bool, m: Mapping, l: Logto, d: FamilyId -> DirectoryEntry, claim: Set[OrgId]): Landing =
+    if (autoRepairs(auto, claim)) Preparing else landingOf(m, l, d, claim)
+
+  /** One more PostRegister for `p` if `more`, else as it is. */
+  pure def withPostRegister(pending: Person -> int, p: Person, more: bool): Person -> int =
+    if (more) pending.setBy(p, n => n + 1) else pending
+
+  /** The waiting page signs in again silently when it had no Organization, to see the new one. */
+  pure def claimForRetry(claim: Set[OrgId], fresh: Set[OrgId]): Set[OrgId] =
+    if (claim == Set()) fresh else claim
 
   pure def hasToken(s: SignIn): bool = match s { | TokenIssued(_) => true | _ => false }
   pure def claimIn(s: SignIn): Set[OrgId] = match s { | TokenIssued(c) => c | Landed(l) => l.claim | _ => Set() }
@@ -292,11 +323,15 @@ module centralSignIn {
     inviteAllowed(check, true, l, p),
   }
 
-  /** An Admin by invitation: a member, with an account made by the invitation if needed. */
+  /**
+   * An Admin by invitation: a member, with an account made by the invitation if needed. A former
+   * Admin invited again is an Admin again (assumed: inviting them back is the inviter's decision).
+   */
   pure def withAdmin(l: Logto, o: OrgId, p: Person): Logto =
     { ...l, accounts: l.accounts.union(Set(p)),
             orgs: l.orgs.setBy(o, org => { ...org, admins: org.admins.union(Set(p)) }),
-            invitations: l.invitations.exclude(Set({ orgId: o, invitee: p })) }
+            invitations: l.invitations.exclude(Set({ orgId: o, invitee: p })),
+            formerAdmins: l.formerAdmins.exclude(Set(p)) }
 
   /** The Operator (or anyone with console access) makes `p` a member in Logto's console. */
   pure def withConsoleMember(l: Logto, o: OrgId, p: Person): Logto =
@@ -304,6 +339,18 @@ module centralSignIn {
 
   pure def withoutAdmin(l: Logto, o: OrgId, p: Person): Logto =
     { ...l, orgs: l.orgs.setBy(o, org => { ...org, admins: org.admins.exclude(Set(p)) }) }
+
+  /**
+   * Logto with the user deleted: the account and with it every membership. The Operator's rule
+   * (2026-11-18): a removed Admin, and every Admin of a closed Family, cannot sign in any more.
+   */
+  pure def withoutUser(l: Logto, p: Person): Logto =
+    { ...l, accounts: l.accounts.exclude(Set(p)),
+            orgs: l.orgs.keys().mapBy(o => { ...l.orgs.get(o), admins: l.orgs.get(o).admins.exclude(Set(p)) }),
+            formerAdmins: l.formerAdmins.union(Set(p)) }
+
+  pure def withoutUsers(l: Logto, ps: Set[Person]): Logto =
+    ps.fold(l, (acc, p) => withoutUser(acc, p))
 
   /** Logto without the Organization and its memberships; the accounts stay. */
   pure def withoutOrganization(l: Logto, o: OrgId): Logto =
@@ -313,7 +360,8 @@ module centralSignIn {
   // ================================================================ state machine
 
   action init = all {
-    logto' = { accounts: Set(), orgs: Map(), issued: Set(), invitations: Set(), consoleAdded: Set() },
+    logto' = { accounts: Set(), orgs: Map(), issued: Set(), invitations: Set(), consoleAdded: Set(),
+               formerAdmins: Set() },
     postRegister' = PEOPLE.mapBy(_ => 0),
     familyCreated' = Set(),
     directory' = FAMILY_IDS.mapBy(_ => { status: Absent, orgId: "" }),
@@ -325,6 +373,7 @@ module centralSignIn {
   /** Logto's sign-up: the account exists with a confirmed email, PostRegister goes to the core. */
   action register(p: Person): bool = all {
     not(logto.accounts.contains(p)),
+    not(logto.formerAdmins.contains(p)),   // assumed: a former Admin does not sign up again
     logto' = { ...logto, accounts: logto.accounts.union(Set(p)) },
     postRegister' = postRegister.setBy(p, n => n + 1),
     familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
@@ -410,12 +459,15 @@ module centralSignIn {
     lastEvent' = OtherStep(DidConsoleAddMember),
   }
 
-  /** An Admin is removed on the core's Admins page; never the last one. */
+  /**
+   * An invited Admin is removed on the core's Admins page: their Logto user is deleted, so they
+   * cannot sign in any more. The founder is never removed this way (they close the Family).
+   */
   action removeAdmin(o: OrgId, p: Person): bool = all {
     logto.orgs.keys().contains(o),
     logto.orgs.get(o).admins.contains(p),
-    logto.orgs.get(o).admins.size() > 1,
-    logto' = withoutAdmin(logto, o, p),
+    logto.orgs.get(o).registeredBy != p,
+    logto' = withoutUser(logto, p),
     postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
     lastEvent' = OtherStep(DidRemoveAdmin),
@@ -451,7 +503,18 @@ module centralSignIn {
     lastEvent' = OtherStep(DidDeleteAccount),
   }
 
-  /** Deleting, first step (the Operator, or an Admin ending the subscription): the entry is marked deleted (database, blobs follow, not modelled). */
+  /** Closing the Family: the accounts of all its Admins are deleted (before or after the Organization). */
+  action deleteAdminAccounts(f: FamilyId): bool = all {
+    directory.get(f).status == Deleted,
+    logto.orgs.keys().contains(directory.get(f).orgId),
+    logto.orgs.get(directory.get(f).orgId).admins != Set(),
+    logto' = withoutUsers(logto, logto.orgs.get(directory.get(f).orgId).admins),
+    postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
+    signIns' = signIns, lostPostRegister' = lostPostRegister,
+    lastEvent' = OtherStep(DidDeleteAdminAccounts),
+  }
+
+  /** Deleting, first step (the Operator, or the founder closing the Family and ending the subscription): the entry is marked deleted (database, blobs follow, not modelled). */
   action markDeleted(f: FamilyId): bool = all {
     Set(Active, Suspended).contains(directory.get(f).status),
     directory' = withStatus(directory, f, Deleted),
@@ -460,10 +523,11 @@ module centralSignIn {
     lastEvent' = OtherStep(DidMarkDeleted),
   }
 
-  /** Deleting, last step: the Organization goes with its memberships; the accounts stay. */
+  /** Deleting, last step: the Organization goes with its memberships. */
   action deleteOrganization(f: FamilyId): bool = all {
     directory.get(f).status == Deleted,
     logto.orgs.keys().contains(directory.get(f).orgId),
+    not(ACCOUNTS_BEFORE_ORG) or logto.orgs.get(directory.get(f).orgId).admins == Set(),
     logto' = withoutOrganization(logto, directory.get(f).orgId),
     postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
@@ -482,10 +546,12 @@ module centralSignIn {
   /** The Routing module takes the callback and sends the person on, by the claim it was given. */
   action land(p: Person): bool = all {
     hasToken(signIns.get(p)),
-    val landing = landingOf(MAPPING, logto, directory, claimIn(signIns.get(p)))
+    val claim = claimIn(signIns.get(p))
+    val landing = landingAt(AUTO_REPAIR, MAPPING, logto, directory, claim)
     all {
-      signIns' = signIns.set(p, Landed({ claim: claimIn(signIns.get(p)), landing: landing })),
-      logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
+      signIns' = signIns.set(p, Landed({ claim: claim, landing: landing })),
+      postRegister' = withPostRegister(postRegister, p, autoRepairs(AUTO_REPAIR, claim)),
+      logto' = logto, familyCreated' = familyCreated,
       directory' = directory, lostPostRegister' = lostPostRegister,
       lastEvent' = Land({ person: p, claim: claimIn(signIns.get(p)), landing: landing }),
     },
@@ -493,12 +559,13 @@ module centralSignIn {
 
   // ---------------------------------------------------------------- proposed flow (pages)
 
-  /** "Deine Family wird vorbereitet" asks again, with the claim it was shown with. */
+  /** "Deine Family wird vorbereitet" asks again, with its claim, or a fresh one if it had none. */
   action retry(p: Person): bool = all {
     isLanded(signIns.get(p)),
     isWaiting(landingIn(signIns.get(p))),
-    val claim = claimIn(signIns.get(p))
-    val landing = landingOf(MAPPING, logto, directory, claim)
+    logto.accounts.contains(p),
+    val claim = claimForRetry(claimIn(signIns.get(p)), claimOf(logto, p))
+    val landing = landingAt(AUTO_REPAIR, MAPPING, logto, directory, claim)   // still none: keep waiting
     all {
       signIns' = signIns.set(p, Landed({ claim: claim, landing: landing })),
       logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
@@ -527,6 +594,7 @@ module centralSignIn {
    * person once more, then signs them out so the next sign-in carries a fresh claim.
    */
   action repair(p: Person): bool = all {
+    not(AUTO_REPAIR),                   // the proposal has no page with a repair button
     isLanded(signIns.get(p)),
     landingIn(signIns.get(p)) == NoFamily,
     claimOf(logto, p) == Set(),         // checked again now, not by the old claim
@@ -544,6 +612,7 @@ module centralSignIn {
     any {
       register(p), losePostRegister(p), coreCreatesFamily(p, o, f), coreSkipsPostRegister(p), receive(f, o),
       prepare(f), sendInvitation(o, p), acceptInvitation(o, p), consoleAddMember(o, p), removeAdmin(o, p), deleteAccount(p),
+      deleteAdminAccounts(f),
       suspend(f), resume(f), markDeleted(f), deleteOrganization(f),
       issueToken(p), land(p),
       retry(p), choose(p, f), repair(p),
@@ -637,10 +706,23 @@ module centralSignIn {
   val wConsoleAdd = did(DidConsoleAddMember)
 
   val wDeleteAccount = did(DidDeleteAccount)
+  val wDeleteAdminAccounts = did(DidDeleteAdminAccounts)
 
-  /** Every Organization still in Logto has an Admin. */
+  /** A removed Admin, or an Admin of a closed Family, has no account: they cannot sign in. */
+  val formerAdminsCannotSignIn: bool =
+    logto.formerAdmins.intersect(logto.accounts) == Set()
+
+  /** No one gets a Family after theirs was closed or they were removed. */
+  val noFamilyForFormerAdmins: bool =
+    match lastEvent { | Created(e) => not(logto.formerAdmins.contains(e.person)) | _ => true }
+
+  /** Someone removed, or whose Family closed, while the founder of another lives on. */
+  val wRemovedInvitee: bool = did(DidRemoveAdmin)
+
+  /** Every Organization of a Family that is not being deleted has an Admin. */
   val everyOrganizationHasAdmin: bool =
-    logto.orgs.keys().forall(o => logto.orgs.get(o).admins != Set())
+    logto.orgs.keys().forall(o =>
+      directory.get(logto.orgs.get(o).familyId).status != Deleted implies logto.orgs.get(o).admins != Set())
 
   /** Every Admin has a Logto account. */
   val adminsHaveAccounts: bool =
@@ -685,7 +767,9 @@ module centralSignIn_directory {
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = false,
     INVITE_CHECK = NoCheck,
-    CONSOLE_EDITS = true
+    CONSOLE_EDITS = true,
+    AUTO_REPAIR = false,
+    ACCOUNTS_BEFORE_ORG = false
   ).*
 }
 
@@ -698,7 +782,9 @@ module centralSignIn_logto {
     MAPPING = FromLogto,
     CORE_SKIPS_MEMBERS = false,
     INVITE_CHECK = NoCheck,
-    CONSOLE_EDITS = true
+    CONSOLE_EDITS = true,
+    AUTO_REPAIR = false,
+    ACCOUNTS_BEFORE_ORG = false
   ).*
 }
 
@@ -713,7 +799,9 @@ module centralSignIn_proposed {
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
     INVITE_CHECK = AtSendAndAccept,
-    CONSOLE_EDITS = false
+    CONSOLE_EDITS = false,
+    AUTO_REPAIR = true,
+    ACCOUNTS_BEFORE_ORG = true
   ).*
 }
 
@@ -727,6 +815,24 @@ module centralSignIn_proposedSendOnly {
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
     INVITE_CHECK = AtSend,
-    CONSOLE_EDITS = false
+    CONSOLE_EDITS = false,
+    AUTO_REPAIR = true,
+    ACCOUNTS_BEFORE_ORG = true
+  ).*
+}
+
+/** The proposed flow, but closing a Family deletes its Organization before its Admins' accounts. */
+module centralSignIn_proposedOrgFirst {
+  import centralSignInTypes.*
+  import centralSignIn(
+    PEOPLE = Set("alice", "bob"),
+    ORG_IDS = Set("o1", "o2"),
+    FAMILY_IDS = Set("f1", "f2"),
+    MAPPING = FromDirectory,
+    CORE_SKIPS_MEMBERS = true,
+    INVITE_CHECK = AtSendAndAccept,
+    CONSOLE_EDITS = false,
+    AUTO_REPAIR = true,
+    ACCOUNTS_BEFORE_ORG = false
   ).*
 }

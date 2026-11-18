@@ -12,7 +12,9 @@ module centralSignIn_test {
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = false,
     INVITE_CHECK = NoCheck,
-    CONSOLE_EDITS = true
+    CONSOLE_EDITS = true,
+    AUTO_REPAIR = false,
+    ACCOUNTS_BEFORE_ORG = false
   ).* from "./centralSignIn"
 
   def landedAt(p: Person): Landing = landingIn(signIns.get(p))
@@ -114,23 +116,67 @@ module centralSignIn_proposed_test {
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
     INVITE_CHECK = AtSendAndAccept,
-    CONSOLE_EDITS = false
+    CONSOLE_EDITS = false,
+    AUTO_REPAIR = true,
+    ACCOUNTS_BEFORE_ORG = true
   ).* from "./centralSignIn"
 
-  /** 5 again: the slow first PostRegister creates the Family, the repair's copy is skipped. */
+  /** 5 again, automatic: the sign-in asks for the Family itself; the slow copy and its own both arrive. */
   run slowPostRegisterRepairTest =
     init
       .then(register("alice"))
       .then(issueToken("alice"))
       .then(land("alice"))
-      .then(repair("alice"))
+      .expect(landingIn(signIns.get("alice")) == Preparing and postRegister.get("alice") == 2)
       .then(coreCreatesFamily("alice", "o1", "f1"))
-      .expect(postRegister.get("alice") == 1)
       .then(coreSkipsPostRegister("alice"))
       .expect(postRegister.get("alice") == 0 and oneFamilyPerPerson and registrationMakesOneFamily)
       .then(receive("f1", "o1")).then(prepare("f1"))
-      .then(issueToken("alice")).then(land("alice"))
+      .then(retry("alice"))
       .expect(landingIn(signIns.get("alice")) == InFamily("f1"))
+
+  /** A lost PostRegister is made good by the next sign-in, with no page in between. */
+  run lostPostRegisterTest =
+    init
+      .then(register("alice"))
+      .then(losePostRegister("alice"))
+      .then(issueToken("alice"))
+      .then(land("alice"))
+      .expect(landingIn(signIns.get("alice")) == Preparing)
+      .then(coreCreatesFamily("alice", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(retry("alice"))
+      .expect(landingIn(signIns.get("alice")) == InFamily("f1"))
+
+  /** A removed invited Admin cannot sign in any more; the founder cannot be removed. */
+  run removedCannotSignInTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(sendInvitation("o1", "alice")).then(acceptInvitation("o1", "alice"))
+      .then(removeAdmin("o1", "alice"))
+      .expect(formerAdminsCannotSignIn and not(logto.accounts.contains("alice")))
+      .then(issueToken("alice").fail())
+
+  /** The founder closes the Family: every Admin's account goes, then the Organization. */
+  run closeFamilyTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(sendInvitation("o1", "alice")).then(acceptInvitation("o1", "alice"))
+      .then(markDeleted("f1"))
+      .expect(logto.orgs.keys().contains("o1"))
+      .then(deleteAdminAccounts("f1"))
+      .then(deleteOrganization("f1"))
+      .expect(logto.accounts == Set() and formerAdminsCannotSignIn and logto.orgs == Map())
+
+  /** The Organization cannot go first: the accounts must be deleted before it. */
+  run orgNotFirstTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(markDeleted("f1"))
+      .then(deleteOrganization("f1").fail())
 
   /** Invited while her own PostRegister is on its way: she joins Bob's Family, gets none of her own. */
   run invitedWhileRegisteringTest =
@@ -214,7 +260,9 @@ module centralSignIn_sendOnly_test {
     MAPPING = FromDirectory,
     CORE_SKIPS_MEMBERS = true,
     INVITE_CHECK = AtSend,
-    CONSOLE_EDITS = false
+    CONSOLE_EDITS = false,
+    AUTO_REPAIR = true,
+    ACCOUNTS_BEFORE_ORG = true
   ).* from "./centralSignIn"
 
   /** Invited before she registered, accepted after: two Families, without the console. */
@@ -225,4 +273,32 @@ module centralSignIn_sendOnly_test {
       .then(register("alice")).then(coreCreatesFamily("alice", "o1", "f1"))
       .then(acceptInvitation("o2", "alice"))
       .expect(not(oneFamilyUnlessConsole))
+}
+
+/** Closing deletes the Organization before the Admins' accounts. */
+module centralSignIn_orgFirst_test {
+  import centralSignInTypes.* from "./centralSignIn"
+  import centralSignIn(
+    PEOPLE = Set("alice", "bob"),
+    ORG_IDS = Set("o1", "o2", "o3"),
+    FAMILY_IDS = Set("f1", "f2", "f3"),
+    MAPPING = FromDirectory,
+    CORE_SKIPS_MEMBERS = true,
+    INVITE_CHECK = AtSendAndAccept,
+    CONSOLE_EDITS = false,
+    AUTO_REPAIR = true,
+    ACCOUNTS_BEFORE_ORG = false
+  ).* from "./centralSignIn"
+
+  /** The founder signs in between the two steps: no Organization, so a new Family is asked for. */
+  run signInBetweenStepsTest =
+    init
+      .then(register("bob")).then(coreCreatesFamily("bob", "o1", "f1"))
+      .then(receive("f1", "o1")).then(prepare("f1"))
+      .then(markDeleted("f1"))
+      .then(deleteOrganization("f1"))
+      .then(issueToken("bob")).then(land("bob"))
+      .expect(postRegister.get("bob") == 1)
+      .then(coreCreatesFamily("bob", "o2", "f2"))
+      .expect(logto.orgs.keys() == Set("o2"))
 }
