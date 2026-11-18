@@ -19,6 +19,10 @@
  * PROPERTIES (quint run, typescript backend, 2 people, 2 Organization ids, 2 Family ids)
  *   holds in both variants:   landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto,
  *                             orgIdsUnique
+ *   holds FromDirectory only: unknownMeansInFlight - an unknown Organization is always one whose
+ *                             family.created is in flight, so it can be shown as Preparing.
+ *                             FromLogto breaks it: markDeleted -> issueToken -> deleteOrganization
+ *                             -> land finds no Organization, and cannot tell deleted from new.
  *   violated in both, on purpose (findings, not bugs of the model):
  *     landsOnlyWhereAdmin  - issueToken -> removeAdmin -> land: a claim gone stale between the
  *                            token and the callback sends a removed Admin into the Family; the
@@ -350,6 +354,16 @@ module centralSignIn {
       | Land(e) => match e.landing {
           | UnknownOrganization(o) =>
               not(directoryFamiliesOf(directory, o).exists(f => directory.get(f).status == Active))
+          | _ => true
+        }
+      | _ => true
+    }
+
+  /** An Organization the mapping does not know is one whose family.created is still in flight. */
+  val unknownMeansInFlight: bool =
+    match lastEvent {
+      | Land(e) => match e.landing {
+          | UnknownOrganization(o) => familyCreated.exists(m => m.orgId == o)
           | _ => true
         }
       | _ => true
