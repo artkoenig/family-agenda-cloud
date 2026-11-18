@@ -26,7 +26,7 @@
  *   creates nothing. Without it, a repair while the first PostRegister is only slow, or an
  *   invitation while one is in flight, gives the person a second Family of their own.
  *
- * PROPERTIES (quint run --backend=typescript, 2 people, 2 Organization ids, 2 Family ids)
+ * PROPERTIES (10000 sampled runs of 30 steps, seed 42; 2 people, 2 Organization ids, 2 Family ids)
  *   holds in every variant:   landsWhereClaimed, activeFamilyIsFound, directoryAgreesWithLogto,
  *                             orgIdsUnique
  *   holds FromDirectory only: unknownMeansInFlight - an unknown Organization is always one whose
@@ -50,12 +50,15 @@
  *   (an open question: Logto's webhook re-delivery, or a call of the core's /idp/events).
  * - Time: the window between issueToken and land is one step, however short it is in reality.
  *
- * RUN
+ * RUN (quint 0.33.1; the Rust backend is fetched from GitHub, so use the TypeScript one)
  *   quint run centralSignIn.qnt --backend=typescript --main=centralSignIn_directory \
+ *     --max-steps=30 --max-samples=10000 --seed=42 \
  *     --invariants landsWhereClaimed activeFamilyIsFound directoryAgreesWithLogto orgIdsUnique
- *   (and --main=centralSignIn_logto, --main=centralSignIn_proposed);
+ *   (and --main=centralSignIn_logto, --main=centralSignIn_proposed). With --seed, --max-samples
+ *   defaults to 1, so always pass it. "No violation" is a sampling result, not a proof.
  *   quint test centralSignIn_test.qnt --backend=typescript --main=centralSignIn_test
- *   (and --main=centralSignIn_proposed_test). Update this spec before changing the code it grounds.
+ *   (and --main=centralSignIn_proposed_test).
+ *   Update this spec before changing the code it grounds.
  */
 module centralSignInTypes {
 
@@ -106,12 +109,28 @@ module centralSignInTypes {
     | UnknownOrganization(OrgId)  // the claim names one, the mapping finds no Family
     | SeveralFamilies             // the "one Family per person" rule is broken
 
+  /** The steps that are neither a landing nor the core creating a Family. */
+  type StepKind =
+    | DidRegister
+    | DidLosePostRegister
+    | DidCoreSkipsPostRegister
+    | DidReceive
+    | DidPrepare
+    | DidInviteAdmin
+    | DidRemoveAdmin
+    | DidSuspend
+    | DidResume
+    | DidMarkDeleted
+    | DidDeleteOrganization
+    | DidIssueToken
+    | DidRepair
+
   /** What the last step was; lets an invariant check a landing in the state it was made in. */
   type Event =
     | Init
     | Land({ person: Person, claim: Set[OrgId], landing: Landing })
     | Created({ person: Person, wasMember: bool })
-    | OtherStep(str)
+    | OtherStep(StepKind)
 
   type SignIn =
     | SignedOut
@@ -181,7 +200,7 @@ module centralSignIn {
     else
       val o = claim.getOnlyElement()
       val fs = familyOf(m, l, d, o)
-      if (fs.size() == 0) UnknownOrganization(o)
+      if (fs.size() != 1) UnknownOrganization(o)   // > 1 cannot happen: see orgIdsUnique
       else landingOfFamily(d, fs.getOnlyElement())
 
   pure def hasToken(s: SignIn): bool = match s { | TokenIssued(_) => true | _ => false }
@@ -194,6 +213,42 @@ module centralSignIn {
   /** The Families the chooser page offers: those of the claimed Organizations the mapping finds. */
   pure def choicesOf(m: Mapping, l: Logto, d: FamilyId -> DirectoryEntry, claim: Set[OrgId]): Set[FamilyId] =
     claim.fold(Set(), (acc, o) => acc.union(familyOf(m, l, d, o)))
+
+  // ---------------------------------------------------------------- next-state functions
+
+  /** The core's Organization for a new Family, with the person as its only Admin. */
+  pure def withNewOrganization(l: Logto, p: Person, o: OrgId, f: FamilyId): Logto =
+    { ...l, orgs: l.orgs.put(o, { familyId: f, admins: Set(p), registeredBy: p }),
+            issued: l.issued.union(Set(o)) }
+
+  /** Whether the core may create a Family `f` with Organization `o` for `p`'s PostRegister. */
+  pure def canCreateFamily(skipsMembers: bool, l: Logto, d: FamilyId -> DirectoryEntry,
+                           pending: Person -> int, p: Person, o: OrgId, f: FamilyId): bool = and {
+    pending.get(p) > 0,
+    not(skipsMembers and claimOf(l, p) != Set()),
+    not(l.issued.contains(o)),
+    not(familyIdsInUse(l).contains(f)),
+    d.get(f).status == Absent,
+  }
+
+  /** The Receiver's answer to family.created: a new entry, or nothing for a repeated delivery. */
+  pure def withReceived(d: FamilyId -> DirectoryEntry, f: FamilyId, o: OrgId): FamilyId -> DirectoryEntry =
+    if (d.get(f).status == Absent) d.set(f, { status: BeingPrepared, orgId: o }) else d
+
+  pure def withStatus(d: FamilyId -> DirectoryEntry, f: FamilyId, s: FamilyStatus): FamilyId -> DirectoryEntry =
+    d.setBy(f, e => { ...e, status: s })
+
+  /** An invited Admin: a member of the Organization, with an account made by the invitation if needed. */
+  pure def withAdmin(l: Logto, o: OrgId, p: Person): Logto =
+    { ...l, accounts: l.accounts.union(Set(p)),
+            orgs: l.orgs.setBy(o, org => { ...org, admins: org.admins.union(Set(p)) }) }
+
+  pure def withoutAdmin(l: Logto, o: OrgId, p: Person): Logto =
+    { ...l, orgs: l.orgs.setBy(o, org => { ...org, admins: org.admins.exclude(Set(p)) }) }
+
+  /** Logto without the Organization and its memberships; the accounts stay. */
+  pure def withoutOrganization(l: Logto, o: OrgId): Logto =
+    { ...l, orgs: l.orgs.keys().exclude(Set(o)).mapBy(k => l.orgs.get(k)) }
 
   // ================================================================ state machine
 
@@ -214,7 +269,7 @@ module centralSignIn {
     postRegister' = postRegister.setBy(p, n => n + 1),
     familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
     lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("register"),
+    lastEvent' = OtherStep(DidRegister),
   }
 
   /** The core misses PostRegister (down, address refused); Logto does not retry. */
@@ -223,18 +278,13 @@ module centralSignIn {
     postRegister' = postRegister.setBy(p, n => n - 1),
     lostPostRegister' = lostPostRegister.union(Set(p)),
     logto' = logto, familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
-    lastEvent' = OtherStep("losePostRegister"),
+    lastEvent' = OtherStep(DidLosePostRegister),
   }
 
   /** The core draws a Family id, creates the Organization with the person as Admin, posts family.created. */
   action coreCreatesFamily(p: Person, o: OrgId, f: FamilyId): bool = all {
-    postRegister.get(p) > 0,
-    not(CORE_SKIPS_MEMBERS and claimOf(logto, p) != Set()),
-    not(logto.issued.contains(o)),
-    not(familyIdsInUse(logto).contains(f)),
-    directory.get(f).status == Absent,
-    logto' = { ...logto, orgs: logto.orgs.put(o, { familyId: f, admins: Set(p), registeredBy: p }),
-                         issued: logto.issued.union(Set(o)) },
+    canCreateFamily(CORE_SKIPS_MEMBERS, logto, directory, postRegister, p, o, f),
+    logto' = withNewOrganization(logto, p, o, f),
     postRegister' = postRegister.setBy(p, n => n - 1),
     familyCreated' = familyCreated.union(Set({ familyId: f, orgId: o })),
     directory' = directory, signIns' = signIns, lostPostRegister' = lostPostRegister,
@@ -249,85 +299,81 @@ module centralSignIn {
     postRegister' = postRegister.setBy(p, n => n - 1),
     logto' = logto, familyCreated' = familyCreated, directory' = directory, signIns' = signIns,
     lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("coreSkipsPostRegister"),
+    lastEvent' = OtherStep(DidCoreSkipsPostRegister),
   }
 
   /** The Receiver takes family.created and answers 2xx; a repeated delivery changes nothing. */
   action receive(f: FamilyId, o: OrgId): bool = all {
     familyCreated.contains({ familyId: f, orgId: o }),
     familyCreated' = familyCreated.exclude(Set({ familyId: f, orgId: o })),
-    directory' = if (directory.get(f).status == Absent)
-                   directory.set(f, { status: BeingPrepared, orgId: o })
-                 else directory,
+    directory' = withReceived(directory, f, o),
     logto' = logto, postRegister' = postRegister, signIns' = signIns,
     lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("receive"),
+    lastEvent' = OtherStep(DidReceive),
   }
 
   /** Provisioning has created the Family's database, role and key: the Family is routed to. */
   action prepare(f: FamilyId): bool = all {
     directory.get(f).status == BeingPrepared,
-    directory' = directory.setBy(f, e => { ...e, status: Active }),
+    directory' = withStatus(directory, f, Active),
     logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("prepare"),
+    lastEvent' = OtherStep(DidPrepare),
   }
 
   /** An Admin invites a person on the core's Admins page; the invitation may create the account. */
   action inviteAdmin(o: OrgId, p: Person): bool = all {
     logto.orgs.keys().contains(o),
     not(logto.orgs.get(o).admins.contains(p)),
-    logto' = { ...logto, accounts: logto.accounts.union(Set(p)),
-               orgs: logto.orgs.setBy(o, org => { ...org, admins: org.admins.union(Set(p)) }) },
+    logto' = withAdmin(logto, o, p),
     postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("inviteAdmin"),
+    lastEvent' = OtherStep(DidInviteAdmin),
   }
 
   /** An Admin is removed, on the Admins page or in Logto's console; the last one too. */
   action removeAdmin(o: OrgId, p: Person): bool = all {
     logto.orgs.keys().contains(o),
     logto.orgs.get(o).admins.contains(p),
-    logto' = { ...logto, orgs: logto.orgs.setBy(o, org => { ...org, admins: org.admins.exclude(Set(p)) }) },
+    logto' = withoutAdmin(logto, o, p),
     postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("removeAdmin"),
+    lastEvent' = OtherStep(DidRemoveAdmin),
   }
 
   action suspend(f: FamilyId): bool = all {
     directory.get(f).status == Active,
-    directory' = directory.setBy(f, e => { ...e, status: Suspended }),
+    directory' = withStatus(directory, f, Suspended),
     logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("suspend"),
+    lastEvent' = OtherStep(DidSuspend),
   }
 
   action resume(f: FamilyId): bool = all {
     directory.get(f).status == Suspended,
-    directory' = directory.setBy(f, e => { ...e, status: Active }),
+    directory' = withStatus(directory, f, Active),
     logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("resume"),
+    lastEvent' = OtherStep(DidResume),
   }
 
   /** Deleting, first step: the entry is marked deleted (database, blobs follow, not modelled). */
   action markDeleted(f: FamilyId): bool = all {
     Set(Active, Suspended).contains(directory.get(f).status),
-    directory' = directory.setBy(f, e => { ...e, status: Deleted }),
+    directory' = withStatus(directory, f, Deleted),
     logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("markDeleted"),
+    lastEvent' = OtherStep(DidMarkDeleted),
   }
 
   /** Deleting, last step: the Organization goes with its memberships; the accounts stay. */
   action deleteOrganization(f: FamilyId): bool = all {
     directory.get(f).status == Deleted,
     logto.orgs.keys().contains(directory.get(f).orgId),
-    logto' = { ...logto, orgs: logto.orgs.keys().exclude(Set(directory.get(f).orgId))
-                                  .mapBy(o => logto.orgs.get(o)) },
+    logto' = withoutOrganization(logto, directory.get(f).orgId),
     postRegister' = postRegister, familyCreated' = familyCreated, directory' = directory,
     signIns' = signIns, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("deleteOrganization"),
+    lastEvent' = OtherStep(DidDeleteOrganization),
   }
 
   /** Central sign-in at Logto: the ID token's `organizations` claim is fixed now. */
@@ -336,7 +382,7 @@ module centralSignIn {
     signIns' = signIns.set(p, TokenIssued(claimOf(logto, p))),
     logto' = logto, postRegister' = postRegister, familyCreated' = familyCreated,
     directory' = directory, lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("issueToken"),
+    lastEvent' = OtherStep(DidIssueToken),
   }
 
   /** The Routing module takes the callback and sends the person on, by the claim it was given. */
@@ -394,7 +440,7 @@ module centralSignIn {
     signIns' = signIns.set(p, SignedOut),
     logto' = logto, familyCreated' = familyCreated, directory' = directory,
     lostPostRegister' = lostPostRegister,
-    lastEvent' = OtherStep("repair"),
+    lastEvent' = OtherStep(DidRepair),
   }
 
   action step = {
@@ -486,21 +532,21 @@ module centralSignIn {
     FAMILY_IDS.exists(f => directory.get(f).status == Active and
       logto.orgs.keys().contains(directory.get(f).orgId) and logto.orgs.get(directory.get(f).orgId).admins == Set())
 
-  def did(name: str): bool = lastEvent == OtherStep(name)
-  val wRegister = did("register")
-  val wLose = did("losePostRegister")
+  def did(k: StepKind): bool = lastEvent == OtherStep(k)
+  val wRegister = did(DidRegister)
+  val wLose = did(DidLosePostRegister)
   val wCreate = match lastEvent { | Created(_) => true | _ => false }
-  val wReceive = did("receive")
-  val wPrepare = did("prepare")
-  val wInvite = did("inviteAdmin")
-  val wRemove = did("removeAdmin")
-  val wSuspend = did("suspend")
-  val wResume = did("resume")
-  val wMarkDeleted = did("markDeleted")
-  val wDeleteOrg = did("deleteOrganization")
-  val wIssue = did("issueToken")
-  val wRepair = did("repair")
-  val wSkip = did("coreSkipsPostRegister")
+  val wReceive = did(DidReceive)
+  val wPrepare = did(DidPrepare)
+  val wInvite = did(DidInviteAdmin)
+  val wRemove = did(DidRemoveAdmin)
+  val wSuspend = did(DidSuspend)
+  val wResume = did(DidResume)
+  val wMarkDeleted = did(DidMarkDeleted)
+  val wDeleteOrg = did(DidDeleteOrganization)
+  val wIssue = did(DidIssueToken)
+  val wRepair = did(DidRepair)
+  val wSkip = did(DidCoreSkipsPostRegister)
 
   /** The core never creates a Family for someone who already is an Admin of one. */
   val registrationMakesOneFamily: bool =
