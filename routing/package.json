@@ -22,7 +22,7 @@
     "tsx": "^4.23.15"
   },
   "devDependencies": {
-    "@barney-media/crap-typescript": "2.0.0",
+    "@barney-media/crap-typescript": "2.0.2",
     "@eslint/js": "^10.0.1",
     "@hono/node-server": "^2.1.8",
     "@stryker-mutator/core": "10.1.1",
