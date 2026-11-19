@@ -1,0 +1,40 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigestsToSemver", "docker:pinDigests"],
+  "timezone": "Europe/Berlin",
+  "prConcurrentLimit": 1,
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "separateMajorMinor": false,
+  "logLevelRemap": [
+    {
+      "description": "Expected with timestamp-optional (pinDigest updates have no release timestamp); do not show it as a repository problem",
+      "matchMessage": "/Some .+ did not have a releaseTimestamp, but as we're running with minimumReleaseAgeBehaviour=timestamp-optional, proceeding/",
+      "newLogLevel": "info"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "typescript-eslint and dependency-cruiser do not support TypeScript 7 yet",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
+      "description": "A Postgres major upgrade makes every Family's database dump and restore, and postgres:18 moves the data directory: done by hand, not by Renovate",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "allowedVersions": "<18"
+    },
+    {
+      "description": "One PR with every update (all managers, all update types)",
+      "matchPackageNames": ["*"],
+      "groupName": "all dependencies"
+    },
+    {
+      "description": "The core image (cube/compose.yaml) is pinned by hand together with the core's commit in ci.yml (real-core job); its sha- tags are no versions Renovate could order",
+      "matchPackageNames": ["ghcr.io/artkoenig/family-agenda"],
+      "enabled": false
+    }
+  ]
+}
