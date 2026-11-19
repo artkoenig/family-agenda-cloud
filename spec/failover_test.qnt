@@ -69,6 +69,21 @@ module scenarios {
       .expect(calls.get(1).phase == "sent" and calls.get(1).at == 2 and
               calls.get(0).outcome == "notServed" and calls.get(0).arrived == Set() and safety)
 
+  /** A page goes on after a core that is not serving and answered 503. */
+  run pageGoesOnAfterNotServing503Test =
+    init.then(becomes(0, "notServing")).then(start(2)).then(connectAnswering(2, true)).then(connect(2)).then(answer(2))
+      .expect(calls.get(2).outcome == "ran" and calls.get(2).passed == Set(0) and calls.get(2).arrived == Set(1) and safety)
+
+  /**
+   * A page ends on a core that is not serving and answered 502 or 504, though other cores serve
+   * (accepted). Test: router.test.ts "passes a page's 502 (and 504) back to the browser without
+   * asking the next core".
+   */
+  run pageEndsAfterNotServing502Test =
+    init.then(becomes(0, "notServing")).then(start(2)).then(connectAnswering(2, false))
+      .expect(calls.get(2).phase == "done" and calls.get(2).outcome == "notServed" and calls.get(2).arrived == Set() and
+              somePageEndedNotServed and reachesAServingCore and safety)
+
   /** A streamed upload is sent to one core only: refused there, it ends without another. */
   run uploadEndsAfterItsOneCoreTest =
     init.then(becomes(0, "refusing")).then(start(4))
