@@ -99,6 +99,11 @@ const MIGRATION_LOCK = 7_320_092;
 
 export type Directory = {
   find(familyId: string): Promise<DirectoryEntry | undefined>;
+  /**
+   * The Family of the Logto Organization, in any status, deleted included; null when no Family has
+   * that Organization, as when its family.created is still on its way (#128).
+   */
+  findByOrganization(organizationId: string): Promise<DirectoryEntry | null>;
   /** The Family ids of the Families still being prepared, oldest first. */
   beingPrepared(): Promise<string[]>;
   /** Writes a new entry as being prepared; leaves an existing entry of that Family as it is. */
@@ -229,6 +234,11 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
       const { rows } = await client.query<Row>("SELECT * FROM family WHERE family_id = $1", [familyId]);
       const row = rows[0];
       return row && entryOf(row);
+    },
+    async findByOrganization(organizationId) {
+      const { rows } = await client.query<Row>("SELECT * FROM family WHERE organization_id = $1", [organizationId]);
+      const row = rows[0];
+      return row ? entryOf(row) : null;
     },
     async beingPrepared() {
       const { rows } = await client.query<{ family_id: string }>(
