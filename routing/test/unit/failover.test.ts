@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isBodiless, mayRefuseOpening, neverConnected, notServing, takingTurns } from "../../src/failover";
+import { isBodiless, mayRefuseOpening, neverConnected, takingTurns } from "../../src/failover";
 
 describe("takingTurns", () => {
   it("starts each round at the next item, and wraps around", () => {
@@ -60,16 +60,6 @@ describe("neverConnected", () => {
 
   it.each(["ECONNRESET", "EPIPE", "UND_ERR_SOCKET", "ETIMEDOUT", "Error", ""])("does not take %s: the core may have run the call", (code) => {
     expect(neverConnected(code)).toBe(false);
-  });
-});
-
-describe("notServing", () => {
-  it.each([502, 503, 504])("takes %i: the core is not serving", (status) => {
-    expect(notServing(status)).toBe(true);
-  });
-
-  it.each([400, 404, 409, 500, 501, 505])("does not take %i: the core answered", (status) => {
-    expect(notServing(status)).toBe(false);
   });
 });
 

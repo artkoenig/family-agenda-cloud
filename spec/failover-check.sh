@@ -7,7 +7,7 @@
 set -eu
 cd "$(dirname "$0")"
 QUINT="${QUINT:-quint}"
-quint() { "$QUINT" "$@"; }
+quint() { command "$QUINT" "$@"; }
 
 scenarios() {
   for main in scenarios unfixedBreakRun unfixedAnswer503Run; do

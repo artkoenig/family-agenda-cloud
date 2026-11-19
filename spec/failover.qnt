@@ -39,8 +39,10 @@
  * - A call that may not be repeated ends on the first core that may have run it: when that core
  *   died mid-call, the call fails though other cores serve. Provisioning and the Scheduler make it
  *   again; the browser is answered 502.
- * - Provisioning's calls and a request with a body end on a core that is not serving (its 502, 503
- *   or 504 does not say that it ran nothing, as a core's own 503 would read the same).
+ * - Provisioning's and the Scheduler's calls and a request with a body end on a core that is not
+ *   serving (its 502, 503 or 504 does not say that it ran nothing, as a core's own 503 would read
+ *   the same, and it may come late in a Scheduler call, which going on could make outlast its job:
+ *   scheduler.qnt `lateNotServing`, #147).
  * - A request with a body longer than the Router holds is sent to its first core only, even when
  *   that core refuses the connection: the Router starts sending the rest of the body, read from
  *   the browser, before the connection is made, so it cannot send all of it again.
@@ -49,8 +51,6 @@
  * - While the named cores change, the rotation does not spread over them evenly.
  *
  * ASSUMES
- * - A core's triggered operations never answer 502, 503 or 504 once they ran anything: those
- *   statuses come from a core that is not serving, or the proxy in front of it.
  * - A refusing core changed nothing (core-answers.ts `openingRefusal`).
  *
  * NOT COVERED
@@ -80,7 +80,7 @@ module failover {
   // ---- Policies, as the code decides (failover.ts) ---------------------------------------------
 
   type Policy = {
-    /** Goes on after a core that answered it is not serving (core.ts `alsoWhenNotServing`, router.ts bodiless). */
+    /** Goes on after a core that answered it is not serving (router.ts: a page). */
     onNotServing: bool,
     /** Goes on after a broken connection or no answer: the request has no body (`isBodiless`). */
     idempotent: bool,
@@ -92,7 +92,7 @@ module failover {
 
   pure def policyOf(kind: str): Policy =
     if (kind == "provisioning") { onNotServing: false, idempotent: false, whole: true, browser: false }
-    else if (kind == "scheduler") { onNotServing: true, idempotent: false, whole: true, browser: false }
+    else if (kind == "scheduler") { onNotServing: false, idempotent: false, whole: true, browser: false }
     else if (kind == "page") { onNotServing: true, idempotent: true, whole: true, browser: true }
     else if (kind == "post") { onNotServing: false, idempotent: false, whole: true, browser: true }
     else { onNotServing: false, idempotent: false, whole: false, browser: true } // "upload"

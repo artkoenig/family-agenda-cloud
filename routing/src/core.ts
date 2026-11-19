@@ -1,7 +1,7 @@
 import { CONTEXT_HEADER } from "./context";
 import type { Config } from "./config";
 import { answerOf, dueWorkOf, openingRefusal, type Answer, type SourcesPolled } from "./core-answers";
-import { neverConnected, notServing } from "./failover";
+import { neverConnected } from "./failover";
 import { describe, reasonOf, type Log } from "./log";
 import { poolAt, type Resolve } from "./pool";
 import { systemResolve } from "./resolve";
@@ -58,23 +58,19 @@ export class CoreError extends Error {}
 /** The pool as the client reaches it: where it serves the triggered operations, and the token they require. */
 export type TriggerPool = Pick<Config, "coreTriggerUrl" | "triggerToken">;
 
-/**
- * How a call goes. `alsoWhenNotServing` lets it go on to the next core of the pool also when the
- * core it was made to answered that it is not serving; only the Scheduler's operations do, which
- * the next occurrence would make anyway.
- */
-type CallOptions = { timeoutMs?: number; alsoWhenNotServing?: boolean };
+/** How a call goes: given up after `timeoutMs` without an answer. */
+type CallOptions = { timeoutMs?: number };
 
 /**
  * A call that did not run on the core it was made to, so another core may take it: because the
- * core `refused` to open the Family, because it was `unreached`, the connection never made, or
- * because it answered that it is `not-serving`.
+ * core `refused` to open the Family, or because it was `unreached`, the connection never made.
+ * Both are known within seconds (a core waits 20 s for a Family being prepared), not late in the
+ * call's time, so a call that goes on still ends within its Scheduler job (#147).
  */
 class NotRun extends CoreError {
   constructor(
     message: string,
     readonly reason: string,
-    readonly why: "refused" | "unreached" | "not-serving",
   ) {
     super(message);
   }
@@ -93,9 +89,10 @@ export type CoreClientOptions = { timers?: Timers | undefined; resolve?: Resolve
  *   preparing the database (see `openingRefusal`). Every call then goes on to the next core.
  * - A core that could not be connected to, as one stopped a moment ago, has not received the
  *   call. Every call then goes on to the next core too.
- * - Provisioning's operations go on for no other reason: the Operator, or the core that posted
- *   `family.created`, makes them again.
- * - The Scheduler's operations also go on when a core answered that it is not serving (502, 503, 504).
+ * - A call goes on for no other reason. A 502, 503 or 504 that is no refusal is not the core's
+ *   own answer (no proxy stands between this client and the cores) and may come late in the call,
+ *   so a call that went on after it could outlast the Scheduler's job and be doubled (#147). The
+ *   Operator, the core that posted `family.created`, or the Scheduler's retry makes it again.
  * - A core that was reached but did not answer in time may still be at work on the call, so the
  *   call is given up then instead of being made a second time beside it, which could double a run.
  */
@@ -111,14 +108,14 @@ export function coreClient({ coreTriggerUrl, triggerToken }: TriggerPool, log: L
       try {
         return await callCore(target, triggerToken, operation, sealedContext, options, timers);
       } catch (error) {
-        if (!(error instanceof NotRun) || (error.why === "not-serving" && !options.alsoWhenNotServing)) throw error;
+        if (!(error instanceof NotRun)) throw error;
         notRun.push(`${target.host} ${error.reason}`);
         log.info("A core did not run the operation; the next one of the pool is tried", { operation, core: target.host, reason: error.reason });
       }
     }
     throw new CoreError(`No core ran ${operation}: ${notRun.join(", ") || `${pool.host} stands for no core`}`);
   };
-  const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS, alsoWhenNotServing: true };
+  const triggered = { timeoutMs: TRIGGERED_TIMEOUT_MS };
   return {
     async openFamily(sealedContext) {
       await call("secret-sweep", sealedContext);
@@ -156,7 +153,7 @@ async function callCore(
       signal: timeout.signal,
     }).catch((error: unknown) => {
       const code = reasonOf((error as { cause?: unknown }).cause ?? error);
-      throw neverConnected(code) ? new NotRun(noAnswer(error).message, code, "unreached") : noAnswer(error);
+      throw neverConnected(code) ? new NotRun(noAnswer(error).message, code) : noAnswer(error);
     });
     const text = await response.text().catch((error: unknown) => {
       throw noAnswer(error);
@@ -166,8 +163,8 @@ async function callCore(
       // A 403 names why the core refused the Context, such as organization-id-differs.
       const message = `The core answered ${operation} with ${response.status}${typeof answer.error === "string" && response.status === 403 ? ` ${answer.error}` : ""}`;
       const refusal = openingRefusal(response.status, answer.error);
-      if (refusal !== undefined) throw new NotRun(message, refusal, "refused");
-      throw notServing(response.status) ? new NotRun(message, String(response.status), "not-serving") : new CoreError(message);
+      if (refusal !== undefined) throw new NotRun(message, refusal);
+      throw new CoreError(message);
     }
     return answer;
   } finally {
