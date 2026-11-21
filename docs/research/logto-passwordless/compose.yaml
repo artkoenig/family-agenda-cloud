@@ -15,7 +15,7 @@ services:
 
   logto:
     # Same version as the core's compose.yaml.
-    image: ghcr.io/logto-io/logto:1.46.0
+    image: ghcr.io/logto-io/logto:1.46.0@sha256:d5e208ce705cbcf7c79ddba421216eb65413d0b0531aa658fb22a4ba659be983
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
     environment:
       DB_URL: postgres://logto:logto@postgres:5432/logto
@@ -30,12 +30,12 @@ services:
         condition: service_healthy
 
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: axllent/mailpit:v1.34@sha256:23a2ef85bc50853ab3093645d1d64679afd8887e89da5e48a88940c172591a4e
     ports:
       - "8225:8025"
 
   receiver:
-    image: node:24-alpine
+    image: node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
     command: ["node", "/app/receiver.mjs"]
     volumes:
       - ./receiver.mjs:/app/receiver.mjs:ro
@@ -44,7 +44,7 @@ services:
 
   mock-oidc:
     # Generic OIDC provider whose login form takes arbitrary claims (email_verified, hd).
-    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    image: ghcr.io/navikt/mock-oauth2-server:7.0.1@sha256:eb07a0a65007c34c40c7b849592a47e6299128a514a5c6c582a53451cc6e3390
     environment:
       SERVER_PORT: "8080"
       JSON_CONFIG: '{"interactiveLogin": true}'
