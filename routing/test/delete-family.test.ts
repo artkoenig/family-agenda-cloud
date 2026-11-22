@@ -35,6 +35,13 @@ async function createFamily(organizationId = `org_${crypto.randomUUID().slice(0,
   return familyId;
 }
 
+async function organizationOf(familyId: string): Promise<string> {
+  const [{ organization_id: organizationId }] = (await routing.directory("SELECT organization_id FROM family WHERE family_id = $1", [familyId])) as [
+    { organization_id: string },
+  ];
+  return organizationId;
+}
+
 const deleteFamily = (familyId: string, confirmation = familyId, env: Record<string, string | undefined> = {}) =>
   run(["delete", "--family-id", familyId, "--confirm", confirmation], env);
 
@@ -133,6 +140,36 @@ describe("Deleting a Family", () => {
     expect(result, result.stderr).toMatchObject({ exitCode: 0 });
     expect(routing.logto.deleted).toEqual(["org_todelete"]);
     expect(result.stderr).toContain(`"message":"The Family's Organization is deleted","familyId":"${familyId}","organizationId":"org_todelete"`);
+  });
+
+  it("deletes its Admins' Logto users, and only then its Organization", async () => {
+    const familyId = await createFamily("org_closing");
+    routing.logto.addMember("org_closing", "user_founder");
+    routing.logto.addMember("org_closing", "user_invited");
+    await createFamily("org_other");
+    routing.logto.addMember("org_other", "user_other");
+
+    const result = await deleteFamily(familyId);
+
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(routing.logto.deletions).toEqual(["user_founder", "user_invited", "org_closing"]);
+    expect(routing.logto.deletedWithMembers).toEqual([]);
+    expect(routing.logto.hasUser("user_other")).toBe(true);
+    expect(result.stderr).toContain(`"message":"The Family's Admins' users are deleted","familyId":"${familyId}","users":2`);
+    expect(result.stderr).not.toContain("@example.com");
+  });
+
+  it("deletes its Admins' users beyond the first page Logto lists", async () => {
+    const familyId = await createFamily("org_large");
+    const admins = Array.from({ length: 101 }, (_, index) => `user_${index}`);
+    for (const admin of admins) routing.logto.addMember("org_large", admin);
+
+    const result = await deleteFamily(familyId);
+
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(routing.logto.deletedUsers).toEqual(admins);
+    expect(routing.logto.deletions.at(-1)).toBe("org_large");
+    expect(routing.logto.deletedWithMembers).toEqual([]);
   });
 
   it("takes an Organization that is gone already at Logto as deleted", async () => {
@@ -392,9 +429,9 @@ describe("Running delete again", () => {
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
   });
 
-  it("after Logto failed to delete the Organization ends as an undisturbed run", async () => {
+  it("after Logto failed to list the Organization's users ends as an undisturbed run", async () => {
     const familyId = await failAndRunAgain(
-      /answered deleting the Organization with 503/,
+      /answered listing the Organization's users with 503/,
       () => {
         routing.logto.failWith(503);
         return Promise.resolve();
@@ -407,6 +444,45 @@ describe("Running delete again", () => {
 
     expect(await stateOf(familyId)).toEqual(deletedState(familyId));
     expect(routing.logto.deleted).toHaveLength(1);
+  });
+
+  it("after Logto failed to delete an Admin's user deletes the users left, and only then the Organization", async () => {
+    let organizationId = "";
+    const familyId = await failAndRunAgain(
+      /answered deleting an Admin's user with 503/,
+      async (familyId) => {
+        organizationId = await organizationOf(familyId);
+        routing.logto.addMember(organizationId, "user_founder");
+        routing.logto.addMember(organizationId, "user_invited");
+        routing.logto.failDeleting("user_invited");
+      },
+      () => {
+        routing.logto.failDeleting(null);
+        return Promise.resolve();
+      },
+    );
+
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+    expect(routing.logto.deletions).toEqual(["user_founder", "user_invited", organizationId]);
+    expect(routing.logto.deletedWithMembers).toEqual([]);
+  });
+
+  it("after Logto failed to delete the Organization ends as an undisturbed run", async () => {
+    let organizationId = "";
+    const familyId = await failAndRunAgain(
+      /answered deleting the Organization with 503/,
+      async (familyId) => {
+        organizationId = await organizationOf(familyId);
+        routing.logto.failDeleting(organizationId);
+      },
+      () => {
+        routing.logto.failDeleting(null);
+        return Promise.resolve();
+      },
+    );
+
+    expect(await stateOf(familyId)).toEqual(deletedState(familyId));
+    expect(routing.logto.deleted).toEqual([organizationId]);
   });
 
   it("after Logto refused the management client ends as an undisturbed run", async () => {
