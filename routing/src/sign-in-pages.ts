@@ -12,34 +12,70 @@ export type SignInPage = "preparing" | "unavailable" | "several" | "failed";
 /** Where the waiting page asks again. */
 export const WAITING_PATH = "/sign-in/waiting";
 
+/** Abmelden: ends Logto's session, back to the landing page. */
+export const SIGN_OUT_PATH = "/sign-in/out";
+
 /** How often the waiting page asks again, in seconds. */
 const ASK_AGAIN_SECONDS = 5;
 
-type Text = { title: string; lines: string[]; link?: { href: string; label: string } };
+/** The support contact these pages give a person who cannot get in (#173). */
+const SUPPORT_EMAIL = "support@family-agenda.cloud";
+const SUPPORT_LINK = `<a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>`;
+
+type Action = { href: string; label: string };
+
+const SIGN_OUT: Record<Language, Action> = { de: { href: SIGN_OUT_PATH, label: "Abmelden" }, en: { href: SIGN_OUT_PATH, label: "Sign out" } };
+
+/** A page's text; lines may hold the support link, so they are HTML. */
+type Text = { title: string; lines: string[]; actions: Action[] };
 
 const TEXTS: Record<Language, Record<SignInPage, Text>> = {
   de: {
     preparing: {
       title: "Deine Family wird vorbereitet",
       lines: ["Das dauert meist nur einen Moment.", "Diese Seite geht von selbst weiter, sobald deine Family bereit ist."],
+      actions: [],
     },
-    unavailable: { title: "Family nicht verfügbar", lines: ["Diese Family ist zurzeit nicht verfügbar."] },
-    several: { title: "Anmeldung nicht möglich", lines: ["Dein Konto gehört zu mehr als einer Family. Bitte wende dich an den Support."] },
+    unavailable: {
+      title: "Family nicht verfügbar",
+      lines: ["Diese Family ist zurzeit nicht verfügbar.", `Fragen? Schreib uns: ${SUPPORT_LINK}`],
+      actions: [SIGN_OUT.de],
+    },
+    several: {
+      title: "Anmeldung nicht möglich",
+      lines: ["Dein Konto gehört zu mehr als einer Family.", `Bitte schreib uns: ${SUPPORT_LINK}`],
+      actions: [SIGN_OUT.de],
+    },
     failed: {
       title: "Anmeldung fehlgeschlagen",
       lines: ["Die Anmeldung konnte nicht abgeschlossen werden."],
-      link: { href: "/sign-in", label: "Erneut anmelden" },
+      actions: [{ href: "/sign-in", label: "Erneut anmelden" }],
     },
   },
   en: {
     preparing: {
       title: "Your Family is being prepared",
       lines: ["This usually takes only a moment.", "This page moves on by itself as soon as your Family is ready."],
+      actions: [],
     },
-    unavailable: { title: "Family not available", lines: ["This Family is not available at the moment."] },
-    several: { title: "Sign-in not possible", lines: ["Your account belongs to more than one Family. Please contact support."] },
-    failed: { title: "Sign-in failed", lines: ["Sign-in could not be completed."], link: { href: "/sign-in", label: "Sign in again" } },
+    unavailable: {
+      title: "Family not available",
+      lines: ["This Family is not available at the moment.", `Questions? Write to us: ${SUPPORT_LINK}`],
+      actions: [SIGN_OUT.en],
+    },
+    several: {
+      title: "Sign-in not possible",
+      lines: ["Your account belongs to more than one Family.", `Please write to us: ${SUPPORT_LINK}`],
+      actions: [SIGN_OUT.en],
+    },
+    failed: { title: "Sign-in failed", lines: ["Sign-in could not be completed."], actions: [{ href: "/sign-in", label: "Sign in again" }] },
   },
+};
+
+/** What the waiting page adds after 2 minutes of waiting. */
+const LONG_WAIT: Record<Language, Pick<Text, "lines" | "actions">> = {
+  de: { lines: [`Dauert es länger? Schreib uns: ${SUPPORT_LINK}`], actions: [SIGN_OUT.de] },
+  en: { lines: [`Taking longer? Write to us: ${SUPPORT_LINK}`], actions: [SIGN_OUT.en] },
 };
 
 /** The language of the pages for this Accept-Language: the first of German and English the browser prefers, German if neither. */
@@ -56,12 +92,16 @@ export function languageOf(acceptLanguage: string | undefined): Language {
   return ranked[0]?.primary === "en" ? "en" : "de";
 }
 
-/** The page, as a whole HTML document. */
-export function signInPage(page: SignInPage, language: Language): string {
-  const { title, lines, link } = TEXTS[language][page];
+/** The page, as a whole HTML document; the waiting page after 2 minutes if `waitedLong`. */
+export function signInPage(page: SignInPage, language: Language, waitedLong = false): string {
+  const text = TEXTS[language][page];
+  const more = page === "preparing" && waitedLong ? LONG_WAIT[language] : { lines: [], actions: [] };
+  const { title } = text;
+  const lines = [...text.lines, ...more.lines];
+  const actions = [...text.actions, ...more.actions];
   const refresh = page === "preparing" ? `\n<meta http-equiv="refresh" content="${ASK_AGAIN_SECONDS};url=${WAITING_PATH}">` : "";
   const paragraphs = lines.map((line) => `<p>${line}</p>`).join("\n");
-  const action = link ? `\n<p><a class="button" href="${link.href}">${link.label}</a></p>` : "";
+  const action = actions.map(({ href, label }) => `\n<p><a class="button" href="${href}">${label}</a></p>`).join("");
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -92,5 +132,6 @@ body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 16px
 .brand{margin:0 0 16px;font-weight:700;color:var(--hearth)}
 h1{margin:0 0 12px;font-size:1.5rem;line-height:1.25}
 p{margin:0 0 8px;color:var(--ink-muted)}
+p a:not(.button){color:var(--hearth)}
 .button{display:inline-block;margin-top:12px;padding:10px 18px;border-radius:999px;background:var(--hearth);color:var(--on-hearth);font-weight:700;text-decoration:none}
 `;

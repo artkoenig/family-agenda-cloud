@@ -15,7 +15,7 @@ import type { AddressInfo } from "node:net";
  * when the scope `urn:logto:scope:organizations` was asked for. Who is signed in is set with
  * `signInAs`; `/oidc/auth` with nobody signed in answers `error=login_required` to `prompt=none`
  * and shows a sign-in page otherwise. The claim is taken when `/oidc/auth` answers, as Logto
- * issues the code then; with the scope `email` the token claims the user's verified email
+ * issues the code then; `/oidc/session/end` signs the person out. With the scope `email` the token claims the user's verified email
  * (`emailOf`). The ID token's signature is no real one: central sign-in does not check it.
  */
 export type StandInLogto = {
@@ -109,6 +109,10 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     }
     if (incoming.method === "GET" && url.startsWith("/oidc/auth?")) {
       authorize(new URL(url, "http://logto").searchParams, outgoing);
+      return;
+    }
+    if (incoming.method === "GET" && url.startsWith("/oidc/session/end?")) {
+      endSession(new URL(url, "http://logto").searchParams, outgoing);
       return;
     }
     const application = APPLICATIONS.exec(url);
@@ -223,6 +227,14 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     grants.set(code, { clientId: client.id, redirectUri, codeChallenge: challenge, nonce: query.get("nonce") ?? undefined, userId: signedIn, email: scopes.includes("email"), organizations });
     back.searchParams.set("code", code);
     outgoing.writeHead(302, { location: back.toString() }).end();
+  }
+  /** `/oidc/session/end`: ends Logto's session and sends the browser to a post-logout redirect URI of the client. */
+  function endSession(query: URLSearchParams, outgoing: ServerResponse) {
+    const client = applications.find(({ id }) => id === query.get("client_id"));
+    const redirectUri = query.get("post_logout_redirect_uri") ?? "";
+    if (!client?.oidcClientMetadata.postLogoutRedirectUris.includes(redirectUri)) return void outgoing.writeHead(400).end("invalid client or post_logout_redirect_uri");
+    signedIn = null;
+    outgoing.writeHead(302, { location: redirectUri }).end();
   }
   const organizationsOf = (userId: string) => [...members].filter(([organizationId]) => !deleted.includes(organizationId) && membersLeft(organizationId).includes(userId)).map(([organizationId]) => organizationId);
   /** The token endpoint's authorization code grant: the code once, for its client, redirect URI and PKCE verifier. */

@@ -12,7 +12,7 @@ import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { mailTemplates, putMailTemplates } from "./mail-templates";
 import { setSignInExperience } from "./sign-in-experience";
-import { setSignInClient } from "./sign-in-client";
+import { setSignInClient, setSignInClientRedirects } from "./sign-in-client";
 import { isFamilyId } from "./family-id";
 import type { Resolve } from "./pool";
 import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
@@ -71,11 +71,13 @@ const USAGE = `Usage:
   routing sign-in-experience
     Sets Logto's sign-in screen through IDP_MANAGEMENT_*: email with password or code, passkey,
     Google (with GOOGLE_CLIENT_ID and _SECRET, else left out), terms and privacy at sign-up,
-    German unless the browser asks otherwise, and the Account Center. Deploying runs it, since
-    the core's logto-setup resets the sign-in methods.
+    German unless the browser asks otherwise, and the Account Center. Also lets central
+    sign-in's client return to <PUBLIC_URL>/ after Abmelden, if there is that client. Deploying
+    runs it, since the core's logto-setup resets the sign-in methods.
   routing sign-in-client
     Sets up central sign-in's own OIDC client at Logto through IDP_MANAGEMENT_*: a Traditional
-    web application redirecting to <PUBLIC_URL>/sign-in/callback, created once and updated
+    web application redirecting to <PUBLIC_URL>/sign-in/callback, and to <PUBLIC_URL>/ after
+    Abmelden, created once and updated
     after. Prints CENTRAL_SIGN_IN_CLIENT_ID= and CENTRAL_SIGN_IN_CLIENT_SECRET= for the .env.
 
 A core prepares a Family's database when it first opens it, so a new core version needs no
@@ -95,7 +97,7 @@ const COMMANDS: Record<string, Command> = {
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
   "mail-templates": (_args, config, io) => putTemplates(config, io),
-  "sign-in-experience": (_args, config, io) => signInExperience(config, io),
+  "sign-in-experience": (_args, config, io, log) => signInExperience(config, io, log),
   "sign-in-client": (_args, config, io, log) => signInClient(config, io, log),
 };
 
@@ -290,10 +292,15 @@ async function signInClient(config: Config, io: Io, log: Log): Promise<number> {
   return 0;
 }
 
-/** Sets Logto's sign-in experience; needs IDP_MANAGEMENT_*, and no Directory. */
-async function signInExperience(config: Config, io: Io): Promise<number> {
+/**
+ * Sets Logto's sign-in experience, and the landing page as where central sign-in's client returns
+ * after Abmelden; needs IDP_MANAGEMENT_*, and no Directory.
+ */
+async function signInExperience(config: Config, io: Io, log: Log): Promise<number> {
   if (config.idpManagement === null) throw new ConfigError("sign-in-experience needs IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET");
   const { google } = await setSignInExperience(config.idpManagement, config.google);
+  const client = await setSignInClientRedirects(config.idpManagement, config.publicUrl);
+  log.info(client ? "Central sign-in's client returns to the landing page after Abmelden" : "There is no central sign-in client at Logto to return after Abmelden");
   io.stdout.write(
     google === "skipped"
       ? "Logto's sign-in experience is set, without Google: GOOGLE_CLIENT_ID and _SECRET are not set\n"

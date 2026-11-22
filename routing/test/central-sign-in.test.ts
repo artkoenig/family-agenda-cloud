@@ -51,6 +51,9 @@ function keepCookies(jar: Map<string, string>, setCookies: string[]) {
 
 let routing: TestRouting;
 let router: Router;
+/** How far the Router's clock is ahead of the system's. */
+let ahead = 0;
+const waitFor = (ms: number) => (ahead += ms);
 
 /** Sets up the central sign-in client at Logto, as the setup wizard does, and starts the Router with it. */
 async function startWithCentralSignIn(): Promise<Router> {
@@ -67,10 +70,11 @@ async function startWithCentralSignIn(): Promise<Router> {
         return [key, value];
       }),
   );
-  return routing.startRouter({ PUBLIC_URL, OIDC_ISSUER_URL: routing.logto.issuer, ...env });
+  return routing.startRouter({ PUBLIC_URL, OIDC_ISSUER_URL: routing.logto.issuer, ...env }, () => new Date(Date.now() + ahead));
 }
 
 beforeEach(async () => {
+  ahead = 0;
   routing = await setUpRouting();
   router = await startWithCentralSignIn();
 });
@@ -127,6 +131,47 @@ describe("Central sign-in", () => {
     expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
   });
 
+  it("tells a person who waits 2 minutes whom to write to and lets them sign out, and still lands them once the Family is ready", async () => {
+    signInMemberOf("u-1", "org_slow");
+    const browser = browserFor(router);
+    const HINT = 'Dauert es länger? Schreib uns: <a href="mailto:support@family-agenda.cloud">support@family-agenda.cloud</a>';
+
+    expect((await browser.visit("/sign-in")).body).not.toContain(HINT);
+    waitFor(119_000);
+    expect((await browser.visit("/sign-in/waiting")).body).not.toContain("/sign-in/out");
+    waitFor(1_000);
+    const late = await browser.visit("/sign-in/waiting");
+
+    expect(late.body).toContain(HINT);
+    expect(late.body).toContain('<a class="button" href="/sign-in/out">Abmelden</a>');
+    expect(late.body).toContain('<meta http-equiv="refresh" content="5;url=/sign-in/waiting">');
+    const familyId = await createFamily("org_slow");
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
+  it("counts the 2 minutes of a person of no Organization across the silent sign-ins of the waiting page", async () => {
+    signInMemberOf("u-new");
+    const browser = browserFor(router, "en-GB");
+    await browser.visit("/sign-in");
+    waitFor(60_000);
+    await browser.visit("/sign-in/waiting");
+    waitFor(60_000);
+
+    const late = await browser.visit("/sign-in/waiting");
+
+    expect(late.body).toContain("Taking longer? Write to us:");
+    expect(late.body).toContain('<a class="button" href="/sign-in/out">Sign out</a>');
+  });
+
+  it("starts the 2 minutes again when the person signs in again", async () => {
+    signInMemberOf("u-new");
+    const browser = browserFor(router);
+    await browser.visit("/sign-in");
+    waitFor(120_000);
+
+    expect((await browser.visit("/sign-in")).body).not.toContain("Dauert es länger?");
+  });
+
   it("lets a Family being prepared wait until it is active", async () => {
     const familyId = await createFamily("org_preparing");
     await setStatus(familyId, "being_prepared");
@@ -149,6 +194,48 @@ describe("Central sign-in", () => {
     expect(visit).toMatchObject({ status: 200, path: "/sign-in/callback" });
     expect(visit.body).toContain("Family nicht verfügbar");
     expect(visit.body).not.toContain(familyId);
+  });
+
+  it("shows a suspended and a deleted Family the same page", async () => {
+    const pages: string[] = [];
+    for (const status of ["suspended", "deleted"]) {
+      const familyId = await createFamily(`org_${status}`);
+      await setStatus(familyId, status);
+      routing.logto.addMember(`org_${status}`, `u-${status}`);
+      routing.logto.signInAs(`u-${status}`);
+      pages.push((await browserFor(router).visit("/sign-in")).body);
+    }
+
+    expect(pages[0]).toBe(pages[1]);
+  });
+
+  describe.each([
+    { language: "de-DE", support: "Schreib uns:", signOut: "Abmelden" },
+    { language: "en-GB", support: "Write to us:", signOut: "Sign out" },
+  ])("in $language", ({ language, support, signOut }) => {
+    const SUPPORT_LINK = '<a href="mailto:support@family-agenda.cloud">support@family-agenda.cloud</a>';
+
+    it("gives a person whose Family is not available the support contact and Abmelden", async () => {
+      const familyId = await createFamily("org_gone");
+      await setStatus(familyId, "suspended");
+      signInMemberOf("u-1", "org_gone");
+
+      const { body } = await browserFor(router, language).visit("/sign-in");
+
+      expect(body).toContain(`${support} ${SUPPORT_LINK}`);
+      expect(body).toContain(`<a class="button" href="/sign-in/out">${signOut}</a>`);
+    });
+
+    it("gives a person of several Families the support contact and Abmelden", async () => {
+      await createFamily("org_one");
+      await createFamily("org_two");
+      signInMemberOf("u-1", "org_one", "org_two");
+
+      const { body } = await browserFor(router, language).visit("/sign-in");
+
+      expect(body).toContain(SUPPORT_LINK);
+      expect(body).toContain(`<a class="button" href="/sign-in/out">${signOut}</a>`);
+    });
   });
 
   it("stops waiting for a Family that is suspended meanwhile", async () => {
@@ -303,6 +390,21 @@ describe("Central sign-in", () => {
 
     expect(visit).toMatchObject({ status: 400 });
     expect(visit.body).toContain("Anmeldung fehlgeschlagen");
+  });
+
+  it("signs the person out at Logto with its own client and back to the landing page, clearing its cookies", async () => {
+    signInMemberOf("u-new");
+    const browser = browserFor(router);
+    await browser.visit("/sign-in");
+    expect(browser.jar.has("__Host-sign-in-waiting")).toBe(true);
+
+    const toLogto = new URL((await fetch(new URL("/sign-in/out", router.url), { redirect: "manual" })).headers.get("location")!);
+    expect(toLogto.origin + toLogto.pathname).toBe(`${routing.logto.issuer}/session/end`);
+    expect(Object.fromEntries(toLogto.searchParams)).toEqual({ client_id: routing.logto.applications[0]!.id, post_logout_redirect_uri: `${PUBLIC_URL}/` });
+
+    expect(await browser.visit("/sign-in/out")).toMatchObject({ status: 302, path: "/" });
+    expect([...browser.jar.keys()]).toEqual([]);
+    expect((await browser.visit("/sign-in")).body).toBe("<h1>Logto sign-in</h1>");
   });
 
   it("answers 404 below /sign-in when central sign-in is not set up", async () => {

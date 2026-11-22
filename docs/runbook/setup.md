@@ -74,6 +74,10 @@ Not set up yet: the domain contract includes no Mail Basic mailbox, it has to be
 IONOS Mail Basic 1, mailbox `no-reply@family-agenda.cloud`. Store the password in the password manager.
 Add the mailbox to the Operator's mail client (bounces are read by hand).
 
+Support alias: in the IONOS mail settings, set up the alias (forwarding) `support@family-agenda.cloud` to the
+Operator's mailbox. Central sign-in's pages name it to a person who cannot get into their Family
+(`routing/src/sign-in-pages.ts`). Check: a mail to it arrives in the Operator's mailbox.
+
 Check: SPF (`v=spf1 include:_spf-eu.ionos.com ~all`) and the DKIM records resolve; add a DMARC record
 `_dmarc` TXT `v=DMARC1; p=none; rua=mailto:<operator address>` if none exists.
 
@@ -203,8 +207,8 @@ console listens on the Cube's loopback alone.
    `IDP_MANAGEMENT_ENDPOINT=http://logto:3001`).
 5. Central sign-in's own client, the landing page's "Anmelden" ([#154](https://github.com/artkoenig/family-agenda-cloud/issues/154)):
    `docker compose run -T --rm --no-deps router routing sign-in-client` registers the Traditional Web application
-   "Family Agenda central sign-in" with the redirect URI `https://app.family-agenda.cloud/sign-in/callback`, or
-   updates it, and prints `CENTRAL_SIGN_IN_CLIENT_ID` and `CENTRAL_SIGN_IN_CLIENT_SECRET`; put both into the `.env`.
+   "Family Agenda central sign-in" with the redirect URI `https://app.family-agenda.cloud/sign-in/callback` and the
+   post-logout redirect URI `https://app.family-agenda.cloud/` (Abmelden, `/sign-in/out`), or updates it, and prints `CENTRAL_SIGN_IN_CLIENT_ID` and `CENTRAL_SIGN_IN_CLIENT_SECRET`; put both into the `.env`.
    Without them the Router answers `/sign-in` with 404. It sends the person into the Family of the Organization
    their ID token claims; a claim gone stale, of an Admin removed meanwhile, still sends them there, where the core
    refuses them: accepted, no special case. Then `scripts/deploy.sh`.
@@ -220,7 +224,8 @@ Sign-up stays the setup's: email, verified by a code, with a password; the terms
 email and password, email and code, or passkey; a forgotten password is reset by a code. Google signs in when
 `GOOGLE_CLIENT_*` are set and links to the account of the same verified email without asking. Screens follow the
 browser's language, German otherwise. The Account Center at `https://auth.family-agenda.cloud/account` changes the
-password and passkeys and shows the email. MFA is off. To run it alone:
+password and passkeys and shows the email. MFA is off. It also sets central sign-in's post-logout redirect URI, so
+that Abmelden returns to the landing page ([#173](https://github.com/artkoenig/family-agenda-cloud/issues/173)). To run it alone:
 `docker compose exec -T router routing sign-in-experience`; it ends with `Logto's sign-in experience is set`, and says
 whether with Google.
 

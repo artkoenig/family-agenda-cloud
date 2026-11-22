@@ -53,9 +53,10 @@ const REFUSAL_BYTES = 1024;
 /**
  * Starts the Router: it finds each request's Family by the Family id in its path and passes the
  * request on to any core with that Family's Context. It opens the Directory on the first request
- * that names a Family. `resolve` finds the cores the pool's name stands for, at each request.
+ * that names a Family. `resolve` finds the cores the pool's name stands for, at each request;
+ * `now` is the time central sign-in goes by.
  */
-export async function startRouter(config: Config, log: Log, resolve: Resolve = systemResolve): Promise<Router> {
+export async function startRouter(config: Config, log: Log, resolve: Resolve = systemResolve, now: () => Date = () => new Date()): Promise<Router> {
   const directoryPool = new pg.Pool({ ...directoryConnection(config), max: 10 });
   // An idle connection the server closed is replaced on the next request; it is no reason to stop.
   directoryPool.on("error", (error) => {
@@ -70,7 +71,7 @@ export async function startRouter(config: Config, log: Log, resolve: Resolve = s
     find: (organizationId: string) => directory.findByOrganization(organizationId),
     exchange: tokenExchange(config.centralSignIn, config.publicUrl),
     postRegisterAgain: postRegisterAgain(pool, config.centralSignIn.webhookSecret, log),
-    now: () => new Date(),
+    now,
   };
   const setup: RouterSetup = { config, directory, log, pool, signIn };
   const server = createServer((incoming, outgoing) => {

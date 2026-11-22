@@ -28,8 +28,9 @@ export type TestRouting = {
   /**
    * Starts the Router as `routing serve` would, on a free port of localhost, with these changes to
    * the environment. It logs into the same log as the command line and is stopped by close().
+   * Central sign-in goes by `now`, the system's time unless given.
    */
-  startRouter(env?: Record<string, string | undefined>): Promise<Router>;
+  startRouter(env?: Record<string, string | undefined>, now?: () => Date): Promise<Router>;
   /**
    * Starts the receiver as `routing receive` would, on a free port of localhost, with these
    * changes to the environment; it logs into the same log and is stopped by close().
@@ -189,8 +190,8 @@ export async function setUpRouting(): Promise<TestRouting> {
       });
       return { exitCode, stdout, stderr };
     },
-    async startRouter(overrides = {}) {
-      const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()), resolveStandIns);
+    async startRouter(overrides = {}, now) {
+      const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()), resolveStandIns, now);
       routers.push(router);
       return router;
     },
