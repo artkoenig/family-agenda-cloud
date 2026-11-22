@@ -37,7 +37,7 @@ The Routing module's entrance for web requests, which finds a request's Family b
 _Avoid_: Load balancer, front door
 
 **Central sign-in**:
-The Router's sign-in from the landing page, with its own Logto client, which finds the person's Family by the Organization their ID token claims and sends them into it, or to a page saying it is being prepared or not available; the core then signs them in itself.
+The Router's sign-in from the landing page, with its own Logto client, which finds the person's Family by the Organization their ID token claims and sends them into it, or to a page saying it is being prepared or not available; the core then signs them in itself. For a person whose ID token claims no Organization, it has a core run their PostRegister again, as Logto never sends a lost one twice.
 _Avoid_: Login portal, SSO hub
 
 **Directory**:

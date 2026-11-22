@@ -1,6 +1,8 @@
+import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Router } from "../src/router";
 import { setUpRouting, type TestRouting } from "./support/routing";
+import { emailOf } from "./support/stand-in-logto";
 
 /** The origin the Router serves, as the browser sees it; the test browser sends it to the Router. */
 const PUBLIC_URL = "https://app.family-agenda.test";
@@ -307,6 +309,77 @@ describe("Central sign-in", () => {
     const without = await routing.startRouter({ CENTRAL_SIGN_IN_CLIENT_ID: undefined, CENTRAL_SIGN_IN_CLIENT_SECRET: undefined });
 
     expect((await fetch(new URL("/sign-in", without.url), { redirect: "manual" })).status).toBe(404);
+  });
+});
+
+/** The PostRegister events the cores received, each with whether it carries Logto's signature by IDP_WEBHOOK_SECRET. */
+function postRegisters() {
+  return routing.core.requests
+    .filter(({ method, path }) => method === "POST" && path === "/idp/events")
+    .map(({ headers, body }) => ({
+      body,
+      signed: headers["logto-signature-sha-256"] === createHmac("sha256", routing.env.IDP_WEBHOOK_SECRET!).update(JSON.stringify(body)).digest("hex"),
+    }));
+}
+
+describe("Central sign-in of a person whose PostRegister the core missed", () => {
+  it("has the core run PostRegister for them again, signed as Logto signs it, and lands them once their Family is there", async () => {
+    signInMemberOf("u-lost");
+    const browser = browserFor(router);
+
+    expect((await browser.visit("/sign-in")).body).toContain("Deine Family wird vorbereitet");
+
+    expect(postRegisters()).toEqual([
+      { body: expect.objectContaining({ event: "PostRegister", user: { id: "u-lost", primaryEmail: emailOf("u-lost") } }) as unknown, signed: true },
+    ]);
+    routing.logto.addMember("org_repaired", "u-lost");
+    const familyId = await createFamily("org_repaired");
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+  it("sends it once per sign-in of the person, not at each silent sign-in of the waiting page", async () => {
+    signInMemberOf("u-slow");
+    const browser = browserFor(router);
+    await browser.visit("/sign-in");
+
+    await browser.visit("/sign-in/waiting");
+    await browser.visit("/sign-in/waiting");
+    expect(postRegisters()).toHaveLength(1);
+
+    await browser.visit("/sign-in");
+    expect(postRegisters()).toHaveLength(2);
+  });
+
+  it("sends none for a person of an Organization", async () => {
+    signInMemberOf("u-1", "org_new");
+
+    await browserFor(router).visit("/sign-in");
+
+    expect(postRegisters()).toEqual([]);
+  });
+
+  it("lets the person wait when no core takes it, and the next sign-in tries again", async () => {
+    signInMemberOf("u-lost");
+    await routing.core.goDown();
+
+    const visit = await browserFor(router).visit("/sign-in");
+
+    expect(visit).toMatchObject({ status: 200, path: "/sign-in/callback" });
+    expect(visit.body).toContain("Deine Family wird vorbereitet");
+    expect(routing.log()).toContain("Sending PostRegister again failed");
+    await routing.core.comeBack();
+
+    await browserFor(router).visit("/sign-in");
+    expect(postRegisters()).toHaveLength(1);
+  });
+
+  it("logs that it sent PostRegister again by the user id, not by the email", async () => {
+    signInMemberOf("u-lost");
+
+    await browserFor(router).visit("/sign-in");
+
+    const [line] = routing.log().split("\n").filter((logged) => logged.includes("Sent PostRegister again"));
+    expect(line).toContain('"userId":"u-lost"');
+    expect(routing.log()).not.toContain(emailOf("u-lost"));
   });
 });
 

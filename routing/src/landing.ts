@@ -10,7 +10,7 @@ import type { DirectoryEntry } from "./directory";
 /**
  * - `family`: into the active Family; the core signs the person in itself.
  * - `preparing`: "Deine Family wird vorbereitet", which asks again. Also for a claim of no
- *   Organization: a registration whose Family is on its way (#128; the repair follows separately).
+ *   Organization: a registration whose Family is on its way (#128), or one whose PostRegister central sign-in sent again (#155).
  * - `unavailable`: the Family is suspended or deleted.
  * - `several`: more than one Organization, which the one-Family-per-person rule rules out.
  */

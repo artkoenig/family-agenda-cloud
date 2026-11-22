@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { CentralSignIn } from "./config";
-import { organizationsClaimed } from "./id-token";
+import { signInClaims, type SignInClaims } from "./id-token";
 import { landingOf, type FindByOrganization, type Landing } from "./landing";
+import type { PostRegisterAgain } from "./post-register";
 import { signInCallbackUrl } from "./sign-in-client";
 import { openCookie, sealCookie } from "./sign-in-cookie";
 import { languageOf, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
@@ -17,6 +18,11 @@ import { languageOf, signInPage, WAITING_PATH, type SignInPage } from "./sign-in
  * - `GET /sign-in/waiting`, which the waiting page asks every few seconds, lands them again by
  *   the Organization claimed at the callback, or signs in again silently if none was claimed:
  *   the Organization of a registration is created after its first sign-in.
+ *
+ * A sign-in whose ID token claims no Organization is a registration whose PostRegister is on its
+ * way, or was lost: Logto never sends it again (#155). So the callback of a sign-in the person
+ * made has the core run PostRegister for them again, and they wait for the Family it makes. The
+ * silent sign-ins of the waiting page send none: the next sign-in of the person tries again.
  *
  * A claim that is stale, because the person left the Organization between the ID token and the
  * callback, still sends them to the Family, whose core refuses them: accepted, no special case.
@@ -51,6 +57,8 @@ export type SignInSetup = {
   find: FindByOrganization;
   /** The ID token for the code, from Logto's token endpoint; undefined if Logto gave none. */
   exchange: (code: string, verifier: string) => Promise<string | undefined>;
+  /** Has a core run PostRegister for the person again. */
+  postRegisterAgain: PostRegisterAgain;
   now: () => Date;
 };
 
@@ -102,9 +110,10 @@ async function callback(context: Context, query: URLSearchParams): Promise<SignI
   const cleared = clearCookie(TRANSACTION_COOKIE);
   const ended = endedSignIn(context, query, cleared);
   if ("status" in ended) return ended;
-  const organizations = await organizationsOf(context, ended);
-  if (!organizations) return page(context, "failed", 502, [cleared]);
-  return land(context, organizations, [cleared], waitingCookie(context, organizations));
+  const claims = await claimsOf(context, ended);
+  if (!claims) return page(context, "failed", 502, [cleared]);
+  await postRegisterAgainIfNoOrganization(context, ended.transaction, claims);
+  return land(context, claims.organizations, [cleared], waitingCookie(context, claims.organizations));
 }
 
 type EndedSignIn = { transaction: Transaction; code: string };
@@ -120,11 +129,20 @@ function endedSignIn(context: Context, query: URLSearchParams, cleared: string):
   return code ? { transaction, code } : failed;
 }
 
-/** The Organizations the ID token for the code claims; undefined if Logto gave no token for this sign-in. */
-async function organizationsOf({ setup, now }: Context, { transaction, code }: EndedSignIn): Promise<string[] | undefined> {
+/** What the ID token for the code claims; undefined if Logto gave no token for this sign-in. */
+async function claimsOf({ setup, now }: Context, { transaction, code }: EndedSignIn): Promise<SignInClaims | undefined> {
   const idToken = await setup.exchange(code, transaction.verifier);
   if (idToken === undefined) return undefined;
-  return organizationsClaimed(idToken, { issuer: setup.client.issuerUrl, clientId: setup.client.clientId, nonce: transaction.nonce }, now);
+  return signInClaims(idToken, { issuer: setup.client.issuerUrl, clientId: setup.client.clientId, nonce: transaction.nonce }, now);
+}
+
+/**
+ * Has the core run PostRegister again for a person of no Organization who signed in themselves.
+ * Without a verified email there is nothing to send: the core registers none without one.
+ */
+async function postRegisterAgainIfNoOrganization({ setup }: Context, transaction: Transaction, { userId, email, organizations }: SignInClaims): Promise<void> {
+  if (transaction.silent || organizations.length > 0 || email === null) return;
+  await setup.postRegisterAgain({ userId, email });
 }
 
 /** What the waiting page asks: lands the person by the claim of the callback, or signs in again if it claimed none. */

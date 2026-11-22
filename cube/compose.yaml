@@ -155,6 +155,8 @@ x-routing: &routing
     OIDC_ISSUER_URL: https://auth.family-agenda.cloud/oidc
     CENTRAL_SIGN_IN_CLIENT_ID: ${CENTRAL_SIGN_IN_CLIENT_ID:-}
     CENTRAL_SIGN_IN_CLIENT_SECRET: ${CENTRAL_SIGN_IN_CLIENT_SECRET:-}
+    # Logto's PostRegister key: central sign-in sends a lost PostRegister to the cores again.
+    IDP_WEBHOOK_SECRET: ${IDP_WEBHOOK_SECRET:?}
   volumes:
     # Holds one blob location per Family; `routing delete` removes a Family's.
     - *blobs

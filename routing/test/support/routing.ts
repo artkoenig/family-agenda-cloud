@@ -143,6 +143,8 @@ export async function setUpRouting(): Promise<TestRouting> {
     ...poolOf(core),
     BLOB_ROOT: "/var/lib/family-agenda/blobs",
     FAMILY_WEBHOOK_SECRET: key(),
+    // Logto's PostRegister to the cores; central sign-in sends one again.
+    IDP_WEBHOOK_SECRET: key(),
     ...logto.env,
   };
 
