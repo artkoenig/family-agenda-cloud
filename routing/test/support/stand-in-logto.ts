@@ -70,7 +70,7 @@ const ORGANIZATION_USERS = /^\/api\/organizations\/([^/]+)\/users(\?.*)?$/;
 const USER = /^\/api\/users\/([^/]+)$/;
 /** The largest page Logto lists. */
 const MAX_PAGE_SIZE = 100;
-const SETTING = /^\/api\/(sign-in-exp|account-center|connectors(\/[^/]+)?)$/;
+const SETTING = /^\/api\/(sign-in-exp|account-center|configs\/oidc\/session|connectors(\/[^/]+)?)$/;
 const APPLICATIONS = /^\/api\/applications(\/[^/]+)?(\/secrets)?$/;
 const ORGANIZATIONS_SCOPE = "urn:logto:scope:organizations";
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ACCOUNT_CENTER, signInExperience } from "../src/sign-in-experience";
+import { ACCOUNT_CENTER, SESSION, signInExperience } from "../src/sign-in-experience";
 import { setUpRouting, type TestRouting } from "./support/routing";
 
 let routing: TestRouting;
@@ -20,17 +20,23 @@ describe("sign-in-experience", () => {
       exitCode: 0,
       stdout: "Logto's sign-in experience is set, without Google: GOOGLE_CLIENT_ID and _SECRET are not set\n",
     });
-    expect(calls()).toEqual(["PATCH /api/sign-in-exp", "PATCH /api/account-center"]);
+    expect(calls()).toEqual(["PATCH /api/sign-in-exp", "PATCH /api/account-center", "PATCH /api/configs/oidc/session"]);
     const [signIn, accountCenter] = routing.logto.settingCalls;
     expect(signIn!.body).toEqual(signInExperience(false));
     expect(signIn!.body).not.toHaveProperty("socialSignInConnectorTargets");
     expect(accountCenter!.body).toEqual(ACCOUNT_CENTER);
   });
 
+  it("ends Logto's session after 24 hours, so that signing in is asked for again a day later", async () => {
+    expect(await routing.run(["sign-in-experience"])).toMatchObject({ exitCode: 0 });
+    expect(routing.logto.settingCalls.find(({ path }) => path === "/api/configs/oidc/session")!.body).toEqual({ ttl: 24 * 60 * 60 });
+    expect(SESSION).toEqual({ ttl: 86_400 });
+  });
+
   it("creates the Google connector before naming it a social target", async () => {
     const result = await routing.run(["sign-in-experience"], GOOGLE);
     expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: "Logto's sign-in experience is set, with Google (connector created)\n" });
-    expect(calls()).toEqual(["GET /api/connectors", "POST /api/connectors", "PATCH /api/sign-in-exp", "PATCH /api/account-center"]);
+    expect(calls()).toEqual(["GET /api/connectors", "POST /api/connectors", "PATCH /api/sign-in-exp", "PATCH /api/account-center", "PATCH /api/configs/oidc/session"]);
     expect(routing.logto.connectors).toEqual([
       {
         id: "connector-1",
@@ -45,7 +51,7 @@ describe("sign-in-experience", () => {
     await routing.run(["sign-in-experience"], GOOGLE);
     const result = await routing.run(["sign-in-experience"], { ...GOOGLE, GOOGLE_CLIENT_SECRET: "rotated" });
     expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: "Logto's sign-in experience is set, with Google (connector updated)\n" });
-    expect(calls().slice(4)).toEqual(["GET /api/connectors", "PATCH /api/connectors/connector-1", "PATCH /api/sign-in-exp", "PATCH /api/account-center"]);
+    expect(calls().slice(5)).toEqual(["GET /api/connectors", "PATCH /api/connectors/connector-1", "PATCH /api/sign-in-exp", "PATCH /api/account-center", "PATCH /api/configs/oidc/session"]);
     expect(routing.logto.connectors).toHaveLength(1);
     expect(routing.logto.connectors[0]!.config).toMatchObject({ clientSecret: "rotated" });
   });

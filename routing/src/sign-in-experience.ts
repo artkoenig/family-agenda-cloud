@@ -2,8 +2,8 @@
  * Logto's sign-in experience as decided in #132: sign-in by email and password, email and code, or
  * passkey; Google with automatic account linking; terms and privacy accepted at sign-up; German
  * unless the browser asks for another language; the Account Center for password and passkey; no
- * MFA. The core's `logto-setup` resets signIn on every run and leaves the rest alone, so deploying
- * sets all of it again. Sign-up stays as `logto-setup` sets it: email, verified, with a password.
+ * MFA; Logto's session ends after 24 hours, not Logto's 14 days. The core's `logto-setup` resets
+ * signIn on every run and leaves the rest alone, so deploying sets all of it again. Sign-up stays as `logto-setup` sets it: email, verified, with a password.
  */
 import { managementCall, type IdpManagement } from "./logto-management";
 
@@ -35,17 +35,21 @@ export function signInExperience(withGoogle: boolean): Record<string, unknown> {
 /** The body of `PATCH /api/account-center`: `/account` changes password and passkey, shows the email. */
 export const ACCOUNT_CENTER = { enabled: true, fields: { password: "Edit", passkey: "Edit", email: "ReadOnly", mfa: "Off" } };
 
+/** The body of `PATCH /api/configs/oidc/session`: a person signs in again after 24 hours (in seconds). */
+export const SESSION = { ttl: 24 * 60 * 60 };
+
 /** What setting the sign-in experience did about Google. */
 export type SignInExperienceResult = { google: "created" | "updated" | "skipped" };
 
 /**
- * Sets the sign-in experience and the Account Center, and Google's connector first when a client is
- * given. Without one Google is left as it is. Safe to run again.
+ * Sets the sign-in experience, the Account Center and the session's lifetime, and Google's connector
+ * first when a client is given. Without one Google is left as it is. Safe to run again.
  */
 export async function setSignInExperience(idp: IdpManagement, google: GoogleClient | null): Promise<SignInExperienceResult> {
   const result: SignInExperienceResult = { google: google === null ? "skipped" : await putGoogleConnector(idp, google) };
   await managementCall(idp, "PATCH", "/api/sign-in-exp", signInExperience(google !== null), "setting the sign-in experience");
   await managementCall(idp, "PATCH", "/api/account-center", ACCOUNT_CENTER, "setting the Account Center");
+  await managementCall(idp, "PATCH", "/api/configs/oidc/session", SESSION, "setting the session's lifetime");
   return result;
 }
 
