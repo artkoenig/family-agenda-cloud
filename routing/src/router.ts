@@ -2,7 +2,8 @@ import { createServer, request, type ClientRequest, type IncomingMessage, type S
 import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import pg from "pg";
-import { directoryConnection, type Config } from "./config";
+import { answerSignIn, tokenExchange, type SignInSetup } from "./central-sign-in";
+import { directoryConnection, isSignInPath, type Config } from "./config";
 import { CONTEXT_HEADER } from "./context";
 import { openingRefusal, pageErrorCode } from "./core-answers";
 import { directory as openDirectory, type Directory } from "./directory";
@@ -24,6 +25,8 @@ type RouterSetup = {
   log: Log;
   /** The pool of cores where it serves the pages; any core may answer any request. */
   pool: Pool;
+  /** Central sign-in below /sign-in; none unless configured, and /sign-in is then no path of the Router's. */
+  signIn: SignInSetup | null;
 };
 
 /** A request as the Router passes it on to a core. */
@@ -57,7 +60,16 @@ export async function startRouter(config: Config, log: Log, resolve: Resolve = s
   directoryPool.on("error", (error) => {
     log.error("A connection to the Directory failed", { reason: reasonOf(error) });
   });
-  const setup: RouterSetup = { config, directory: openDirectory(directoryPool), log, pool: poolAt(config.coreUrl, resolve, log) };
+  const directory = openDirectory(directoryPool);
+  const signIn = config.centralSignIn && {
+    client: config.centralSignIn,
+    publicUrl: config.publicUrl,
+    operatorKey: config.operatorKey,
+    find: (organizationId: string) => directory.findByOrganization(organizationId),
+    exchange: tokenExchange(config.centralSignIn, config.publicUrl),
+    now: () => new Date(),
+  };
+  const setup: RouterSetup = { config, directory, log, pool: poolAt(config.coreUrl, resolve, log), signIn };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -77,7 +89,12 @@ export async function startRouter(config: Config, log: Log, resolve: Resolve = s
 }
 
 async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const { config, directory } = setup;
+  const { config, directory, signIn } = setup;
+  const [pathname = ""] = (incoming.url ?? "/").split("?", 1);
+  if (signIn && isSignInPath(pathname)) {
+    await signInRequest(setup, signIn, incoming, outgoing);
+    return;
+  }
   const routed = await routeRequest({ method: incoming.method, target: incoming.url ?? "/" }, (familyId) => directory.find(familyId), config.callbackPath);
   if (routed.to === "refused") {
     outgoing.writeHead(routed.status, routed.headers).end(routed.body);
@@ -94,6 +111,14 @@ async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: Se
     setup.log.info("Served a request", { familyId, method: incoming.method, status: outgoing.statusCode });
   });
   await passOn(setup, incoming, outgoing, { familyId, path, routerHeaders: { [CONTEXT_HEADER]: sealedContext(config, family) } });
+}
+
+/** Answers a request of central sign-in; logs where the person landed, by their Family id alone. */
+async function signInRequest(setup: RouterSetup, signIn: SignInSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
+  const request = { method: incoming.method, target: incoming.url ?? "/", cookie: incoming.headers.cookie, acceptLanguage: incoming.headers["accept-language"] };
+  const { status, headers, body, landing } = await answerSignIn(request, signIn);
+  if (landing) setup.log.info("Central sign-in landed", { landing: landing.page, ...(landing.page === "family" ? { familyId: landing.familyId } : {}) });
+  outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
 }
 
 /**

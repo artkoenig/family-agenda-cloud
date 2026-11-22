@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -7,6 +8,14 @@ import type { AddressInfo } from "node:net";
  * email templates, listing, creating and updating connectors, and patching the sign-in experience
  * and the Account Center. Every user and Organization is there until deleted; deleting one again
  * answers 404, and a page larger than Logto lists answers 400, as Logto does.
+ *
+ * Also its OpenID Connect provider at `<endpoint>/oidc`, as far as central sign-in uses it: listing,
+ * creating and patching applications, and the authorization code flow with PKCE (S256) for a
+ * Traditional application, whose ID token claims the Organizations the person is a member of
+ * when the scope `urn:logto:scope:organizations` was asked for. Who is signed in is set with
+ * `signInAs`; `/oidc/auth` with nobody signed in answers `error=login_required` to `prompt=none`
+ * and shows a sign-in page otherwise. The claim is taken when `/oidc/auth` answers, as Logto
+ * issues the code then. The ID token's signature is no real one: central sign-in does not check it.
  */
 export type StandInLogto = {
   /** IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET for it. */
@@ -33,8 +42,21 @@ export type StandInLogto = {
   settingCalls: { method: string; path: string; body: unknown }[];
   /** Answers every Management API call with this status, until set to null. */
   failWith(status: number | null): void;
+  /** The issuer of its OpenID Connect provider, as OIDC_ISSUER_URL names it. */
+  issuer: string;
+  /** Every application, as Logto lists them; POST adds one, PATCH merges its oidcClientMetadata. */
+  applications: Application[];
+  /** Signs `userId` in at Logto, as the person would on its sign-in page; null signs nobody in. */
+  signInAs(userId: string | null): void;
+  /** Answers the token endpoint's authorization code grant with this status, or drops the connection, until set to null. */
+  failTokens(status: number | "drop" | null): void;
   close(): Promise<void>;
 };
+
+export type Application = { id: string; name: string; type: string; secret: string; oidcClientMetadata: { redirectUris: string[]; postLogoutRedirectUris: string[] } };
+
+/** What `/oidc/auth` issued a code for. */
+type Grant = { clientId: string; redirectUri: string; codeChallenge: string; nonce: string | undefined; userId: string; organizations: string[] | undefined };
 
 const CLIENT_ID = "routing-m2m";
 const CLIENT_SECRET = "routing-m2m-secret";
@@ -45,6 +67,8 @@ const USER = /^\/api\/users\/([^/]+)$/;
 /** The largest page Logto lists. */
 const MAX_PAGE_SIZE = 100;
 const SETTING = /^\/api\/(sign-in-exp|account-center|connectors(\/[^/]+)?)$/;
+const APPLICATIONS = /^\/api\/applications(\/[^/]+)?$/;
+const ORGANIZATIONS_SCOPE = "urn:logto:scope:organizations";
 
 export async function startStandInLogto(): Promise<StandInLogto> {
   const deleted: string[] = [];
@@ -58,20 +82,38 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   const members = new Map<string, string[]>();
   let failing: number | null = null;
   let failingDeletion: string | null = null;
+  let failingTokens: number | "drop" | null = null;
+  const applications: Application[] = [];
+  let signedIn: string | null = null;
+  const grants = new Map<string, Grant>();
+  let issuer = "";
   const membersLeft = (organizationId: string) => (members.get(organizationId) ?? []).filter((userId) => users.has(userId));
   const server = createServer((incoming, outgoing) => {
     const url = incoming.url ?? "/";
     if (incoming.method === "POST" && url === "/oidc/token") {
-      const basic = `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64")}`;
-      if (incoming.headers.authorization !== basic) return void outgoing.writeHead(401).end();
-      return void outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: TOKEN, expires_in: 3600 }));
+      void readText(incoming).then((text) => {
+        const form = new URLSearchParams(text);
+        if (form.get("grant_type") === "authorization_code") {
+          exchangeCode(form, incoming, outgoing);
+          return;
+        }
+        const basic = `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64")}`;
+        if (incoming.headers.authorization !== basic) return void outgoing.writeHead(401).end();
+        outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: TOKEN, expires_in: 3600 }));
+      });
+      return;
     }
+    if (incoming.method === "GET" && url.startsWith("/oidc/auth?")) {
+      authorize(new URL(url, "http://logto").searchParams, outgoing);
+      return;
+    }
+    const application = APPLICATIONS.exec(url);
     const organization = ORGANIZATION.exec(url);
     const organizationUsers = incoming.method === "GET" ? ORGANIZATION_USERS.exec(url) : null;
     const user = incoming.method === "DELETE" ? USER.exec(url) : null;
     const templates = incoming.method === "PUT" && url === "/api/email-templates";
     const setting = SETTING.test(url);
-    const known = templates || setting || organizationUsers || user || (incoming.method === "DELETE" && organization);
+    const known = templates || setting || application || organizationUsers || user || (incoming.method === "DELETE" && organization);
     if (!known) return void outgoing.writeHead(404).end();
     if (incoming.headers.authorization !== `Bearer ${TOKEN}`) return void outgoing.writeHead(401).end();
     if (failing !== null) return void outgoing.writeHead(failing).end("refused");
@@ -85,6 +127,12 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     }
     if (templates) {
       putTemplates(incoming, outgoing);
+      return;
+    }
+    if (application) {
+      void readJson(incoming).then((body) => {
+        answerApplications(incoming.method ?? "", application[1]?.slice(1), body, outgoing);
+      });
       return;
     }
     if (setting) {
@@ -135,6 +183,63 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     if (method !== "PATCH") return void outgoing.writeHead(404).end();
     json(connector ?? body);
   }
+  function answerApplications(method: string, id: string | undefined, body: unknown, outgoing: ServerResponse) {
+    const json = (value: unknown) => outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(value));
+    if (id === undefined && method === "GET") return void json(applications);
+    if (id === undefined && method === "POST") {
+      const { name, type, oidcClientMetadata } = body as Pick<Application, "name" | "type" | "oidcClientMetadata">;
+      const created = { id: `app-${applications.length + 1}`, name, type, secret: randomBytes(16).toString("hex"), oidcClientMetadata };
+      applications.push(created);
+      return void json(created);
+    }
+    const found = applications.find((candidate) => candidate.id === id);
+    if (!found || method !== "PATCH") return void outgoing.writeHead(404).end();
+    const { oidcClientMetadata } = body as Partial<Pick<Application, "oidcClientMetadata">>;
+    found.oidcClientMetadata = { ...found.oidcClientMetadata, ...oidcClientMetadata };
+    json(found);
+  }
+  /** `/oidc/auth`: a code for the person signed in, back at the redirect URI with the state. */
+  function authorize(query: URLSearchParams, outgoing: ServerResponse) {
+    const client = applications.find(({ id }) => id === query.get("client_id"));
+    const redirectUri = query.get("redirect_uri") ?? "";
+    const challenge = query.get("code_challenge");
+    if (client?.type !== "Traditional" || !client.oidcClientMetadata.redirectUris.includes(redirectUri)) return void outgoing.writeHead(400).end("invalid client or redirect_uri");
+    if (query.get("response_type") !== "code" || query.get("code_challenge_method") !== "S256" || !challenge) return void outgoing.writeHead(400).end("invalid request");
+    const back = new URL(redirectUri);
+    const state = query.get("state");
+    if (state !== null) back.searchParams.set("state", state);
+    if (signedIn === null) {
+      if (query.get("prompt") !== "none") return void outgoing.writeHead(200, { "content-type": "text/html" }).end("<h1>Logto sign-in</h1>");
+      back.searchParams.set("error", "login_required");
+      return void outgoing.writeHead(302, { location: back.toString() }).end();
+    }
+    const scopes = (query.get("scope") ?? "").split(" ");
+    const code = randomBytes(16).toString("hex");
+    const organizations = scopes.includes(ORGANIZATIONS_SCOPE) ? organizationsOf(signedIn) : undefined;
+    grants.set(code, { clientId: client.id, redirectUri, codeChallenge: challenge, nonce: query.get("nonce") ?? undefined, userId: signedIn, organizations });
+    back.searchParams.set("code", code);
+    outgoing.writeHead(302, { location: back.toString() }).end();
+  }
+  const organizationsOf = (userId: string) => [...members].filter(([organizationId]) => !deleted.includes(organizationId) && membersLeft(organizationId).includes(userId)).map(([organizationId]) => organizationId);
+  /** The token endpoint's authorization code grant: the code once, for its client, redirect URI and PKCE verifier. */
+  function exchangeCode(form: URLSearchParams, incoming: IncomingMessage, outgoing: ServerResponse) {
+    if (failingTokens === "drop") return void incoming.socket.destroy();
+    if (failingTokens !== null) return void outgoing.writeHead(failingTokens).end("refused");
+    const [clientId = "", secret = ""] = Buffer.from((incoming.headers.authorization ?? "").replace(/^Basic /, ""), "base64").toString().split(":");
+    const client = applications.find(({ id }) => id === clientId);
+    if (client?.secret !== secret) return void outgoing.writeHead(401).end(JSON.stringify({ error: "invalid_client" }));
+    const code = form.get("code") ?? "";
+    const grant = grants.get(code);
+    grants.delete(code);
+    const verified = createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url") === grant?.codeChallenge;
+    if (grant?.clientId !== clientId || grant.redirectUri !== form.get("redirect_uri") || !verified) {
+      return void outgoing.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const claims = { iss: issuer, aud: clientId, sub: grant.userId, nonce: grant.nonce, iat: now, exp: now + 3600, organizations: grant.organizations };
+    const idToken = [{ alg: "ES384", typ: "JWT" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".c3RhbmQtaW4";
+    outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: "opaque", token_type: "Bearer", expires_in: 3600, id_token: idToken, scope: "openid" }));
+  }
   function putTemplates(incoming: IncomingMessage, outgoing: ServerResponse) {
     let body = "";
     incoming.on("data", (chunk: Buffer) => (body += chunk.toString()));
@@ -143,14 +248,19 @@ export async function startStandInLogto(): Promise<StandInLogto> {
       outgoing.writeHead(200, { "content-type": "application/json" }).end("[]");
     });
   }
-  const readJson = (incoming: IncomingMessage) =>
-    new Promise<unknown>((resolve) => {
+  const readText = (incoming: IncomingMessage) =>
+    new Promise<string>((resolve) => {
       let body = "";
       incoming.on("data", (chunk: Buffer) => (body += chunk.toString()));
-      incoming.on("end", () => { resolve(body ? JSON.parse(body) : undefined); });
+      incoming.on("end", () => { resolve(body); });
     });
+  const readJson = async (incoming: IncomingMessage): Promise<unknown> => {
+    const body = await readText(incoming);
+    return body ? JSON.parse(body) : undefined;
+  };
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
+  issuer = `http://127.0.0.1:${port}/oidc`;
   return {
     env: { IDP_MANAGEMENT_ENDPOINT: `http://127.0.0.1:${port}`, IDP_MANAGEMENT_CLIENT_ID: CLIENT_ID, IDP_MANAGEMENT_CLIENT_SECRET: CLIENT_SECRET },
     deleted,
@@ -170,6 +280,14 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     settingCalls,
     failWith(status) {
       failing = status;
+    },
+    issuer,
+    applications,
+    signInAs(userId) {
+      signedIn = userId;
+    },
+    failTokens(status) {
+      failingTokens = status;
     },
     async close() {
       server.closeAllConnections();

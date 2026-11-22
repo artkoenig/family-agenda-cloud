@@ -56,6 +56,12 @@ export type Config = {
    * `sign-in-experience` sets; without it Google is left out of the sign-in experience.
    */
   google: GoogleClient | null;
+  /**
+   * Central sign-in (#154), the Router's own OIDC client at Logto (OIDC_ISSUER_URL,
+   * CENTRAL_SIGN_IN_CLIENT_ID and _SECRET, which `sign-in-client` prints); without it /sign-in
+   * answers 404.
+   */
+  centralSignIn: CentralSignIn | null;
   /** Where the Router listens for the browsers' requests. */
   listenHost: string;
   listenPort: number;
@@ -65,6 +71,9 @@ export type Config = {
    */
   trustProxy: boolean;
 };
+
+/** Central sign-in's OIDC client: Logto's issuer, as the ID token names it, and the client's credentials. */
+export type CentralSignIn = { issuerUrl: string; clientId: string; clientSecret: string };
 
 export class ConfigError extends Error {}
 
@@ -94,6 +103,7 @@ export function readConfig(env: Env): Config {
     receiverPort: port(env, "RECEIVER_PORT", "8081"),
     idpManagement: idpManagement(env),
     google: google(env),
+    centralSignIn: centralSignIn(env),
     ...listenSettings(env),
   };
 }
@@ -139,6 +149,16 @@ function google(env: Env): GoogleClient | null {
   return { clientId, clientSecret };
 }
 
+/** CENTRAL_SIGN_IN_CLIENT_ID and _SECRET: both, or none; with them, OIDC_ISSUER_URL, which alone is the cores' setting. */
+function centralSignIn(env: Env): CentralSignIn | null {
+  const { CENTRAL_SIGN_IN_CLIENT_ID: clientId, CENTRAL_SIGN_IN_CLIENT_SECRET: clientSecret } = env;
+  if (!clientId && !clientSecret) return null;
+  if (!clientId || !clientSecret) throw new ConfigError("CENTRAL_SIGN_IN_CLIENT_ID and CENTRAL_SIGN_IN_CLIENT_SECRET must be set both, or none");
+  const issuerUrl = withoutTrailingSlash(required(env, "OIDC_ISSUER_URL"));
+  if (!/^https?:\/\//.test(issuerUrl) || !URL.canParse(issuerUrl)) throw new ConfigError("OIDC_ISSUER_URL must be an http or https address, Logto's issuer");
+  return { issuerUrl, clientId, clientSecret };
+}
+
 /** Where and how the Router listens. */
 function listenSettings(env: Env): Pick<Config, "listenHost" | "listenPort" | "trustProxy"> {
   return { listenHost: env.LISTEN_HOST ?? "0.0.0.0", listenPort: port(env, "PORT", "8080"), trustProxy: env.TRUST_PROXY === "true" };
@@ -168,11 +188,17 @@ function callbackPath(env: Env): string {
   const value = env.OIDC_CALLBACK_URL;
   if (value === undefined) return "/sso/callback";
   const url = URL.canParse(value) ? new URL(value) : undefined;
-  if (!url || !/^https?:$/.test(url.protocol) || url.pathname === "/" || url.search || url.hash) {
+  if (!url || !isCallbackAddress(url)) {
     throw new ConfigError("OIDC_CALLBACK_URL must be an http or https address with a path, without query or fragment");
   }
+  if (isSignInPath(url.pathname)) throw new ConfigError("OIDC_CALLBACK_URL must not be below /sign-in, central sign-in's paths");
   return url.pathname;
 }
+
+const isCallbackAddress = (url: URL): boolean => /^https?:$/.test(url.protocol) && url.pathname !== "/" && !url.search && !url.hash;
+
+/** Whether the path is central sign-in's: /sign-in and below it. */
+export const isSignInPath = (pathname: string): boolean => pathname === "/sign-in" || pathname.startsWith("/sign-in/");
 
 function required(env: Env, name: string): string {
   const value = env[name];

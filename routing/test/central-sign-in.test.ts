@@ -1,0 +1,328 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Router } from "../src/router";
+import { setUpRouting, type TestRouting } from "./support/routing";
+
+/** The origin the Router serves, as the browser sees it; the test browser sends it to the Router. */
+const PUBLIC_URL = "https://app.family-agenda.test";
+
+/** Where the browser is after following the redirects of central sign-in and Logto. */
+type Visit = { status: number; path: string; body: string; headers: Headers };
+
+/**
+ * A browser with a cookie jar that follows redirects within central sign-in and to Logto, and
+ * stops at any other path of the Router: the Family it lands in.
+ */
+function browserFor(router: Router, acceptLanguage = "de-DE,de;q=0.9") {
+  const jar = new Map<string, string>();
+  const toRouter = (url: URL) => (url.origin === PUBLIC_URL ? new URL(url.pathname + url.search, router.url) : url);
+  return {
+    jar,
+    async visit(path: string): Promise<Visit> {
+      let url = new URL(path, PUBLIC_URL);
+      for (let hop = 0; hop < 20; hop++) {
+        const isRouter = url.origin === PUBLIC_URL;
+        const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
+        const answer = await fetch(toRouter(url), {
+          redirect: "manual",
+          headers: { "accept-language": acceptLanguage, ...(isRouter && cookie ? { cookie } : {}) },
+        });
+        if (isRouter) keepCookies(jar, answer.headers.getSetCookie());
+        const location = answer.headers.get("location");
+        const body = await answer.text();
+        if (!location) return { status: answer.status, path: isRouter ? url.pathname : url.href, body, headers: answer.headers };
+        url = new URL(location, url);
+        if (url.origin === PUBLIC_URL && !url.pathname.startsWith("/sign-in")) return { status: answer.status, path: url.pathname, body, headers: answer.headers };
+      }
+      throw new Error("Too many redirects");
+    },
+  };
+}
+
+function keepCookies(jar: Map<string, string>, setCookies: string[]) {
+  for (const setCookie of setCookies) {
+    const [pair = "", ...attributes] = setCookie.split(";").map((part) => part.trim());
+    const [name = "", value = ""] = pair.split(/=(.*)/s);
+    if (attributes.some((attribute) => attribute.toLowerCase() === "max-age=0")) jar.delete(name);
+    else jar.set(name, value);
+  }
+}
+
+let routing: TestRouting;
+let router: Router;
+
+/** Sets up the central sign-in client at Logto, as the setup wizard does, and starts the Router with it. */
+async function startWithCentralSignIn(): Promise<Router> {
+  // `routing serve` brings the Directory's schema up to date before the Router starts.
+  expect(await routing.run(["migrate"])).toMatchObject({ exitCode: 0 });
+  const client = await routing.run(["sign-in-client"], { PUBLIC_URL });
+  expect(client, client.stderr).toMatchObject({ exitCode: 0 });
+  const env = Object.fromEntries(
+    client.stdout
+      .trim()
+      .split("\n")
+      .map((line): [string, string] => {
+        const [key = "", value = ""] = line.split(/=(.*)/s);
+        return [key, value];
+      }),
+  );
+  return routing.startRouter({ PUBLIC_URL, OIDC_ISSUER_URL: routing.logto.issuer, ...env });
+}
+
+beforeEach(async () => {
+  routing = await setUpRouting();
+  router = await startWithCentralSignIn();
+});
+afterEach(async () => {
+  await routing.close();
+});
+
+/** Creates an active Family of the Organization through the command line; answers its Family id. */
+async function createFamily(organizationId: string): Promise<string> {
+  const result = await routing.run(["create", "--organization-id", organizationId]);
+  expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+  return /\/([0-9a-f-]{36})\/$/.exec(result.stdout.trim())![1]!;
+}
+
+const setStatus = (familyId: string, status: string) => routing.directory("UPDATE family SET status = $2 WHERE family_id = $1", [familyId, status]);
+
+/** Signs the person in at Logto as a member of these Organizations. */
+function signInMemberOf(userId: string, ...organizationIds: string[]) {
+  for (const organizationId of organizationIds) routing.logto.addMember(organizationId, userId);
+  routing.logto.signInAs(userId);
+}
+
+describe("Central sign-in", () => {
+  it("lands a member of an active Family's Organization in the Family", async () => {
+    const familyId = await createFamily("org_active");
+    signInMemberOf("u-1", "org_active");
+
+    expect(await browserFor(router).visit("/sign-in")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
+  it("logs where the person landed by the Family id, not by the Organization", async () => {
+    const familyId = await createFamily("org_logged");
+    signInMemberOf("u-1", "org_logged");
+
+    await browserFor(router).visit("/sign-in");
+
+    const [line] = routing.log().split("\n").filter((logged) => logged.includes("Central sign-in landed"));
+    expect(line).toContain(`"landing":"family","familyId":"${familyId}"`);
+    expect(line).not.toContain("org_logged");
+  });
+
+  it("lets an Organization the Directory does not know wait, and lands the person once its Family is active", async () => {
+    signInMemberOf("u-1", "org_new");
+    const browser = browserFor(router);
+
+    const waiting = await browser.visit("/sign-in");
+    expect(waiting).toMatchObject({ status: 200, path: "/sign-in/callback" });
+    expect(waiting.body).toContain("Deine Family wird vorbereitet");
+    expect(waiting.body).toContain('<meta http-equiv="refresh" content="5;url=/sign-in/waiting">');
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 200, path: "/sign-in/waiting" });
+
+    const familyId = await createFamily("org_new");
+
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
+  it("lets a Family being prepared wait until it is active", async () => {
+    const familyId = await createFamily("org_preparing");
+    await setStatus(familyId, "being_prepared");
+    signInMemberOf("u-1", "org_preparing");
+    const browser = browserFor(router);
+
+    expect((await browser.visit("/sign-in")).body).toContain("Deine Family wird vorbereitet");
+    await setStatus(familyId, "active");
+
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
+  it.each(["suspended", "deleted"])("shows a %s Family as not available, and sends nobody into it", async (status) => {
+    const familyId = await createFamily("org_gone");
+    await setStatus(familyId, status);
+    signInMemberOf("u-1", "org_gone");
+
+    const visit = await browserFor(router).visit("/sign-in");
+
+    expect(visit).toMatchObject({ status: 200, path: "/sign-in/callback" });
+    expect(visit.body).toContain("Family nicht verfügbar");
+    expect(visit.body).not.toContain(familyId);
+  });
+
+  it("stops waiting for a Family that is suspended meanwhile", async () => {
+    const familyId = await createFamily("org_later");
+    await setStatus(familyId, "being_prepared");
+    signInMemberOf("u-1", "org_later");
+    const browser = browserFor(router);
+    await browser.visit("/sign-in");
+    await setStatus(familyId, "suspended");
+
+    expect((await browser.visit("/sign-in/waiting")).body).toContain("Family nicht verfügbar");
+    expect(browser.jar.has("__Host-sign-in-waiting")).toBe(false);
+  });
+
+  it("lets a person of no Organization wait, signing in again silently until their Organization is there", async () => {
+    signInMemberOf("u-new");
+    const browser = browserFor(router);
+
+    const waiting = await browser.visit("/sign-in");
+    expect(waiting.body).toContain("Deine Family wird vorbereitet");
+    expect(waiting.body).not.toMatch(/Keine Family|<a |<form|<button/);
+    expect((await browser.visit("/sign-in/waiting")).body).toContain("Deine Family wird vorbereitet");
+
+    routing.logto.addMember("org_registered", "u-new");
+    const familyId = await createFamily("org_registered");
+
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
+  it("signs in with the person when the silent sign-in finds Logto's session ended", async () => {
+    signInMemberOf("u-new");
+    const browser = browserFor(router);
+    await browser.visit("/sign-in");
+    routing.logto.signInAs(null);
+
+    const visit = await browser.visit("/sign-in/waiting");
+
+    expect(visit).toMatchObject({ status: 200, body: "<h1>Logto sign-in</h1>" });
+    expect(new URL(visit.path).searchParams.has("prompt")).toBe(false);
+  });
+
+  it("refuses a person of several Organizations with an error page", async () => {
+    await createFamily("org_one");
+    await createFamily("org_two");
+    signInMemberOf("u-1", "org_one", "org_two");
+
+    const visit = await browserFor(router).visit("/sign-in");
+
+    expect(visit).toMatchObject({ status: 500, path: "/sign-in/callback" });
+    expect(visit.body).toContain("Anmeldung nicht möglich");
+  });
+
+  it("shows its pages in English to a browser that prefers English", async () => {
+    signInMemberOf("u-1", "org_new");
+
+    expect((await browserFor(router, "en-GB,en;q=0.9,de;q=0.5").visit("/sign-in")).body).toContain("Your Family is being prepared");
+  });
+
+  it("sends a browser without a waiting claim to sign in", async () => {
+    const familyId = await createFamily("org_active");
+    signInMemberOf("u-1", "org_active");
+    const browser = browserFor(router);
+
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
+  it("does not take a waiting claim the Router did not seal", async () => {
+    await createFamily("org_victim");
+    signInMemberOf("u-1");
+    const browser = browserFor(router);
+    browser.jar.set("__Host-sign-in-waiting", Buffer.from(JSON.stringify({ organizationId: "org_victim" })).toString("base64url"));
+
+    expect((await browser.visit("/sign-in/waiting")).body).toContain("Deine Family wird vorbereitet");
+  });
+
+  it("refuses a callback whose state is not the one it sent", async () => {
+    await createFamily("org_active");
+    signInMemberOf("u-1", "org_active");
+    const browser = browserFor(router);
+    const toLogto = await fetch(new URL("/sign-in", router.url), { redirect: "manual" });
+    keepCookies(browser.jar, toLogto.headers.getSetCookie());
+    const back = new URL((await fetch(toLogto.headers.get("location")!, { redirect: "manual" })).headers.get("location")!);
+    back.searchParams.set("state", "forged");
+
+    const visit = await browser.visit(back.pathname + back.search);
+
+    expect(visit.status).toBe(400);
+    expect(visit.body).toContain("Anmeldung fehlgeschlagen");
+  });
+
+  it("refuses a callback without the sign-in it ends", async () => {
+    const visit = await browserFor(router).visit("/sign-in/callback?code=c&state=s");
+
+    expect(visit.status).toBe(400);
+    expect(visit.body).toContain("Anmeldung fehlgeschlagen");
+  });
+
+  it("answers 502 when Logto's token endpoint refuses the code", async () => {
+    signInMemberOf("u-1", "org_active");
+    routing.logto.failTokens(500);
+
+    expect((await browserFor(router).visit("/sign-in")).status).toBe(502);
+  });
+
+  it("answers 502 when Logto's token endpoint does not answer", async () => {
+    signInMemberOf("u-1", "org_active");
+    routing.logto.failTokens("drop");
+
+    const visit = await browserFor(router).visit("/sign-in");
+
+    expect(visit.status).toBe(502);
+    expect(visit.body).toContain("Anmeldung fehlgeschlagen");
+  });
+
+  it("asks Logto for the Organizations claim, with PKCE and its own redirect URI", async () => {
+    const location = new URL((await fetch(new URL("/sign-in", router.url), { redirect: "manual" })).headers.get("location")!);
+
+    expect(location.href.startsWith(`${routing.logto.issuer}/auth?`)).toBe(true);
+    expect(Object.fromEntries(location.searchParams)).toMatchObject({
+      redirect_uri: `${PUBLIC_URL}/sign-in/callback`,
+      scope: "openid email urn:logto:scope:organizations",
+      response_type: "code",
+      code_challenge_method: "S256",
+    });
+  });
+
+  it("keeps its cookies to this origin, out of scripts' reach", async () => {
+    const [cookie] = (await fetch(new URL("/sign-in", router.url), { redirect: "manual" })).headers.getSetCookie();
+
+    expect(cookie).toMatch(/^__Host-sign-in=v1\.[^;]+; Path=\/; Max-Age=600; Secure; HttpOnly; SameSite=Lax$/);
+  });
+
+  it("answers only GET and HEAD", async () => {
+    const posted = await fetch(new URL("/sign-in", router.url), { method: "POST", redirect: "manual" });
+    const head = await fetch(new URL("/sign-in", router.url), { method: "HEAD", redirect: "manual" });
+
+    expect({ status: posted.status, allow: posted.headers.get("allow") }).toEqual({ status: 405, allow: "GET, HEAD" });
+    expect(head.status).toBe(302);
+  });
+
+  it("answers 404 to a path below /sign-in it does not know", async () => {
+    expect((await fetch(new URL("/sign-in/elsewhere", router.url), { redirect: "manual" })).status).toBe(404);
+  });
+
+  it("refuses a callback with neither code nor error", async () => {
+    const browser = browserFor(router);
+    const toLogto = await fetch(new URL("/sign-in", router.url), { redirect: "manual" });
+    keepCookies(browser.jar, toLogto.headers.getSetCookie());
+    const state = new URL(toLogto.headers.get("location") ?? "").searchParams.get("state") ?? "";
+
+    const visit = await browser.visit(`/sign-in/callback?state=${state}`);
+
+    expect(visit).toMatchObject({ status: 400 });
+    expect(visit.body).toContain("Anmeldung fehlgeschlagen");
+  });
+
+  it("answers 404 below /sign-in when central sign-in is not set up", async () => {
+    const without = await routing.startRouter({ CENTRAL_SIGN_IN_CLIENT_ID: undefined, CENTRAL_SIGN_IN_CLIENT_SECRET: undefined });
+
+    expect((await fetch(new URL("/sign-in", without.url), { redirect: "manual" })).status).toBe(404);
+  });
+});
+
+describe("Setting up central sign-in's client", () => {
+  it("creates one Traditional application redirecting to /sign-in/callback, and updates it when run again", async () => {
+    const again = await routing.run(["sign-in-client"], { PUBLIC_URL: "https://agenda.example" });
+
+    expect(again.exitCode).toBe(0);
+    expect(routing.logto.applications).toMatchObject([
+      { name: "Family Agenda central sign-in", type: "Traditional", oidcClientMetadata: { redirectUris: ["https://agenda.example/sign-in/callback"] } },
+    ]);
+    const [application] = routing.logto.applications;
+    expect(again.stdout).toBe(`CENTRAL_SIGN_IN_CLIENT_ID=${application!.id}\nCENTRAL_SIGN_IN_CLIENT_SECRET=${application!.secret}\n`);
+  });
+
+  it("needs IDP_MANAGEMENT_*", async () => {
+    expect(await routing.run(["sign-in-client"], { IDP_MANAGEMENT_ENDPOINT: undefined, IDP_MANAGEMENT_CLIENT_ID: undefined, IDP_MANAGEMENT_CLIENT_SECRET: undefined })).toMatchObject({ exitCode: 2 });
+  });
+});

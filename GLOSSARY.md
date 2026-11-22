@@ -36,6 +36,10 @@ _Avoid_: Gateway, control plane, proxy
 The Routing module's entrance for web requests, which finds a request's Family by the Family id in its path and hands the request with that Family's Context to any core, and to the next one when a core refuses to open the Family.
 _Avoid_: Load balancer, front door
 
+**Central sign-in**:
+The Router's sign-in from the landing page, with its own Logto client, which finds the person's Family by the Organization their ID token claims and sends them into it, or to a page saying it is being prepared or not available; the core then signs them in itself.
+_Avoid_: Login portal, SSO hub
+
 **Directory**:
 The one list of every Family, holding per Family its Family id, status (being prepared, active, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, and how its due work last ended.
 _Avoid_: Registry, tenant table, control database

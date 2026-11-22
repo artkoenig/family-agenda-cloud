@@ -200,7 +200,14 @@ console listens on the Cube's loopback alone.
    It must say `Registration open`.
 4. Put the printed `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `IDP_WEBHOOK_SECRET` into the `.env`; the other printed
    values are in `cube/compose.yaml` already and must match it (`OIDC_ISSUER_URL=https://auth.family-agenda.cloud/oidc`,
-   `IDP_MANAGEMENT_ENDPOINT=http://logto:3001`). Then `scripts/deploy.sh`.
+   `IDP_MANAGEMENT_ENDPOINT=http://logto:3001`).
+5. Central sign-in's own client, the landing page's "Anmelden" ([#154](https://github.com/artkoenig/family-agenda-cloud/issues/154)):
+   `docker compose run -T --rm --no-deps router routing sign-in-client` registers the Traditional Web application
+   "Family Agenda central sign-in" with the redirect URI `https://app.family-agenda.cloud/sign-in/callback`, or
+   updates it, and prints `CENTRAL_SIGN_IN_CLIENT_ID` and `CENTRAL_SIGN_IN_CLIENT_SECRET`; put both into the `.env`.
+   Without them the Router answers `/sign-in` with 404. It sends the person into the Family of the Organization
+   their ID token claims; a claim gone stale, of an Admin removed meanwhile, still sends them there, where the core
+   refuses them: accepted, no special case. Then `scripts/deploy.sh`.
 
 The setup may run again, after a new core version for example; it creates nothing twice and prints the same values.
 It sets the sign-in methods, branding and SMTP connector back to its own on every run, so **deploy after every run of
@@ -222,7 +229,7 @@ The mails Logto sends are Family Agenda's own, German and English, not the SMTP 
 templates, which the setup leaves alone. Logto picks the one of the reader's language, else English. The logo in them
 is `site/mail-logo.png`, served at `https://family-agenda.cloud/mail-logo.png`.
 
-`scripts/logto-setup-wizard.sh` walks steps 1 to 4 and the deploy; it reads the secrets hidden and writes them
+`scripts/logto-setup-wizard.sh` walks steps 1 to 5 and the deploy; it reads the secrets hidden and writes them
 straight into the Cube's `.env`.
 
 Check: until the landing page links to it ([#130](https://github.com/artkoenig/family-agenda-cloud/issues/130)),

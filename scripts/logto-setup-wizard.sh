@@ -13,14 +13,14 @@ set_env() {
 	cube_ssh "cd $CUBE_DIR && umask 077 && IFS= read -r v && grep -v '^$1=' .env > .env.new && printf '%s=%s\n' '$1' \"\$v\" >> .env.new && mv .env.new .env"
 }
 
-step "1/5 Console administrator"
+step "1/6 Console administrator"
 ssh "${SSH_OPTS[@]}" -fN -o ExitOnForwardFailure=yes -L 3002:localhost:3002 "$CUBE_HOST"
 trap 'pkill -f "3002:localhost:3002 $CUBE_HOST" || true' EXIT
 echo "Tunnel open. Open http://localhost:3002, create the console's administrator,"
 echo "and store it in the password manager."
 wait_enter
 
-step "2/5 Machine-to-machine application"
+step "2/6 Machine-to-machine application"
 echo "Console: Applications → Create application → Machine-to-machine"
 echo "  name: Family Agenda management"
 echo "  then assign the role: Logto Management API access"
@@ -30,7 +30,7 @@ printf '%s\n' "$app_id" | set_env IDP_MANAGEMENT_CLIENT_ID
 printf '%s\n' "$app_secret" | set_env IDP_MANAGEMENT_CLIENT_SECRET
 echo "Written to the .env."
 
-step "3/5 logto-setup"
+step "3/6 logto-setup"
 read -rsp "Password of no-reply@family-agenda.cloud (hidden): " smtp_password; echo
 printf '%s\n' "$smtp_password" | cube_ssh "cd $CUBE_DIR && umask 077 && IFS= read -r SMTP_PASSWORD && export SMTP_PASSWORD \
 	LOGTO_M2M_APP_ID=\$(sed -n 's/^IDP_MANAGEMENT_CLIENT_ID=//p' .env) \
@@ -42,14 +42,24 @@ printf '%s\n' "$smtp_password" | cube_ssh "cd $CUBE_DIR && umask 077 && IFS= rea
 	grep -vE '^(OIDC_CLIENT_SECRET|IDP_WEBHOOK_SECRET|IDP_MANAGEMENT_CLIENT_SECRET)=' /root/logto-setup.out; exit \$s"
 cube_ssh "grep -q '^Registration open' /root/logto-setup.out" || { echo "logto-setup did not open registration; see above." >&2; exit 1; }
 
-step "4/5 Printed values into the .env"
+step "4/6 Printed values into the .env"
 for key in OIDC_CLIENT_ID OIDC_CLIENT_SECRET IDP_WEBHOOK_SECRET; do
 	cube_ssh "sed -n 's/^$key=//p' /root/logto-setup.out" | set_env "$key"
 	echo "$key written."
 done
 cube_ssh "rm /root/logto-setup.out"
 
-step "5/5 Deploy"
+step "5/6 Central sign-in's client"
+# Registers the landing page's sign-in client at Logto (or updates its redirect URI) and writes
+# what it prints into the .env; the secret is not shown.
+cube_ssh "cd $CUBE_DIR && umask 077 && docker compose run -T --rm --no-deps router routing sign-in-client > /root/sign-in-client.out"
+for key in CENTRAL_SIGN_IN_CLIENT_ID CENTRAL_SIGN_IN_CLIENT_SECRET; do
+	cube_ssh "sed -n 's/^$key=//p' /root/sign-in-client.out" | set_env "$key"
+	echo "$key written."
+done
+cube_ssh "rm /root/sign-in-client.out"
+
+step "6/6 Deploy"
 "$(dirname "$0")/deploy.sh"
 echo
 client_id=$(cube_ssh "sed -n 's/^OIDC_CLIENT_ID=//p' $CUBE_DIR/.env")

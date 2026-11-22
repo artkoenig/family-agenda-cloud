@@ -1,0 +1,214 @@
+import { createHash, randomBytes } from "node:crypto";
+import type { CentralSignIn } from "./config";
+import { organizationsClaimed } from "./id-token";
+import { landingOf, type FindByOrganization, type Landing } from "./landing";
+import { signInCallbackUrl } from "./sign-in-client";
+import { openCookie, sealCookie } from "./sign-in-cookie";
+import { languageOf, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
+
+/**
+ * Central sign-in (#154): the landing page's "Anmelden" signs the person in at Logto with the
+ * Router's own OIDC client, reads the Organizations their ID token claims and sends them into
+ * their Family, or to a page that says why not (spec/centralSignIn.qnt). The core signs the person
+ * in again itself: the Router only finds the Family. Nothing is taken from Logto's customData.
+ *
+ * - `GET /sign-in` sends the browser to Logto, `GET /sign-in/again` does so with `prompt=none`.
+ * - `GET /sign-in/callback` ends the sign-in and lands the person (see `landingOf`).
+ * - `GET /sign-in/waiting`, which the waiting page asks every few seconds, lands them again by
+ *   the Organization claimed at the callback, or signs in again silently if none was claimed:
+ *   the Organization of a registration is created after its first sign-in.
+ *
+ * A claim that is stale, because the person left the Organization between the ID token and the
+ * callback, still sends them to the Family, whose core refuses them: accepted, no special case.
+ */
+
+/** The scopes central sign-in asks Logto for; the last puts the `organizations` claim in the ID token. */
+const SCOPES = "openid email urn:logto:scope:organizations";
+
+/** What the browser keeps from sending it to Logto until it comes back. */
+const TRANSACTION_COOKIE = "__Host-sign-in";
+const TRANSACTION_LIFETIME_MS = 10 * 60_000;
+
+/** The Organization the waiting page waits for, as claimed at the callback; null if none was. */
+const WAITING_COOKIE = "__Host-sign-in-waiting";
+const WAITING_LIFETIME_MS = 60 * 60_000;
+
+type Transaction = { state: string; verifier: string; nonce: string; silent: boolean };
+type Waiting = { organizationId: string | null };
+
+/** A browser's request below /sign-in. */
+export type SignInRequest = { method: string | undefined; target: string; cookie: string | undefined; acceptLanguage: string | undefined };
+
+/** The Router's answer, and where the person landed if they did. */
+export type SignInAnswer = { status: number; headers: Record<string, string | string[]>; body: string; landing?: Landing };
+
+/** What central sign-in works with. */
+export type SignInSetup = {
+  client: CentralSignIn;
+  publicUrl: string;
+  operatorKey: Buffer;
+  /** The Directory's entry for an Organization. */
+  find: FindByOrganization;
+  /** The ID token for the code, from Logto's token endpoint; undefined if Logto gave none. */
+  exchange: (code: string, verifier: string) => Promise<string | undefined>;
+  now: () => Date;
+};
+
+/** Answers a request below /sign-in. */
+export async function answerSignIn(request: SignInRequest, setup: SignInSetup): Promise<SignInAnswer> {
+  if (request.method !== "GET" && request.method !== "HEAD") return { status: 405, headers: { ...NO_STORE, allow: "GET, HEAD" }, body: "" };
+  const url = new URL(request.target, "https://router.invalid");
+  const route = Object.hasOwn(ROUTES, url.pathname) ? ROUTES[url.pathname] : undefined;
+  if (!route) return { status: 404, headers: { ...NO_STORE, "content-type": "text/plain; charset=utf-8" }, body: "Not found\n" };
+  return route({ setup, cookies: cookiesOf(request.cookie), language: languageOf(request.acceptLanguage), now: setup.now() }, url.searchParams);
+}
+
+type Route = (context: Context, query: URLSearchParams) => SignInAnswer | Promise<SignInAnswer>;
+
+const ROUTES: Record<string, Route> = {
+  "/sign-in": (context) => toLogto(context, false),
+  "/sign-in/again": (context) => toLogto(context, true),
+  "/sign-in/callback": callback,
+  [WAITING_PATH]: waiting,
+};
+
+type Context = { setup: SignInSetup; cookies: Map<string, string>; language: ReturnType<typeof languageOf>; now: Date };
+
+const NO_STORE = { "cache-control": "no-store" };
+
+const random = (): string => randomBytes(32).toString("base64url");
+
+/** Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`. */
+function toLogto({ setup, now }: Context, silent: boolean): SignInAnswer {
+  const transaction: Transaction = { state: random(), verifier: random(), nonce: random(), silent };
+  const authorization = new URL(`${setup.client.issuerUrl}/auth`);
+  authorization.search = new URLSearchParams({
+    client_id: setup.client.clientId,
+    redirect_uri: signInCallbackUrl(setup.publicUrl),
+    response_type: "code",
+    scope: SCOPES,
+    state: transaction.state,
+    nonce: transaction.nonce,
+    code_challenge: createHash("sha256").update(transaction.verifier).digest("base64url"),
+    code_challenge_method: "S256",
+    ...(silent ? { prompt: "none" } : {}),
+  }).toString();
+  const cookie = setCookie(TRANSACTION_COOKIE, sealCookie(setup.operatorKey, TRANSACTION_COOKIE, transaction, TRANSACTION_LIFETIME_MS, now), TRANSACTION_LIFETIME_MS);
+  return redirect(authorization.toString(), [cookie]);
+}
+
+/** Ends the sign-in Logto sent the browser back from, and lands the person. */
+async function callback(context: Context, query: URLSearchParams): Promise<SignInAnswer> {
+  const cleared = clearCookie(TRANSACTION_COOKIE);
+  const ended = endedSignIn(context, query, cleared);
+  if ("status" in ended) return ended;
+  const organizations = await organizationsOf(context, ended);
+  if (!organizations) return page(context, "failed", 502, [cleared]);
+  return land(context, organizations, [cleared], waitingCookie(context, organizations));
+}
+
+type EndedSignIn = { transaction: Transaction; code: string };
+
+/** The sign-in Logto's answer ends, with the code for its ID token; else the answer to the browser. */
+function endedSignIn(context: Context, query: URLSearchParams, cleared: string): EndedSignIn | SignInAnswer {
+  const transaction = opened(context, TRANSACTION_COOKIE) as Transaction | undefined;
+  const failed = page(context, "failed", 400, [cleared]);
+  if (!transaction || query.get("state") !== transaction.state) return failed;
+  // A silent sign-in Logto could not do, as when its session ended, is done again with the person.
+  if (query.has("error")) return transaction.silent ? redirect("/sign-in", [cleared]) : failed;
+  const code = query.get("code");
+  return code ? { transaction, code } : failed;
+}
+
+/** The Organizations the ID token for the code claims; undefined if Logto gave no token for this sign-in. */
+async function organizationsOf({ setup, now }: Context, { transaction, code }: EndedSignIn): Promise<string[] | undefined> {
+  const idToken = await setup.exchange(code, transaction.verifier);
+  if (idToken === undefined) return undefined;
+  return organizationsClaimed(idToken, { issuer: setup.client.issuerUrl, clientId: setup.client.clientId, nonce: transaction.nonce }, now);
+}
+
+/** What the waiting page asks: lands the person by the claim of the callback, or signs in again if it claimed none. */
+async function waiting(context: Context): Promise<SignInAnswer> {
+  const claim = opened(context, WAITING_COOKIE) as Waiting | undefined;
+  if (!claim) return redirect("/sign-in", []);
+  if (claim.organizationId === null) return redirect("/sign-in/again", []);
+  return land(context, [claim.organizationId], [], undefined);
+}
+
+/**
+ * The page or Family the person lands in, with `cookies` set. While they wait the waiting cookie
+ * is `waitBy` (none: it stays as it is); once they land elsewhere it is cleared.
+ */
+async function land(context: Context, organizations: readonly string[], cookies: string[], waitBy: string | undefined): Promise<SignInAnswer> {
+  const landing = await landingOf(organizations, context.setup.find);
+  const waitingCookies = landing.page === "preparing" ? [waitBy ?? []].flat() : [clearCookie(WAITING_COOKIE)];
+  return { ...landed(context, landing, [...cookies, ...waitingCookies]), landing };
+}
+
+function landed(context: Context, landing: Landing, cookies: string[]): SignInAnswer {
+  switch (landing.page) {
+    case "family":
+      return redirect(`/${landing.familyId}/`, cookies);
+    case "preparing":
+      return page(context, "preparing", 200, cookies);
+    case "unavailable":
+      return page(context, "unavailable", 200, cookies);
+    case "several":
+      return page(context, "several", 500, cookies);
+  }
+}
+
+/** The cookie the waiting page waits by: the one Organization claimed, or none. */
+function waitingCookie({ setup, now }: Context, organizations: readonly string[]): string {
+  const waitingFor: Waiting = { organizationId: organizations[0] ?? null };
+  return setCookie(WAITING_COOKIE, sealCookie(setup.operatorKey, WAITING_COOKIE, waitingFor, WAITING_LIFETIME_MS, now), WAITING_LIFETIME_MS);
+}
+
+/** What the sealed cookie `name` holds, if it opens; its shape is the Router's own, as nobody else can seal one. */
+function opened({ setup, cookies, now }: Context, name: string): unknown {
+  const sealed = cookies.get(name);
+  return sealed === undefined ? undefined : openCookie(setup.operatorKey, name, sealed, now);
+}
+
+function page({ language }: Context, kind: SignInPage, status: number, cookies: string[]): SignInAnswer {
+  return { status, headers: { ...NO_STORE, "content-type": "text/html; charset=utf-8", "set-cookie": cookies }, body: signInPage(kind, language) };
+}
+
+function redirect(location: string, cookies: string[]): SignInAnswer {
+  return { status: 302, headers: { ...NO_STORE, location, "set-cookie": cookies }, body: "" };
+}
+
+const setCookie = (name: string, value: string, lifetimeMs: number): string =>
+  `${name}=${value}; Path=/; Max-Age=${String(lifetimeMs / 1000)}; Secure; HttpOnly; SameSite=Lax`;
+
+const clearCookie = (name: string): string => `${name}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`;
+
+/** The browser's cookies by name; the first of a name, as browsers send the most specific first. */
+function cookiesOf(header: string | undefined): Map<string, string> {
+  const cookies = new Map<string, string>();
+  for (const pair of (header ?? "").split(";")) {
+    const separator = pair.indexOf("=");
+    const name = pair.slice(0, separator).trim();
+    if (separator > 0 && !cookies.has(name)) cookies.set(name, pair.slice(separator + 1).trim());
+  }
+  return cookies;
+}
+
+/**
+ * Logto's token endpoint for central sign-in's client: the ID token for a code, with the PKCE
+ * verifier, or undefined if Logto refuses it or does not answer.
+ */
+export function tokenExchange(client: CentralSignIn, publicUrl: string): SignInSetup["exchange"] {
+  const basic = Buffer.from(`${encodeURIComponent(client.clientId)}:${encodeURIComponent(client.clientSecret)}`).toString("base64");
+  return async (code, verifier) => {
+    const response = await fetch(`${client.issuerUrl}/token`, {
+      method: "POST",
+      headers: { authorization: `Basic ${basic}`, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: signInCallbackUrl(publicUrl) }).toString(),
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => undefined);
+    if (!response?.ok) return undefined;
+    const { id_token: idToken } = (await response.json()) as { id_token?: unknown };
+    return typeof idToken === "string" ? idToken : undefined;
+  };
+}

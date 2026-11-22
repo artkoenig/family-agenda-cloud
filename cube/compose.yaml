@@ -150,6 +150,11 @@ x-routing: &routing
     # Logto's Google connector, which `routing sign-in-experience` sets; empty leaves Google out.
     GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    # Central sign-in (/sign-in): its own Logto client, which `routing sign-in-client` registers and
+    # prints; empty leaves /sign-in out. The issuer is the cores' OIDC_ISSUER_URL.
+    OIDC_ISSUER_URL: https://auth.family-agenda.cloud/oidc
+    CENTRAL_SIGN_IN_CLIENT_ID: ${CENTRAL_SIGN_IN_CLIENT_ID:-}
+    CENTRAL_SIGN_IN_CLIENT_SECRET: ${CENTRAL_SIGN_IN_CLIENT_SECRET:-}
   volumes:
     # Holds one blob location per Family; `routing delete` removes a Family's.
     - *blobs

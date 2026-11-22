@@ -23,7 +23,10 @@
     "src/proxy-headers.ts",
     "src/request-routing.ts",
     "src/cli-arguments.ts",
-    "src/cli-reports.ts"
+    "src/cli-reports.ts",
+    "src/landing.ts",
+    "src/id-token.ts",
+    "src/sign-in-cookie.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,
