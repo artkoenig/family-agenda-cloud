@@ -19,8 +19,9 @@ export type DeleteFamilyInput = {
  * The first step marks the Family deleted and destroys its wrapped family key and database
  * password, so that from then on nothing routes to it or triggers its due work, and what is left of its
  * data opens with no key the Routing module still has. Its entry stays, as the record that it was
- * deleted, with no secrets in it, nor anything of its Organization but the id. Its Logto
- * Organization is deleted with its memberships; Logto keeps the users, the Admins' accounts. The
+ * deleted, with no secrets in it, nor anything of its Organization but the id. Its Admins' Logto
+ * users are deleted, so that none of them can sign in any more, and only then its Organization:
+ * once the Organization is gone, nothing tells whose users were left. The
  * time deleting finished is noted only after the last step, so
  * that a deleted Family without it was not deleted to the end. Old row versions of the Directory
  * not yet vacuumed, its write-ahead log and its backups still hold the wrapped values until they
@@ -84,10 +85,16 @@ function refuseWithoutManagement(entry: DirectoryEntry, config: Config): void {
   }
 }
 
-/** Deletes the Family's Logto Organization, if it has one; one gone already is deleted. */
+/**
+ * Deletes the Family's Admins' Logto users and then its Organization, if it has one. Users or an
+ * Organization gone already are deleted; a run that failed part-way deletes the members left.
+ */
 async function deleteOrganization({ config, log }: ScheduledProvisioning, { familyId, organizationId }: DirectoryEntry): Promise<void> {
   if (organizationId === null || config.idpManagement === null) return;
-  await organizations(config.idpManagement).delete(organizationId);
+  const organization = organizations(config.idpManagement);
+  const users = await organization.deleteMembers(organizationId);
+  log.info("The Family's Admins' users are deleted", { familyId, users });
+  await organization.delete(organizationId);
   log.info("The Family's Organization is deleted", { familyId, organizationId });
 }
 
