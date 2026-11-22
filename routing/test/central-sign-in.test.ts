@@ -277,6 +277,27 @@ describe("Central sign-in", () => {
     expect(new URL(visit.path).searchParams.has("prompt")).toBe(false);
   });
 
+  it("opens Logto's sign-up screen for the landing page's registration", async () => {
+    routing.logto.signInAs(null);
+
+    const visit = await browserFor(router).visit("/sign-in/register");
+
+    expect(visit).toMatchObject({ status: 200, body: "<h1>Logto sign-in</h1>" });
+    expect(new URL(visit.path).searchParams.get("first_screen")).toBe("register");
+  });
+
+  it("lets a person who just registered wait for their Family, and lands them once it is active", async () => {
+    signInMemberOf("u-registered");
+    const browser = browserFor(router);
+
+    expect((await browser.visit("/sign-in/register")).body).toContain("Deine Family wird vorbereitet");
+
+    routing.logto.addMember("org_registered", "u-registered");
+    const familyId = await createFamily("org_registered");
+
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
   it("refuses a person of several Organizations with an error page", async () => {
     await createFamily("org_one");
     await createFamily("org_two");

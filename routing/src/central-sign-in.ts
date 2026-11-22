@@ -13,7 +13,8 @@ import { languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, type SignInPage } 
  * their Family, or to a page that says why not (spec/centralSignIn.qnt). The core signs the person
  * in again itself: the Router only finds the Family. Nothing is taken from Logto's customData.
  *
- * - `GET /sign-in` sends the browser to Logto, `GET /sign-in/again` does so with `prompt=none`.
+ * - `GET /sign-in` sends the browser to Logto, `GET /sign-in/again` does so with `prompt=none`,
+ *   `GET /sign-in/register` on Logto's sign-up screen (`first_screen=register`).
  * - `GET /sign-in/out` (Abmelden, #173) ends Logto's session and sends the person to the landing page.
  * - `GET /sign-in/callback` ends the sign-in and lands the person (see `landingOf`).
  * - `GET /sign-in/waiting`, which the waiting page asks every few seconds, lands them again by
@@ -79,9 +80,16 @@ export async function answerSignIn(request: SignInRequest, setup: SignInSetup): 
 
 type Route = (context: Context, query: URLSearchParams) => SignInAnswer | Promise<SignInAnswer>;
 
+/**
+ * Registration from the landing page ("2 Wochen testen"): a sign-in that opens on Logto's sign-up
+ * screen. It ends as any sign-in: the person waits for the Family their PostRegister makes.
+ */
+const REGISTER_PATH = "/sign-in/register";
+
 const ROUTES: Record<string, Route> = {
   "/sign-in": (context) => toLogto(context, false),
   "/sign-in/again": (context) => toLogto(context, true),
+  [REGISTER_PATH]: (context) => toLogto(context, false, "register"),
   "/sign-in/callback": callback,
   [WAITING_PATH]: waiting,
   [SIGN_OUT_PATH]: signOut,
@@ -93,8 +101,8 @@ const NO_STORE = { "cache-control": "no-store" };
 
 const random = (): string => randomBytes(32).toString("base64url");
 
-/** Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`. */
-function toLogto({ setup, now }: Context, silent: boolean): SignInAnswer {
+/** Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`, on `firstScreen` if given. */
+function toLogto({ setup, now }: Context, silent: boolean, firstScreen?: "register"): SignInAnswer {
   const transaction: Transaction = { state: random(), verifier: random(), nonce: random(), silent };
   const authorization = new URL(`${setup.client.issuerUrl}/auth`);
   authorization.search = new URLSearchParams({
@@ -107,6 +115,7 @@ function toLogto({ setup, now }: Context, silent: boolean): SignInAnswer {
     code_challenge: createHash("sha256").update(transaction.verifier).digest("base64url"),
     code_challenge_method: "S256",
     ...(silent ? { prompt: "none" } : {}),
+    ...(firstScreen ? { first_screen: firstScreen } : {}),
   }).toString();
   const cookie = setCookie(TRANSACTION_COOKIE, sealCookie(setup.operatorKey, TRANSACTION_COOKIE, transaction, TRANSACTION_LIFETIME_MS, now), TRANSACTION_LIFETIME_MS);
   return redirect(authorization.toString(), [cookie]);
