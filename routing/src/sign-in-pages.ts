@@ -1,13 +1,17 @@
 /**
  * The pages of central sign-in (#154): German or English by the browser's Accept-Language,
- * German unless it prefers English. In the landing page's colors and font, inline: the Router
- * serves no files, and the landing page's stylesheets are not public before launch. No I/O.
+ * German unless it prefers English. In the landing page's design system: its tokens.css and
+ * design.css, which Caddy serves at DESIGN_PATH (cube/Caddyfile), since the Router serves no files.
+ * No I/O.
  */
 
 export type Language = "de" | "en";
 
 /** A page central sign-in shows instead of sending the person into a Family. */
 export type SignInPage = "preparing" | "unavailable" | "several" | "failed";
+
+/** Where Caddy serves the landing page's tokens.css, design.css and fonts on the Router's host. */
+const DESIGN_PATH = "/design";
 
 /** Where the waiting page asks again. */
 export const WAITING_PATH = "/sign-in/waiting";
@@ -101,7 +105,7 @@ export function signInPage(page: SignInPage, language: Language, waitedLong = fa
   const actions = [...text.actions, ...more.actions];
   const refresh = page === "preparing" ? `\n<meta http-equiv="refresh" content="${ASK_AGAIN_SECONDS};url=${WAITING_PATH}">` : "";
   const paragraphs = lines.map((line) => `<p>${line}</p>`).join("\n");
-  const action = actions.map(({ href, label }) => `\n<p><a class="button" href="${href}">${label}</a></p>`).join("");
+  const action = actions.map(({ href, label }) => `\n<p class="action"><a class="fam-button fam-button--primary" href="${href}">${label}</a></p>`).join("");
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -109,9 +113,11 @@ export function signInPage(page: SignInPage, language: Language, waitedLong = fa
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">${refresh}
 <title>${title} · Family Agenda</title>
+<link rel="stylesheet" href="${DESIGN_PATH}/tokens.css">
+<link rel="stylesheet" href="${DESIGN_PATH}/design.css">
 <style>${STYLE}</style>
 </head>
-<body>
+<body class="fam-page">
 <main class="card">
 <p class="brand">Family Agenda</p>
 <h1>${title}</h1>
@@ -122,16 +128,12 @@ ${paragraphs}${action}
 `;
 }
 
-/** The landing page's tokens (site/tokens.css), light and dark, as far as these pages use them. */
+/** The card around a page; everything else comes from the design system. */
 const STYLE = `
-:root{color-scheme:light;--surface:#faf6f0;--surface-raised:#fffdf9;--line:#e6dccd;--ink:#2b221b;--ink-muted:#6b5c4e;--hearth:#bb4f29;--on-hearth:#fff;--shadow:0 1px 2px rgba(74,52,30,.08),0 4px 12px rgba(74,52,30,.06)}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--surface:#1c1814;--surface-raised:#262019;--line:#3a3129;--ink:#f5eee5;--ink-muted:#b8a999;--hearth:#e8875f;--on-hearth:#1c1814;--shadow:0 1px 2px rgba(0,0,0,.5),0 4px 12px rgba(0,0,0,.3)}}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:var(--surface);color:var(--ink);font:16px/1.55 'Atkinson Hyperlegible Next',system-ui,sans-serif}
-.card{max-width:480px;width:100%;padding:28px;background:var(--surface-raised);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
-.brand{margin:0 0 16px;font-weight:700;color:var(--hearth)}
-h1{margin:0 0 12px;font-size:1.5rem;line-height:1.25}
+body{display:grid;place-items:center;padding:24px 16px}
+.card{max-width:480px;width:100%;padding:28px;background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-raised)}
+.brand{margin:0 0 16px;font-weight:800;color:var(--ink)}
+h1{margin:0 0 12px;font-size:26px;line-height:32px}
 p{margin:0 0 8px;color:var(--ink-muted)}
-p a:not(.button){color:var(--hearth)}
-.button{display:inline-block;margin-top:12px;padding:10px 18px;border-radius:999px;background:var(--hearth);color:var(--on-hearth);font-weight:700;text-decoration:none}
+.action{margin-top:20px}
 `;

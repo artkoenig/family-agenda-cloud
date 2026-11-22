@@ -143,7 +143,7 @@ describe("Central sign-in", () => {
     const late = await browser.visit("/sign-in/waiting");
 
     expect(late.body).toContain(HINT);
-    expect(late.body).toContain('<a class="button" href="/sign-in/out">Abmelden</a>');
+    expect(late.body).toContain('<a class="fam-button fam-button--primary" href="/sign-in/out">Abmelden</a>');
     expect(late.body).toContain('<meta http-equiv="refresh" content="5;url=/sign-in/waiting">');
     const familyId = await createFamily("org_slow");
     expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
@@ -160,7 +160,7 @@ describe("Central sign-in", () => {
     const late = await browser.visit("/sign-in/waiting");
 
     expect(late.body).toContain("Taking longer? Write to us:");
-    expect(late.body).toContain('<a class="button" href="/sign-in/out">Sign out</a>');
+    expect(late.body).toContain('<a class="fam-button fam-button--primary" href="/sign-in/out">Sign out</a>');
   });
 
   it("starts the 2 minutes again when the person signs in again", async () => {
@@ -223,7 +223,7 @@ describe("Central sign-in", () => {
       const { body } = await browserFor(router, language).visit("/sign-in");
 
       expect(body).toContain(`${support} ${SUPPORT_LINK}`);
-      expect(body).toContain(`<a class="button" href="/sign-in/out">${signOut}</a>`);
+      expect(body).toContain(`<a class="fam-button fam-button--primary" href="/sign-in/out">${signOut}</a>`);
     });
 
     it("gives a person of several Families the support contact and Abmelden", async () => {
@@ -234,7 +234,7 @@ describe("Central sign-in", () => {
       const { body } = await browserFor(router, language).visit("/sign-in");
 
       expect(body).toContain(SUPPORT_LINK);
-      expect(body).toContain(`<a class="button" href="/sign-in/out">${signOut}</a>`);
+      expect(body).toContain(`<a class="fam-button fam-button--primary" href="/sign-in/out">${signOut}</a>`);
     });
   });
 

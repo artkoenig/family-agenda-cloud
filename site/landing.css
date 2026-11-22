@@ -243,7 +243,7 @@ html:not([data-scripted]) .lp-stage { width: 360px; }
   .lp-nav__inner { gap: var(--space-2); }
   .lp-nav__links { gap: var(--space-2); font-size: 14px; }
   .lp-nav__links .lp-nav__link { font-size: inherit; }
-  .lp-nav__links .fam-button { padding-inline: 10px; font-size: inherit; }
+  .lp-nav__links .fam-button { padding-inline: 10px; }
   .lp-nav__lang { font-size: 13px; }
   .lp .lp-hero__facts { gap: var(--space-2); }
   .lp-hero__facts li { padding: 6px var(--space-3) 6px 10px; font-size: 15px; }
