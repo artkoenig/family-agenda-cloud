@@ -5,7 +5,8 @@
 # publishes ports, but for Logto's admin console on the Cube's loopback:
 #   public     Caddy and the internet (ACME, the browsers).
 #   edge       Caddy, the Router and Logto: the browsers' requests, and Logto's PostRegister to the
-#              Router, and the Operator's `routing delete` to Logto's Management API.
+#              Router, and the Operator's `routing delete` to Logto's Management API; central
+#              sign-in's token request to auth.family-agenda.cloud, Caddy's alias here.
 #   pool       the Routing module (Router, Scheduler, receiver) and the cores: the cores' Context
 #              interface, and the cores' family.created to the receiver.
 #   directory  Postgres, the Routing module and the cores, which open their Family's database.
@@ -209,7 +210,12 @@ services:
       - ./site:/srv/site:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [public, edge]
+    # The Router reaches Logto's OIDC endpoints by their public address, as Logto issues them, but
+    # sits on internal networks only: on `edge` that address is Caddy's.
+    networks:
+      public:
+      edge:
+        aliases: [auth.family-agenda.cloud]
 
   router:
     <<: *routing

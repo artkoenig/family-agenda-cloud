@@ -71,7 +71,7 @@ const USER = /^\/api\/users\/([^/]+)$/;
 /** The largest page Logto lists. */
 const MAX_PAGE_SIZE = 100;
 const SETTING = /^\/api\/(sign-in-exp|account-center|connectors(\/[^/]+)?)$/;
-const APPLICATIONS = /^\/api\/applications(\/[^/]+)?$/;
+const APPLICATIONS = /^\/api\/applications(\/[^/]+)?(\/secrets)?$/;
 const ORGANIZATIONS_SCOPE = "urn:logto:scope:organizations";
 
 export async function startStandInLogto(): Promise<StandInLogto> {
@@ -139,7 +139,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     }
     if (application) {
       void readJson(incoming).then((body) => {
-        answerApplications(incoming.method ?? "", application[1]?.slice(1), body, outgoing);
+        answerApplications(incoming.method ?? "", application[1]?.slice(1), application[2] !== undefined, body, outgoing);
       });
       return;
     }
@@ -191,20 +191,23 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     if (method !== "PATCH") return void outgoing.writeHead(404).end();
     json(connector ?? body);
   }
-  function answerApplications(method: string, id: string | undefined, body: unknown, outgoing: ServerResponse) {
+  /** As Logto 1.x does: an application's JSON has no secret, which only its `/secrets` lists. */
+  function answerApplications(method: string, id: string | undefined, secrets: boolean, body: unknown, outgoing: ServerResponse) {
     const json = (value: unknown) => outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(value));
-    if (id === undefined && method === "GET") return void json(applications);
+    const withoutSecret = ({ id, name, type, oidcClientMetadata }: Application) => ({ id, name, type, oidcClientMetadata });
+    if (id === undefined && method === "GET") return void json(applications.map(withoutSecret));
     if (id === undefined && method === "POST") {
       const { name, type, oidcClientMetadata } = body as Pick<Application, "name" | "type" | "oidcClientMetadata">;
       const created = { id: `app-${applications.length + 1}`, name, type, secret: randomBytes(16).toString("hex"), oidcClientMetadata };
       applications.push(created);
-      return void json(created);
+      return void json(withoutSecret(created));
     }
     const found = applications.find((candidate) => candidate.id === id);
-    if (!found || method !== "PATCH") return void outgoing.writeHead(404).end();
+    if (found && secrets && method === "GET") return void json([{ applicationId: found.id, name: "Default secret", value: found.secret, expiresAt: null }]);
+    if (!found || secrets || method !== "PATCH") return void outgoing.writeHead(404).end();
     const { oidcClientMetadata } = body as Partial<Pick<Application, "oidcClientMetadata">>;
     found.oidcClientMetadata = { ...found.oidcClientMetadata, ...oidcClientMetadata };
-    json(found);
+    json(withoutSecret(found));
   }
   /** `/oidc/auth`: a code for the person signed in, back at the redirect URI with the state. */
   function authorize(query: URLSearchParams, outgoing: ServerResponse) {

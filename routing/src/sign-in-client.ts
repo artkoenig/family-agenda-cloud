@@ -22,7 +22,10 @@ const clientMetadata = (publicUrl: string) => ({ redirectUris: [signInCallbackUr
 /** What the Router needs of the client: its CENTRAL_SIGN_IN_CLIENT_ID and _SECRET. */
 export type SignInClient = { clientId: string; clientSecret: string; created: boolean };
 
-type Application = { id: string; name: string; type: string; secret?: unknown };
+type Application = { id: string; name: string; type: string };
+
+/** One of an application's secrets, as `GET /api/applications/:id/secrets` lists them. */
+type Secret = { value?: unknown; expiresAt?: number | null };
 
 /** Creates the application, or sets the redirect URIs of the one there is. Safe to run again. */
 export async function setSignInClient(idp: IdpManagement, publicUrl: string): Promise<SignInClient> {
@@ -30,9 +33,20 @@ export async function setSignInClient(idp: IdpManagement, publicUrl: string): Pr
   const application = existing
     ? await patchRedirectUris(idp, existing, publicUrl)
     : ((await (await managementCall(idp, "POST", "/api/applications", { name: SIGN_IN_CLIENT_NAME, type: "Traditional", oidcClientMetadata: clientMetadata(publicUrl) }, "creating the application")).json()) as Application);
-  // Logto keeps the secret it made with the application on it, beside any added later.
-  if (typeof application.secret !== "string" || application.secret === "") throw new Error("Logto answered with no secret of central sign-in's client");
-  return { clientId: application.id, clientSecret: application.secret, created: !existing };
+  return { clientId: application.id, clientSecret: await secretOf(idp, application), created: !existing };
+}
+
+/**
+ * The secret Logto made with the application: Logto lists an application's secrets apart from it,
+ * the one it made first, beside any added later. One that has expired is no use.
+ */
+async function secretOf(idp: IdpManagement, { id }: Application): Promise<string> {
+  const response = await managementCall(idp, "GET", `/api/applications/${encodeURIComponent(id)}/secrets`, undefined, "listing the application's secrets");
+  const secrets = (await response.json()) as Secret[];
+  const now = Date.now();
+  const usable = secrets.find(({ value, expiresAt }) => typeof value === "string" && value !== "" && (expiresAt == null || expiresAt > now));
+  if (!usable) throw new Error("Logto answered with no secret of central sign-in's client");
+  return usable.value as string;
 }
 
 /**
