@@ -11,12 +11,6 @@
 const NOT_CONNECTED = new Set(["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
 
 /**
- * What a core answers when it did not run the operation, because it is starting or because a proxy
- * in front of it has no core to pass the call to.
- */
-const NOT_RUN = new Set([502, 503, 504]);
-
-/**
  * Answers the items it is given in turn: each round starts one item further than the round before,
  * over however many items there are this time, so that rounds spread over items that come and go.
  */
@@ -34,12 +28,6 @@ export function takingTurns<T>(): (items: readonly T[]) => T[] {
  * provably did not run and another core may take it.
  */
 export const neverConnected = (code: string): boolean => NOT_CONNECTED.has(code);
-
-/**
- * Whether a core answered with the `status` of a core that is not serving, so that the call
- * provably did not run and another core may take it.
- */
-export const notServing = (status: number): boolean => NOT_RUN.has(status);
 
 /** Whether a request with this method has no body, and so may be sent to a second core. */
 export const isBodiless = (method: string | undefined): boolean => method === "GET" || method === "HEAD";

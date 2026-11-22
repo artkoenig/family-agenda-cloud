@@ -393,18 +393,47 @@ describe("A core that does not answer", () => {
     expect(routing.log()).not.toContain('"message":"Due work failed"');
   });
 
-  it.each([502, 503, 504])("that answers %i makes the Scheduler use another core of the pool", async (status) => {
+  it.each([502, 503, 504])("that answers %i fails the run, which is not made again on another core", async (status) => {
     const familyId = await createFamily();
-    const starting = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
-    others.push(starting);
-    starting.failNext("due-work", status);
+    const failing = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    others.push(failing);
+    failing.failNext("due-work", status);
     const clock = new TestClock("2026-11-16T08:01:10Z");
-    await routing.startScheduler(clock, poolOf(starting, routing.core));
+    await routing.startScheduler(clock, poolOf(failing, routing.core));
 
-    expect(await minutesWithDueWork(clock, familyId, 1)).toEqual([1]);
+    await minutesWithDueWork(clock, familyId, 1);
 
-    expect(starting.requests.map(({ path }) => path)).toEqual(["/operations/due-work"]);
-    expect((await overview())[0]).toMatchObject({ outcome: "succeeded" });
+    expect(failing.requests.map(({ path }) => path)).toEqual(["/operations/due-work"]);
+    expect(callsOf("due-work", familyId)).toEqual([]);
+    expect((await overview())[0]).toMatchObject({ outcome: "failed", detail: `The core answered due-work with ${status}` });
+  });
+
+  // Counterexample lateNotServingRun of spec/scheduler_test.qnt (#147): the timeout bounds each core's
+  // attempt, so a call that went on after a late 504 could outlast its job's expiry.
+  it("that answers 504 late fails the run instead of going on, which could outlast its job and double it", { timeout: 60_000 }, async () => {
+    const familyId = await createFamily();
+    const gateway = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    others.push(gateway);
+    const cores = [gateway, routing.core];
+    const releases = cores.map((core) => core.holdDueWork(familyId));
+    const dueWorkOn = (core: StandInCore) => core.requests.filter(({ path, context }) => path === "/operations/due-work" && context?.familyId === familyId);
+    const arrived = () => cores.map((core) => dueWorkOn(core).length);
+    const clock = new TestClock("2026-11-16T08:01:10Z");
+    await routing.startScheduler(clock, poolOf(gateway, routing.core));
+
+    await minutes(clock, 1);
+    await expect.poll(() => arrived().reduce((a, b) => a + b)).toBe(1);
+    // The core asked first answers 504 after nine minutes, within its attempt's ten.
+    const first = arrived().findIndex((count) => count === 1);
+    await minutes(clock, 8);
+    cores[first]!.failDueWork(familyId, 504);
+    releases[first]!();
+
+    await expect.poll(async () => (await overview())[0]?.outcome).toBe("failed");
+    expect(arrived().reduce((a, b) => a + b)).toBe(1);
+    releases.forEach((release) => {
+      release();
+    });
   });
 
   it("that answers 500 fails the run, which is not made again on another core", async () => {

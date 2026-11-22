@@ -61,12 +61,12 @@ module scenarios {
     init.then(start(2)).then(connect(2)).then(breakOff(2)).then(connect(2)).then(answer(2))
       .expect(calls.get(2).outcome == "ran" and calls.get(2).arrived == Set(0, 1) and safety)
 
-  /** The Scheduler goes on after a core that is starting; Provisioning ends there (accepted). */
-  run onlyTheSchedulerGoesOnAfterNotServingTest =
+  /** The Scheduler and Provisioning end on a core that is not serving (accepted, #147). */
+  run triggeredOperationsEndAfterNotServingTest =
     init.then(becomes(0, "notServing")).then(becomes(1, "notServing"))
-      .then(start(1)).then(connect(1)).then(connect(1)).then(connect(1))
+      .then(start(1)).then(connect(1))
       .then(start(0)).then(connect(0))
-      .expect(calls.get(1).phase == "sent" and calls.get(1).at == 2 and
+      .expect(calls.get(1).outcome == "notServed" and calls.get(1).arrived == Set() and
               calls.get(0).outcome == "notServed" and calls.get(0).arrived == Set() and safety)
 
   /** A page goes on after a core that is not serving and answered 503. */
