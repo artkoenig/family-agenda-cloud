@@ -572,6 +572,18 @@ describe("a core that refuses to open the Family", () => {
     expect(await response.json()).toEqual({ familyId, path: "/agendas/7" });
   });
 
+  it.each([502, 504])("passes a page's %i back to the browser without asking the next core", async (status) => {
+    older.refuseFamily(familyId, undefined);
+    const since = routing.core.requests.length;
+    older.answerNext({ status, headers: [], body: Buffer.from("No core behind the proxy") });
+
+    const response = await fetch(`${throughPool.url}/${familyId}/agendas/7`);
+
+    expect(response.status).toBe(status);
+    expect(await response.text()).toBe("No core behind the proxy");
+    expect(arrived(since)).toEqual([]);
+  });
+
   it("has a HEAD request, whose refusal has no body to say why, served by the next core", async () => {
     const since = routing.core.requests.length;
 
