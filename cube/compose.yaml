@@ -188,7 +188,7 @@ x-egress-proxy-environment: &egress-proxy-environment
 
 services:
   caddy:
-    image: caddy:2.11.9
+    image: caddy:2.11.9@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
     restart: unless-stopped
     ports:
       - "80:80"
@@ -392,7 +392,7 @@ services:
 
   plugin-imap:
     <<: *plugin
-    image: ghcr.io/artkoenig/family-agenda-imap:0.3.0@sha256:676319139e6130c88a21cc870483c747fe2387e75e3bd7a9e0ab4d2f86e3c1c5
+    image: ghcr.io/artkoenig/family-agenda-imap:0.4.0@sha256:53f5fe9e26fd4f0c0e5db7e10aa482239dca8ca4e32f6806e192dc1d0efd7c8d
     networks: [plugin-imap, plugin-imap-egress]
   plugin-imap-egress:
     <<: *egress-proxy
