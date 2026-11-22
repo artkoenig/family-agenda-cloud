@@ -22,7 +22,18 @@ app.family-agenda.cloud {
 	# Until launch.
 	header X-Robots-Tag "noindex, nofollow"
 
-	reverse_proxy router:8080
+	# The landing page's design system for central sign-in's pages (routing/src/sign-in-pages.ts):
+	# only its stylesheets and fonts, open before launch too. Family ids are UUIDs, so /design is free.
+	@design path /design/tokens.css /design/design.css /design/fonts/*
+	handle @design {
+		uri strip_prefix /design
+		root * /srv/site
+		file_server
+	}
+
+	handle {
+		reverse_proxy router:8080
+	}
 }
 
 # Logto's sign-in and registration pages, its OIDC endpoints and its Management API, for every
