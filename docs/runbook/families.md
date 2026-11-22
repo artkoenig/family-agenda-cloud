@@ -109,8 +109,9 @@ Only this line means the Family is deleted. If the command ends without it
 (`Deleting the Family did not finish; run delete again to finish it`), run it again until it prints the line. The
 usual reason is the blob bucket not being mounted (`The blob root … is not there`): see `docker compose ps blob-mount`
 and its log, then run `delete` again. Another is Logto not answering (`Logto's Management API answered deleting the
-Organization with …`, `… listing the Organization's users with …`, `… deleting an Admin's user with …`, or `Logto refused the management client's credentials`): see `docker compose ps logto` and
-`IDP_MANAGEMENT_CLIENT_*` in the `.env`. A run that began deleting (`The Family is marked deleted` in its log) leaves
+Organization with …`, `… listing the Organization's users with …`, `… deleting an Admin's user with …`, or
+`Logto refused the management client's credentials`): see `docker compose ps logto` and `IDP_MANAGEMENT_CLIENT_*` in
+the `.env`. A run that began deleting (`The Family is marked deleted` in its log) leaves
 the Family's address answering `404` and nothing scheduled for it, whether it finished or not; a run that was
 refused (`Deleting the Family was refused`) changed nothing.
 

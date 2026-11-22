@@ -3,9 +3,10 @@ import type { AddressInfo } from "node:net";
 
 /**
  * Logto's Management API as far as the Routing module uses it: a client-credentials token,
- * listing an Organization's users a page at a time, deleting a user and an Organization, putting email templates, listing, creating and updating connectors,
- * and patching the sign-in experience and the Account Center. Every Organization is there until
- * deleted; deleting one again answers 404, as Logto does.
+ * listing an Organization's users a page at a time, deleting a user and an Organization, putting
+ * email templates, listing, creating and updating connectors, and patching the sign-in experience
+ * and the Account Center. Every user and Organization is there until deleted; deleting one again
+ * answers 404, and a page larger than Logto lists answers 400, as Logto does.
  */
 export type StandInLogto = {
   /** IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET for it. */
@@ -14,16 +15,16 @@ export type StandInLogto = {
   deleted: string[];
   /** The users deleted so far, in order. */
   deletedUsers: string[];
-  /** The deletions of users and Organizations, in order, each with the members the Organization had left. */
-  deletions: { deleted: string; membersLeft: number }[];
+  /** The ids of the users and Organizations deleted so far, in order. */
+  deletions: string[];
+  /** The Organizations deleted while they had members left. */
+  deletedWithMembers: string[];
   /** Makes `userId` a user of Logto and a member of the Organization. */
   addMember(organizationId: string, userId: string): void;
-  /** The users of the Organization, as Logto lists them. */
-  membersOf(organizationId: string): string[];
   /** Whether `userId` is a user of Logto. */
   hasUser(userId: string): boolean;
-  /** Answers deleting this user with 503, until set to null. */
-  failDeletingUser(userId: string | null): void;
+  /** Answers deleting this user or Organization with 503, until set to null. */
+  failDeleting(id: string | null): void;
   /** The bodies of every PUT /api/email-templates, in order. */
   emailTemplatePuts: unknown[];
   /** Every connector, as Logto lists them; POST adds one, PATCH replaces its config. */
@@ -51,11 +52,12 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   const connectors: StandInLogto["connectors"] = [];
   const settingCalls: StandInLogto["settingCalls"] = [];
   const deletedUsers: string[] = [];
-  const deletions: StandInLogto["deletions"] = [];
+  const deletions: string[] = [];
+  const deletedWithMembers: string[] = [];
   const users = new Set<string>();
   const members = new Map<string, string[]>();
   let failing: number | null = null;
-  let failingUser: string | null = null;
+  let failingDeletion: string | null = null;
   const membersLeft = (organizationId: string) => (members.get(organizationId) ?? []).filter((userId) => users.has(userId));
   const server = createServer((incoming, outgoing) => {
     const url = incoming.url ?? "/";
@@ -93,26 +95,29 @@ export async function startStandInLogto(): Promise<StandInLogto> {
       return;
     }
     const organizationId = decodeURIComponent(organization![1]!);
+    if (organizationId === failingDeletion) return void outgoing.writeHead(503).end("refused");
     if (deleted.includes(organizationId)) return void outgoing.writeHead(404).end();
     deleted.push(organizationId);
-    deletions.push({ deleted: organizationId, membersLeft: membersLeft(organizationId).length });
+    deletions.push(organizationId);
+    if (membersLeft(organizationId).length > 0) deletedWithMembers.push(organizationId);
     members.delete(organizationId);
     outgoing.writeHead(204).end();
   });
   function listUsers(organizationId: string, query: URLSearchParams, outgoing: ServerResponse) {
     if (deleted.includes(organizationId)) return void outgoing.writeHead(404).end();
     const page = Number(query.get("page") ?? "1");
-    const pageSize = Math.min(Number(query.get("page_size") ?? "20"), MAX_PAGE_SIZE);
+    const pageSize = Number(query.get("page_size") ?? "20");
+    if (pageSize > MAX_PAGE_SIZE) return void outgoing.writeHead(400).end("guard.invalid_pagination");
     const all = membersLeft(organizationId);
     const listed = all.slice((page - 1) * pageSize, page * pageSize).map((id) => ({ id, primaryEmail: `${id}@example.com`, organizationRoles: [] }));
     outgoing.writeHead(200, { "content-type": "application/json", "total-number": String(all.length) }).end(JSON.stringify(listed));
   }
   function deleteUser(userId: string, outgoing: ServerResponse) {
-    if (userId === failingUser) return void outgoing.writeHead(503).end("refused");
+    if (userId === failingDeletion) return void outgoing.writeHead(503).end("refused");
     if (!users.has(userId)) return void outgoing.writeHead(404).end();
     users.delete(userId);
     deletedUsers.push(userId);
-    deletions.push({ deleted: userId, membersLeft: 0 });
+    deletions.push(userId);
     outgoing.writeHead(204).end();
   }
   function answerSetting(method: string, url: string, body: unknown, outgoing: ServerResponse) {
@@ -151,14 +156,14 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     deleted,
     deletedUsers,
     deletions,
+    deletedWithMembers,
     addMember(organizationId, userId) {
       users.add(userId);
       members.set(organizationId, [...(members.get(organizationId) ?? []), userId]);
     },
-    membersOf: membersLeft,
     hasUser: (userId) => users.has(userId),
-    failDeletingUser(userId) {
-      failingUser = userId;
+    failDeleting(id) {
+      failingDeletion = id;
     },
     emailTemplatePuts,
     connectors,

@@ -1,28 +1,34 @@
 /**
  * The Families' Logto Organizations, through Logto's Management API. A Family is an Organization;
- * its Admins are users, which Logto keeps when the Organization goes: they are deleted first.
+ * its Admins are its members, users whom Logto keeps when the Organization goes.
  */
 import { managementFetch, type IdpManagement } from "./logto-management";
 
 export type Organizations = {
   /**
-   * Deletes every user who is a member of the Organization and answers how many were deleted. A
-   * user gone already is no failure, nor is an Organization gone already, which has no members to list.
+   * Deletes the user of every member of the Organization, until Logto lists none, and answers how
+   * many it deleted. A user gone already is no failure, nor is an Organization gone already.
    */
-  deleteMembers(organizationId: string): Promise<number>;
+  deleteMemberUsers(organizationId: string): Promise<number>;
   /** Deletes the Organization and its memberships; one that is gone already is no failure. */
   delete(organizationId: string): Promise<void>;
 };
 
 /** The largest page Logto lists. */
 const PAGE_SIZE = 100;
+/** How often the members are listed and deleted before members Logto still lists fail the step. */
+const ROUNDS = 3;
 
 export function organizations(idp: IdpManagement): Organizations {
   return {
-    async deleteMembers(organizationId) {
-      const members = await listMembers(idp, organizationId);
-      for (const userId of members) await deleteUser(idp, userId);
-      return members.length;
+    async deleteMemberUsers(organizationId) {
+      let deleted = 0;
+      for (let round = 0; round < ROUNDS; round++) {
+        const members = await listMembers(idp, organizationId);
+        if (members.length === 0) return deleted;
+        for (const userId of members) if (await deleteUser(idp, userId)) deleted++;
+      }
+      throw new Error(`Logto still lists members of the Organization after deleting their users ${ROUNDS} times`);
     },
     async delete(organizationId) {
       const response = await managementFetch(idp, `/api/organizations/${encodeURIComponent(organizationId)}`, { method: "DELETE" });
@@ -32,7 +38,7 @@ export function organizations(idp: IdpManagement): Organizations {
   };
 }
 
-/** The ids of the Organization's users, every page of them; none of an Organization that is gone. */
+/** The ids of the Organization's members, every page of them; none of an Organization that is gone. */
 async function listMembers(idp: IdpManagement, organizationId: string): Promise<string[]> {
   const members: string[] = [];
   for (let page = 1; ; page++) {
@@ -46,8 +52,10 @@ async function listMembers(idp: IdpManagement, organizationId: string): Promise<
   }
 }
 
-async function deleteUser(idp: IdpManagement, userId: string): Promise<void> {
+/** Deletes the user and answers whether it was there to delete. */
+async function deleteUser(idp: IdpManagement, userId: string): Promise<boolean> {
   const response = await managementFetch(idp, `/api/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
-  if (response.ok || response.status === 404) return;
+  if (response.status === 404) return false;
+  if (response.ok) return true;
   throw new Error(`Logto's Management API answered deleting an Admin's user with ${response.status}`);
 }
