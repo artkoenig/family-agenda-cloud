@@ -44,6 +44,7 @@ describe("readConfig", () => {
       receiverPort: 8081,
       idpManagement: null,
       google: null,
+      centralSignIn: null,
       listenHost: "0.0.0.0",
       listenPort: 8080,
       trustProxy: false,
@@ -69,6 +70,9 @@ describe("readConfig", () => {
       IDP_MANAGEMENT_CLIENT_SECRET: "m2m-secret",
       GOOGLE_CLIENT_ID: "client.apps.googleusercontent.com",
       GOOGLE_CLIENT_SECRET: "google-secret",
+      OIDC_ISSUER_URL: "https://auth.family-agenda.cloud/oidc/",
+      CENTRAL_SIGN_IN_CLIENT_ID: "central",
+      CENTRAL_SIGN_IN_CLIENT_SECRET: "central-secret",
     });
     expect(config).toMatchObject({
       familyDatabaseHost: "families.internal",
@@ -84,7 +88,36 @@ describe("readConfig", () => {
       receiverPort: 9000,
       idpManagement: { endpoint: "http://logto:3001", clientId: "m2m", clientSecret: "m2m-secret" },
       google: { clientId: "client.apps.googleusercontent.com", clientSecret: "google-secret" },
+      centralSignIn: { issuerUrl: "https://auth.family-agenda.cloud/oidc", clientId: "central", clientSecret: "central-secret" },
     });
+  });
+
+  it("takes empty CENTRAL_SIGN_IN_CLIENT_* as not set, as Compose passes them before the setup wizard ran", () => {
+    expect(readConfig({ ...minimal, OIDC_ISSUER_URL: "https://auth.family-agenda.cloud/oidc", CENTRAL_SIGN_IN_CLIENT_ID: "", CENTRAL_SIGN_IN_CLIENT_SECRET: "" }).centralSignIn).toBeNull();
+  });
+
+  it.each(["CENTRAL_SIGN_IN_CLIENT_ID", "CENTRAL_SIGN_IN_CLIENT_SECRET"])("refuses central sign-in without %s", (name) => {
+    const env: Record<string, string | undefined> = { ...minimal, OIDC_ISSUER_URL: "https://auth.example/oidc", CENTRAL_SIGN_IN_CLIENT_ID: "c", CENTRAL_SIGN_IN_CLIENT_SECRET: "s" };
+    env[name] = undefined;
+    expect(() => readConfig(env)).toThrow(new ConfigError("CENTRAL_SIGN_IN_CLIENT_ID and CENTRAL_SIGN_IN_CLIENT_SECRET must be set both, or none"));
+  });
+
+  it("refuses central sign-in without OIDC_ISSUER_URL", () => {
+    expect(() => readConfig({ ...minimal, CENTRAL_SIGN_IN_CLIENT_ID: "c", CENTRAL_SIGN_IN_CLIENT_SECRET: "s" })).toThrow(new ConfigError("OIDC_ISSUER_URL is not set"));
+  });
+
+  it.each(["auth.example/oidc", "ftp://auth.example/oidc", "http://"])("refuses OIDC_ISSUER_URL %j", (issuer) => {
+    expect(() => readConfig({ ...minimal, OIDC_ISSUER_URL: issuer, CENTRAL_SIGN_IN_CLIENT_ID: "c", CENTRAL_SIGN_IN_CLIENT_SECRET: "s" })).toThrow(
+      new ConfigError("OIDC_ISSUER_URL must be an http or https address, Logto's issuer"),
+    );
+  });
+
+  it.each(["https://app.example/sign-in", "https://app.example/sign-in/callback"])("refuses OIDC_CALLBACK_URL %j, below central sign-in", (url) => {
+    expect(() => readConfig({ ...minimal, OIDC_CALLBACK_URL: url })).toThrow(new ConfigError("OIDC_CALLBACK_URL must not be below /sign-in, central sign-in's paths"));
+  });
+
+  it("takes OIDC_CALLBACK_URL /sign-inside, which only begins like central sign-in's paths", () => {
+    expect(readConfig({ ...minimal, OIDC_CALLBACK_URL: "https://app.example/sign-inside" }).callbackPath).toBe("/sign-inside");
   });
 
   it("takes empty GOOGLE_CLIENT_* as not set, as Compose passes them unset", () => {

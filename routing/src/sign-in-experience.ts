@@ -5,7 +5,7 @@
  * MFA. The core's `logto-setup` resets signIn on every run and leaves the rest alone, so deploying
  * sets all of it again. Sign-up stays as `logto-setup` sets it: email, verified, with a password.
  */
-import { managementFetch, type IdpManagement } from "./logto-management";
+import { managementCall, type IdpManagement } from "./logto-management";
 
 /** The Google OAuth client Logto's Google connector signs in with. */
 export type GoogleClient = { clientId: string; clientSecret: string };
@@ -44,28 +44,19 @@ export type SignInExperienceResult = { google: "created" | "updated" | "skipped"
  */
 export async function setSignInExperience(idp: IdpManagement, google: GoogleClient | null): Promise<SignInExperienceResult> {
   const result: SignInExperienceResult = { google: google === null ? "skipped" : await putGoogleConnector(idp, google) };
-  await call(idp, "PATCH", "/api/sign-in-exp", signInExperience(google !== null), "setting the sign-in experience");
-  await call(idp, "PATCH", "/api/account-center", ACCOUNT_CENTER, "setting the Account Center");
+  await managementCall(idp, "PATCH", "/api/sign-in-exp", signInExperience(google !== null), "setting the sign-in experience");
+  await managementCall(idp, "PATCH", "/api/account-center", ACCOUNT_CENTER, "setting the Account Center");
   return result;
 }
 
 async function putGoogleConnector(idp: IdpManagement, { clientId, clientSecret }: GoogleClient): Promise<"created" | "updated"> {
   const config = { clientId, clientSecret, scope: "openid profile email", prompts: ["select_account"] };
-  const connectors = (await (await call(idp, "GET", "/api/connectors", undefined, "listing the connectors")).json()) as { id: string; connectorId: string }[];
+  const connectors = (await (await managementCall(idp, "GET", "/api/connectors", undefined, "listing the connectors")).json()) as { id: string; connectorId: string }[];
   const existing = connectors.find(({ connectorId }) => connectorId === GOOGLE_CONNECTOR_FACTORY);
   if (existing) {
-    await call(idp, "PATCH", `/api/connectors/${encodeURIComponent(existing.id)}`, { config }, "updating the Google connector");
+    await managementCall(idp, "PATCH", `/api/connectors/${encodeURIComponent(existing.id)}`, { config }, "updating the Google connector");
     return "updated";
   }
-  await call(idp, "POST", "/api/connectors", { connectorId: GOOGLE_CONNECTOR_FACTORY, config }, "creating the Google connector");
+  await managementCall(idp, "POST", "/api/connectors", { connectorId: GOOGLE_CONNECTOR_FACTORY, config }, "creating the Google connector");
   return "created";
-}
-
-async function call(idp: IdpManagement, method: string, path: string, body: unknown, doing: string): Promise<Response> {
-  const response = await managementFetch(idp, path, {
-    method,
-    ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-  });
-  if (!response.ok) throw new Error(`Logto's Management API answered ${doing} with ${response.status}: ${await response.text()}`);
-  return response;
 }

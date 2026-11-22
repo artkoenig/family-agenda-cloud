@@ -28,3 +28,13 @@ async function accessToken(endpoint: string, clientId: string, clientSecret: str
   if (!response.ok) throw new Error(`Logto refused the management client's credentials with ${response.status}`);
   return ((await response.json()) as { access_token: string }).access_token;
 }
+
+/** Calls `path` with `body` as JSON, if any; throws, saying what it was `doing`, unless Logto answers ok. */
+export async function managementCall(idp: IdpManagement, method: string, path: string, body: unknown, doing: string): Promise<Response> {
+  const response = await managementFetch(idp, path, {
+    method,
+    ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  });
+  if (!response.ok) throw new Error(`Logto's Management API answered ${doing} with ${response.status}: ${await response.text()}`);
+  return response;
+}

@@ -12,6 +12,7 @@ import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
 import { mailTemplates, putMailTemplates } from "./mail-templates";
 import { setSignInExperience } from "./sign-in-experience";
+import { setSignInClient } from "./sign-in-client";
 import { isFamilyId } from "./family-id";
 import type { Resolve } from "./pool";
 import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
@@ -72,6 +73,10 @@ const USAGE = `Usage:
     Google (with GOOGLE_CLIENT_ID and _SECRET, else left out), terms and privacy at sign-up,
     German unless the browser asks otherwise, and the Account Center. Deploying runs it, since
     the core's logto-setup resets the sign-in methods.
+  routing sign-in-client
+    Sets up central sign-in's own OIDC client at Logto through IDP_MANAGEMENT_*: a Traditional
+    web application redirecting to <PUBLIC_URL>/sign-in/callback, created once and updated
+    after. Prints CENTRAL_SIGN_IN_CLIENT_ID= and CENTRAL_SIGN_IN_CLIENT_SECRET= for the .env.
 
 A core prepares a Family's database when it first opens it, so a new core version needs no
 command: a request or operation that a core of an older release refuses is tried on another core.`;
@@ -91,6 +96,7 @@ const COMMANDS: Record<string, Command> = {
   families: (_args, config, io) => families(config, io),
   "mail-templates": (_args, config, io) => putTemplates(config, io),
   "sign-in-experience": (_args, config, io) => signInExperience(config, io),
+  "sign-in-client": (_args, config, io, log) => signInClient(config, io, log),
 };
 
 /** The Operator's command line. Answers the exit code. */
@@ -273,6 +279,15 @@ async function withDirectory<T>(config: Config, work: (client: pg.Client) => Pro
   } finally {
     await client.end();
   }
+}
+
+/** Registers central sign-in's client at Logto and prints its CENTRAL_SIGN_IN_CLIENT_*; needs IDP_MANAGEMENT_*, and no Directory. */
+async function signInClient(config: Config, io: Io, log: Log): Promise<number> {
+  if (config.idpManagement === null) throw new ConfigError("sign-in-client needs IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET");
+  const { clientId, clientSecret, created } = await setSignInClient(config.idpManagement, config.publicUrl);
+  log.info(created ? "Central sign-in's client is created at Logto" : "Central sign-in's client at Logto is updated", { clientId });
+  io.stdout.write(`CENTRAL_SIGN_IN_CLIENT_ID=${clientId}\nCENTRAL_SIGN_IN_CLIENT_SECRET=${clientSecret}\n`);
+  return 0;
 }
 
 /** Sets Logto's sign-in experience; needs IDP_MANAGEMENT_*, and no Directory. */
