@@ -431,7 +431,9 @@ describe("A core that does not answer", () => {
 
     await expect.poll(async () => (await overview())[0]?.outcome).toBe("failed");
     expect(arrived().reduce((a, b) => a + b)).toBe(1);
-    releases.forEach((release) => release());
+    releases.forEach((release) => {
+      release();
+    });
   });
 
   it("that answers 500 fails the run, which is not made again on another core", async () => {

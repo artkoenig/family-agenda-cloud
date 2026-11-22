@@ -1,9 +1,11 @@
 family-agenda.cloud {
 	encode zstd gzip
 
-	# Until launch: remove these two directives to open the landing page.
+	# Until launch: remove these two directives (and the matcher) to open the landing page. The
+	# logo of Logto's mails stays open: mail programs load it without credentials.
 	header X-Robots-Tag "noindex, nofollow"
-	basic_auth {
+	@restricted not path /mail-logo.png
+	basic_auth @restricted {
 		{$LANDING_BASIC_AUTH_USER} {$LANDING_BASIC_AUTH_HASH}
 	}
 

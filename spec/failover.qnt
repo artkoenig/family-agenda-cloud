@@ -14,7 +14,8 @@
  *   named) and removed (unnamed, then stopped) between and during calls.
  * - The rotation (`takingTurns`): each resolve of the name starts one core further (`round`).
  * - A call: resolve (`start`), then per core of its snapshot: `connect` (refused: it never
- *   arrived; answered not serving or refusing: it did not run; serving: it arrived), and once it
+ *   arrived; answered not serving, with 503 or with 502/504, or refusing: it did not run;
+ *   serving: it arrived), and once it
  *   arrived, `answer` (the core ran it and answered), `answer503` (a browser's request only: the
  *   core ran it, or part of it, and answered 503 itself) or `breakOff` (the connection broke
  *   after the call was sent, or no answer came in time: the core may or may not have run it).
@@ -43,12 +44,19 @@
  *   serving (its 502, 503 or 504 does not say that it ran nothing, as a core's own 503 would read
  *   the same, and it may come late in a Scheduler call, which going on could make outlast its job:
  *   scheduler.qnt `lateNotServing`, #147).
+ * - A page ends on a core that is not serving and answered 502 or 504 (a proxy with no core
+ *   behind it): the browser gets that answer. It goes on only after a 503 (router.ts
+ *   `unexplainedRefusal`).
  * - A request with a body longer than the Router holds is sent to its first core only, even when
  *   that core refuses the connection: the Router starts sending the rest of the body, read from
  *   the browser, before the connection is made, so it cannot send all of it again.
  * - A call resolves the name once: a core added meanwhile is not asked by it, one removed
  *   meanwhile is tried and refuses the connection.
  * - While the named cores change, the rotation does not spread over them evenly.
+ * - The model has one rotation for all calls; the code has one per pool (`poolAt`): the Router's,
+ *   the Scheduler's and Provisioning's each take turns on their own, and each spreads alike. A
+ *   name that does not resolve at all starts no round in the code; here a name standing for no
+ *   core still counts one.
  *
  * ASSUMES
  * - A refusing core changed nothing (core-answers.ts `openingRefusal`).
@@ -80,8 +88,10 @@ module failover {
   // ---- Policies, as the code decides (failover.ts) ---------------------------------------------
 
   type Policy = {
-    /** Goes on after a core that answered it is not serving (router.ts: a page). */
+    /** Goes on after a core that answered it is not serving with 502 or 504 (no call does). */
     onNotServing: bool,
+    /** Goes on after a core that answered it is not serving with 503 (also router.ts `unexplainedRefusal`). */
+    onNotServing503: bool,
     /** Goes on after a broken connection or no answer: the request has no body (`isBodiless`). */
     idempotent: bool,
     /** Goes on to the next core at all: the Router holds all of the body (`body.whole`). */
@@ -91,11 +101,11 @@ module failover {
   }
 
   pure def policyOf(kind: str): Policy =
-    if (kind == "provisioning") { onNotServing: false, idempotent: false, whole: true, browser: false }
-    else if (kind == "scheduler") { onNotServing: false, idempotent: false, whole: true, browser: false }
-    else if (kind == "page") { onNotServing: true, idempotent: true, whole: true, browser: true }
-    else if (kind == "post") { onNotServing: false, idempotent: false, whole: true, browser: true }
-    else { onNotServing: false, idempotent: false, whole: false, browser: true } // "upload"
+    if (kind == "provisioning") { onNotServing: false, onNotServing503: false, idempotent: false, whole: true, browser: false }
+    else if (kind == "scheduler") { onNotServing: false, onNotServing503: false, idempotent: false, whole: true, browser: false }
+    else if (kind == "page") { onNotServing: false, onNotServing503: true, idempotent: true, whole: true, browser: true }
+    else if (kind == "post") { onNotServing: false, onNotServing503: false, idempotent: false, whole: true, browser: true }
+    else { onNotServing: false, onNotServing503: false, idempotent: false, whole: false, browser: true } // "upload"
 
   /** The rotation of `takingTurns`: the items starting at `round` mod their number. */
   pure def inTurn(items: List[int], round: int): List[int] =
@@ -173,8 +183,14 @@ module failover {
     named' = named, cores' = cores, round' = round, starts' = starts, runs' = runs,
   }
 
-  /** The call is made to the next core of its order. */
-  action connect(c: int): bool = all {
+  /** The call is made to the next core of its order; one not serving answers 503, or 502 or 504. */
+  action connect(c: int): bool = {
+    nondet answers503 = Set(true, false).oneOf()
+    connectAnswering(c, answers503)
+  }
+
+  /** The call is made to the next core of its order; if that core is not serving, it answers 503 when `answers503`, else 502 or 504. */
+  action connectAnswering(c: int, answers503: bool): bool = all {
     val call = calls.get(c)
     val policy = policyOf(KINDS.get(c))
     all {
@@ -186,7 +202,7 @@ module failover {
         if (state == "down") goOn(call, core, "noCore")                 // never connected
         else if (state == "refusing") goOn(call, core, "noCore")        // changed nothing
         else if (state == "notServing")
-          if (policy.onNotServing) goOn(call, core, "notServed")
+          if (if (answers503) policy.onNotServing503 else policy.onNotServing) goOn(call, core, "notServed")
           else { ...call, phase: "done", order: [], outcome: "notServed" }
         else { ...call, phase: "sent", at: core, arrived: call.arrived.union(Set(core)) }),
     },
@@ -304,6 +320,7 @@ module failover {
       not(policyOf(KINDS.get(c)).whole) or
       (calls.get(c).outcome == "notServed" and not(policyOf(KINDS.get(c)).onNotServing)))
 
+
   /** With the same cores named all along, the i-th round started at core i mod their number. */
   val spread: bool = starts.indices().forall(i => starts[i] == i % NCORES)
 
@@ -315,4 +332,7 @@ module failover {
   val someCallFailedWhereItMayHaveRun: bool = CALLS.exists(c => calls.get(c).outcome == "failed")
   val someCallWentOnPastARemovedCore: bool =
     CALLS.exists(c => calls.get(c).passed.exists(core => not(named.contains(core)) and cores.get(core) == "down"))
+  /** A page ended ended on a core that is not serving: it answered 502 or 504 (accepted). */
+  val somePageEndedNotServed: bool =
+    CALLS.exists(c => KINDS.get(c) == "page" and calls.get(c).outcome == "notServed")
 }

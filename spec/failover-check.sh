@@ -22,7 +22,7 @@ simulation() {
     someCallWentOnPastARemovedCore --max-samples=3000 --max-steps=40
   # Core 0 serving and named throughout: liveness and the rotation.
   quint run failover_test.qnt --backend=typescript --main=steady --invariants safety reachesAServingCore spread \
-    --witnesses someCallWentOn someCallArrivedTwice someCallFailedWhereItMayHaveRun --max-samples=3000 --max-steps=40
+    --witnesses someCallWentOn someCallArrivedTwice someCallFailedWhereItMayHaveRun somePageEndedNotServed --max-samples=3000 --max-steps=40
 }
 
 counterexample() {
