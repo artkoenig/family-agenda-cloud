@@ -146,6 +146,11 @@ export type StandInCore = {
   answerNext(answer: CannedAnswer): void;
   /** The next page of a Family begins its answer and then drops the connection. */
   dropNext(): void;
+  /**
+   * The next page of a Family is received and then its connection is dropped without an answer,
+   * as by a core that dies while at work on it.
+   */
+  dropNextUnanswered(): void;
   /** The Family's runs of due work answer this from now on; `{ ran: 0, failed: 0 }` until set. */
   answerDueWork(familyId: string, result: SourcesPolled): void;
   /** The Family's runs of due work fail with this status from now on. */
@@ -256,6 +261,7 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
   const drops = new Set<Operation>();
   let canned: CannedAnswer | undefined;
   let dropping = false;
+  let droppingUnanswered = false;
   const cannedAnswer = () => {
     const answer = canned;
     canned = undefined;
@@ -341,6 +347,11 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
 
   // Every other page of the Family, static files included: says which Family and page it served.
   pages.all("*", (c) => {
+    if (droppingUnanswered) {
+      droppingUnanswered = false;
+      (c.env as HttpBindings).outgoing.socket?.destroy();
+      return RESPONSE_ALREADY_SENT;
+    }
     if (dropping) {
       // Begins the answer, then drops the connection, as a core that dies mid-answer does.
       dropping = false;
@@ -389,6 +400,9 @@ export async function startStandInCore(contextKey: string, triggerToken: string)
     },
     dropNext: () => {
       dropping = true;
+    },
+    dropNextUnanswered: () => {
+      droppingUnanswered = true;
     },
     answerDueWork: (familyId, result) => dueWork.set(familyId, result),
     failDueWork: (familyId, status = 500) => dueWork.set(familyId, status),

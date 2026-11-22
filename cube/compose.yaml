@@ -22,7 +22,7 @@ name: family-agenda
 # module tries another core while one of the release before still refuses a Family (docs/runbook).
 # Until the core release whose registration takes the Context's Organization (artkoenig/family-agenda#448)
 # is out, this is the build of that commit on main; then it is that release's tag and digest.
-x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-e43f6ac@sha256:ec3966b115714ad73539cb6ce225f2f33cd914fcdcc20541bd4ccb64e29d310f
+x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-3088dda@sha256:86d95e134231229b2d3c9306584e0cc27aa32c1392d571d1255b9a6be47d9b0c
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
 
 # Every Family's blobs lie in the Object Storage bucket, which the `blob-mount` service mounts as
@@ -86,6 +86,13 @@ x-core: &core
     FAMILY_WEBHOOK_SECRET: ${FAMILY_WEBHOOK_SECRET:?}
     # The processed Logto events and pending deliveries, shared by every core of the pool.
     REGISTRATION_DATABASE_URL: postgres://registration:${REGISTRATION_DATABASE_PASSWORD:?}@postgres:5432/registration
+    # Extraction: one LLM endpoint for every Family, the IONOS AI Model Hub in Berlin
+    # (docs/research/ionos-ai-model-hub.md); the Families' AI page shows no connection. The model
+    # must accept the core's reasoning_effort "low": Qwen/Qwen3.8-27B or openai/gpt-oss-120b
+    # (launch checklist, gate 8). The key is the AI Model Hub token (docs/runbook/setup.md, step 6).
+    LLM_BASE_URL: https://openai.inference.de-txl.ionos.com/v1
+    LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen3.8-27B}
+    LLM_API_KEY: ${LLM_API_KEY:?}
   volumes:
     - *blobs
     - tessdata:/var/lib/family-agenda/tessdata

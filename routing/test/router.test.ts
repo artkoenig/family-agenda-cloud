@@ -388,6 +388,51 @@ describe("a pool of several cores", () => {
     expect(arrived(since).map(({ method, path }) => `${method} ${path}`)).toEqual(["POST /admin/agendas"]);
   });
 
+  // The counterexamples of spec/failover.qnt: a call that may have run is not sent again.
+  it("does not send a request with a body to another core when the connection broke after it arrived, as it may have run", async () => {
+    const familyId = await createFamily();
+    const dying = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    others = [dying];
+    dying.dropNextUnanswered();
+    const throughPool = await routing.startRouter(poolOf(dying, routing.core));
+    const since = routing.core.requests.length;
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin/agendas`, { method: "POST", body: "name=Kitchen" });
+
+    expect(response.status).toBe(502);
+    expect(dying.requests.map(({ method, path }) => `${method} ${path}`)).toEqual(["POST /admin/agendas"]);
+    expect(arrived(since)).toEqual([]);
+  });
+
+  it("has a page whose connection broke after it arrived served by the next core, as a page may be asked again", async () => {
+    const familyId = await createFamily();
+    const dying = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    others = [dying];
+    dying.dropNextUnanswered();
+    const throughPool = await routing.startRouter(poolOf(dying, routing.core));
+    const since = routing.core.requests.length;
+
+    const response = await fetch(`${throughPool.url}/${familyId}/agendas/1`);
+
+    expect(response.status).toBe(200);
+    expect(dying.requests.map(({ path }) => path)).toEqual(["/agendas/1"]);
+    expect(arrived(since).map(({ path }) => path)).toEqual(["/agendas/1"]);
+  });
+
+  it("answers 502 to a body longer than the Router holds when the one core it was sent to could not be connected to", async () => {
+    const familyId = await createFamily();
+    const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
+    await down.close();
+    const throughPool = await routing.startRouter(poolOf(down, routing.core));
+    const since = routing.core.requests.length;
+    const upload = Buffer.alloc(3 * 1024 * 1024, "u");
+
+    const response = await fetch(`${throughPool.url}/${familyId}/admin/upload`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: upload });
+
+    expect(response.status).toBe(502);
+    expect(arrived(since)).toEqual([]);
+  });
+
   it("answers 502 when no core answers", async () => {
     const familyId = await createFamily();
     const down = await startStandInCore(routing.env.CONTEXT_KEY!, routing.env.TRIGGER_TOKEN!);
