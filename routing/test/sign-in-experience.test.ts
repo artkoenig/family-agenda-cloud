@@ -50,6 +50,28 @@ describe("sign-in-experience", () => {
     expect(routing.logto.connectors[0]!.config).toMatchObject({ clientSecret: "rotated" });
   });
 
+  it("lets Logto send the browser back to the landing page after Abmelden, and changes nothing when run again", async () => {
+    const PUBLIC_URL = "https://agenda.example";
+    expect(await routing.run(["sign-in-client"], { PUBLIC_URL })).toMatchObject({ exitCode: 0 });
+    // A client registered before Abmelden was built (#173).
+    routing.logto.applications[0]!.oidcClientMetadata.postLogoutRedirectUris = [];
+
+    expect(await routing.run(["sign-in-experience"], { PUBLIC_URL })).toMatchObject({ exitCode: 0 });
+    expect(routing.logto.applications).toMatchObject([
+      { oidcClientMetadata: { redirectUris: ["https://agenda.example/sign-in/callback"], postLogoutRedirectUris: ["https://agenda.example/"] } },
+    ]);
+    const afterFirstRun = structuredClone(routing.logto.applications);
+
+    expect(await routing.run(["sign-in-experience"], { PUBLIC_URL })).toMatchObject({ exitCode: 0 });
+    expect(routing.logto.applications).toEqual(afterFirstRun);
+  });
+
+  it("creates no central sign-in client where there is none", async () => {
+    expect(await routing.run(["sign-in-experience"])).toMatchObject({ exitCode: 0 });
+
+    expect(routing.logto.applications).toEqual([]);
+  });
+
   it("fails, naming what Logto refused", async () => {
     routing.logto.failWith(422);
     const result = await routing.run(["sign-in-experience"]);

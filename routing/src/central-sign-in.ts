@@ -3,9 +3,9 @@ import type { CentralSignIn } from "./config";
 import { signInClaims, type SignInClaims } from "./id-token";
 import { landingOf, type FindByOrganization, type Landing } from "./landing";
 import type { PostRegisterAgain } from "./post-register";
-import { signInCallbackUrl } from "./sign-in-client";
+import { signInCallbackUrl, signOutRedirectUrl } from "./sign-in-client";
 import { openCookie, sealCookie } from "./sign-in-cookie";
-import { languageOf, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
+import { languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
 
 /**
  * Central sign-in (#154): the landing page's "Anmelden" signs the person in at Logto with the
@@ -14,10 +14,12 @@ import { languageOf, signInPage, WAITING_PATH, type SignInPage } from "./sign-in
  * in again itself: the Router only finds the Family. Nothing is taken from Logto's customData.
  *
  * - `GET /sign-in` sends the browser to Logto, `GET /sign-in/again` does so with `prompt=none`.
+ * - `GET /sign-in/out` (Abmelden, #173) ends Logto's session and sends the person to the landing page.
  * - `GET /sign-in/callback` ends the sign-in and lands the person (see `landingOf`).
  * - `GET /sign-in/waiting`, which the waiting page asks every few seconds, lands them again by
  *   the Organization claimed at the callback, or signs in again silently if none was claimed:
- *   the Organization of a registration is created after its first sign-in.
+ *   the Organization of a registration is created after its first sign-in. After 2 minutes of
+ *   waiting the page also gives the support contact and Abmelden (#173), and keeps asking.
  *
  * A sign-in whose ID token claims no Organization is a registration whose PostRegister is on its
  * way, or was lost: Logto never sends it again (#155). So the callback of a sign-in the person
@@ -40,7 +42,11 @@ const WAITING_COOKIE = "__Host-sign-in-waiting";
 const WAITING_LIFETIME_MS = 60 * 60_000;
 
 type Transaction = { state: string; verifier: string; nonce: string; silent: boolean };
-type Waiting = { organizationId: string | null };
+/** `since`: when the person began to wait, in ms; a cookie sealed before #173 has none. */
+type Waiting = { organizationId: string | null; since?: number };
+
+/** How long a person waits before the waiting page gives them the support contact and Abmelden. */
+const LONG_WAIT_MS = 2 * 60_000;
 
 /** A browser's request below /sign-in. */
 export type SignInRequest = { method: string | undefined; target: string; cookie: string | undefined; acceptLanguage: string | undefined };
@@ -78,6 +84,7 @@ const ROUTES: Record<string, Route> = {
   "/sign-in/again": (context) => toLogto(context, true),
   "/sign-in/callback": callback,
   [WAITING_PATH]: waiting,
+  [SIGN_OUT_PATH]: signOut,
 };
 
 type Context = { setup: SignInSetup; cookies: Map<string, string>; language: ReturnType<typeof languageOf>; now: Date };
@@ -113,7 +120,8 @@ async function callback(context: Context, query: URLSearchParams): Promise<SignI
   const claims = await claimsOf(context, ended);
   if (!claims) return page(context, "failed", 502, [cleared]);
   await postRegisterAgainIfNoOrganization(context, ended.transaction, claims);
-  return land(context, claims.organizations, [cleared], waitingCookie(context, claims.organizations));
+  const since = waitingSince(context, ended.transaction);
+  return land(context, claims.organizations, [cleared], { since, cookie: waitingCookie(context, claims.organizations, since) });
 }
 
 type EndedSignIn = { transaction: Transaction; code: string };
@@ -145,30 +153,52 @@ async function postRegisterAgainIfNoOrganization({ setup }: Context, transaction
   await setup.postRegisterAgain({ userId, email });
 }
 
+/**
+ * Abmelden: sends the browser to Logto's end session endpoint with the Router's client, back to the
+ * landing page, and clears central sign-in's cookies. No id_token_hint: the Router keeps no token.
+ */
+function signOut({ setup }: Context): SignInAnswer {
+  const endSession = new URL(`${setup.client.issuerUrl}/session/end`);
+  endSession.search = new URLSearchParams({ client_id: setup.client.clientId, post_logout_redirect_uri: signOutRedirectUrl(setup.publicUrl) }).toString();
+  return redirect(endSession.toString(), [clearCookie(TRANSACTION_COOKIE), clearCookie(WAITING_COOKIE)]);
+}
+
 /** What the waiting page asks: lands the person by the claim of the callback, or signs in again if it claimed none. */
 async function waiting(context: Context): Promise<SignInAnswer> {
-  const claim = opened(context, WAITING_COOKIE) as Waiting | undefined;
+  const claim = openedWaiting(context);
   if (!claim) return redirect("/sign-in", []);
   if (claim.organizationId === null) return redirect("/sign-in/again", []);
-  return land(context, [claim.organizationId], [], undefined);
+  return land(context, [claim.organizationId], [], { since: claim.since ?? context.now.getTime() });
 }
 
 /**
- * The page or Family the person lands in, with `cookies` set. While they wait the waiting cookie
- * is `waitBy` (none: it stays as it is); once they land elsewhere it is cleared.
+ * Since when the person waits: since this sign-in if they made it, else since the waiting began
+ * that this silent sign-in of the waiting page goes on with.
  */
-async function land(context: Context, organizations: readonly string[], cookies: string[], waitBy: string | undefined): Promise<SignInAnswer> {
-  const landing = await landingOf(organizations, context.setup.find);
-  const waitingCookies = landing.page === "preparing" ? [waitBy ?? []].flat() : [clearCookie(WAITING_COOKIE)];
-  return { ...landed(context, landing, [...cookies, ...waitingCookies]), landing };
+function waitingSince(context: Context, transaction: Transaction): number {
+  const going = transaction.silent ? openedWaiting(context) : undefined;
+  return going?.since ?? context.now.getTime();
 }
 
-function landed(context: Context, landing: Landing, cookies: string[]): SignInAnswer {
+/** Since when the person waits, and the waiting cookie to set (none: it stays as it is). */
+type WaitBy = { since: number; cookie?: string };
+
+/**
+ * The page or Family the person lands in, with `cookies` set. While they wait the waiting cookie
+ * is the one of `waitBy`; once they land elsewhere it is cleared.
+ */
+async function land(context: Context, organizations: readonly string[], cookies: string[], waitBy: WaitBy): Promise<SignInAnswer> {
+  const landing = await landingOf(organizations, context.setup.find);
+  const waitingCookies = landing.page === "preparing" ? [waitBy.cookie ?? []].flat() : [clearCookie(WAITING_COOKIE)];
+  return { ...landed(context, landing, [...cookies, ...waitingCookies], waitBy.since), landing };
+}
+
+function landed(context: Context, landing: Landing, cookies: string[], waitingSince: number): SignInAnswer {
   switch (landing.page) {
     case "family":
       return redirect(`/${landing.familyId}/`, cookies);
     case "preparing":
-      return page(context, "preparing", 200, cookies);
+      return page(context, "preparing", 200, cookies, context.now.getTime() - waitingSince >= LONG_WAIT_MS);
     case "unavailable":
       return page(context, "unavailable", 200, cookies);
     case "several":
@@ -176,9 +206,9 @@ function landed(context: Context, landing: Landing, cookies: string[]): SignInAn
   }
 }
 
-/** The cookie the waiting page waits by: the one Organization claimed, or none. */
-function waitingCookie({ setup, now }: Context, organizations: readonly string[]): string {
-  const waitingFor: Waiting = { organizationId: organizations[0] ?? null };
+/** The cookie the waiting page waits by: the one Organization claimed, or none, and since when. */
+function waitingCookie({ setup, now }: Context, organizations: readonly string[], since: number): string {
+  const waitingFor: Waiting = { organizationId: organizations[0] ?? null, since };
   return setCookie(WAITING_COOKIE, sealCookie(setup.operatorKey, WAITING_COOKIE, waitingFor, WAITING_LIFETIME_MS, now), WAITING_LIFETIME_MS);
 }
 
@@ -188,8 +218,10 @@ function opened({ setup, cookies, now }: Context, name: string): unknown {
   return sealed === undefined ? undefined : openCookie(setup.operatorKey, name, sealed, now);
 }
 
-function page({ language }: Context, kind: SignInPage, status: number, cookies: string[]): SignInAnswer {
-  return { status, headers: { ...NO_STORE, "content-type": "text/html; charset=utf-8", "set-cookie": cookies }, body: signInPage(kind, language) };
+const openedWaiting = (context: Context): Waiting | undefined => opened(context, WAITING_COOKIE) as Waiting | undefined;
+
+function page({ language }: Context, kind: SignInPage, status: number, cookies: string[], waitedLong = false): SignInAnswer {
+  return { status, headers: { ...NO_STORE, "content-type": "text/html; charset=utf-8", "set-cookie": cookies }, body: signInPage(kind, language, waitedLong) };
 }
 
 function redirect(location: string, cookies: string[]): SignInAnswer {
