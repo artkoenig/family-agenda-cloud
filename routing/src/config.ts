@@ -58,8 +58,9 @@ export type Config = {
   google: GoogleClient | null;
   /**
    * Central sign-in (#154), the Router's own OIDC client at Logto (OIDC_ISSUER_URL,
-   * CENTRAL_SIGN_IN_CLIENT_ID and _SECRET, which `sign-in-client` prints); without it /sign-in
-   * answers 404.
+   * CENTRAL_SIGN_IN_CLIENT_ID and _SECRET, which `sign-in-client` prints), and the key Logto
+   * signs its PostRegister with (IDP_WEBHOOK_SECRET, the cores'), as central sign-in sends one
+   * again (#155); without it /sign-in answers 404.
    */
   centralSignIn: CentralSignIn | null;
   /** Where the Router listens for the browsers' requests. */
@@ -72,8 +73,11 @@ export type Config = {
   trustProxy: boolean;
 };
 
-/** Central sign-in's OIDC client: Logto's issuer, as the ID token names it, and the client's credentials. */
-export type CentralSignIn = { issuerUrl: string; clientId: string; clientSecret: string };
+/**
+ * Central sign-in's OIDC client: Logto's issuer, as the ID token names it, and the client's
+ * credentials; and the key of Logto's PostRegister webhook to the cores.
+ */
+export type CentralSignIn = { issuerUrl: string; clientId: string; clientSecret: string; webhookSecret: string };
 
 export class ConfigError extends Error {}
 
@@ -149,14 +153,17 @@ function google(env: Env): GoogleClient | null {
   return { clientId, clientSecret };
 }
 
-/** CENTRAL_SIGN_IN_CLIENT_ID and _SECRET: both, or none; with them, OIDC_ISSUER_URL, which alone is the cores' setting. */
+/**
+ * CENTRAL_SIGN_IN_CLIENT_ID and _SECRET: both, or none; with them, OIDC_ISSUER_URL and
+ * IDP_WEBHOOK_SECRET, which alone are the cores' settings.
+ */
 function centralSignIn(env: Env): CentralSignIn | null {
   const { CENTRAL_SIGN_IN_CLIENT_ID: clientId, CENTRAL_SIGN_IN_CLIENT_SECRET: clientSecret } = env;
   if (!clientId && !clientSecret) return null;
   if (!clientId || !clientSecret) throw new ConfigError("CENTRAL_SIGN_IN_CLIENT_ID and CENTRAL_SIGN_IN_CLIENT_SECRET must be set both, or none");
   const issuerUrl = withoutTrailingSlash(required(env, "OIDC_ISSUER_URL"));
   if (!/^https?:\/\//.test(issuerUrl) || !URL.canParse(issuerUrl)) throw new ConfigError("OIDC_ISSUER_URL must be an http or https address, Logto's issuer");
-  return { issuerUrl, clientId, clientSecret };
+  return { issuerUrl, clientId, clientSecret, webhookSecret: required(env, "IDP_WEBHOOK_SECRET") };
 }
 
 /** Where and how the Router listens. */

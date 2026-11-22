@@ -77,7 +77,7 @@ function isFamilyIndependent(method: string | undefined, target: string, callbac
 }
 
 /** Where the Identity Provider posts its events: the core's IDP_EVENTS_URL, below PUBLIC_URL. */
-const IDP_EVENTS_PATH = "/idp/events";
+export const IDP_EVENTS_PATH = "/idp/events";
 
 /**
  * Whether the path below a Family's prefix names the core's triggered operations, as a core could

@@ -26,7 +26,8 @@
     "src/cli-reports.ts",
     "src/landing.ts",
     "src/id-token.ts",
-    "src/sign-in-cookie.ts"
+    "src/sign-in-cookie.ts",
+    "src/post-register.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

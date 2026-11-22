@@ -11,9 +11,10 @@ import { isBodiless, mayRefuseOpening, neverConnected } from "./failover";
 import { sealedContext, unwrappedFamily } from "./family-context";
 import { reasonOf, type Log } from "./log";
 import { hostnameOf, poolAt, type Pool, type Resolve } from "./pool";
-import { systemResolve } from "./resolve";
+import { postRegisterAgain } from "./post-register";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
+import { systemResolve } from "./resolve";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
@@ -61,15 +62,17 @@ export async function startRouter(config: Config, log: Log, resolve: Resolve = s
     log.error("A connection to the Directory failed", { reason: reasonOf(error) });
   });
   const directory = openDirectory(directoryPool);
+  const pool = poolAt(config.coreUrl, resolve, log);
   const signIn = config.centralSignIn && {
     client: config.centralSignIn,
     publicUrl: config.publicUrl,
     operatorKey: config.operatorKey,
     find: (organizationId: string) => directory.findByOrganization(organizationId),
     exchange: tokenExchange(config.centralSignIn, config.publicUrl),
+    postRegisterAgain: postRegisterAgain(pool, config.centralSignIn.webhookSecret, log),
     now: () => new Date(),
   };
-  const setup: RouterSetup = { config, directory, log, pool: poolAt(config.coreUrl, resolve, log), signIn };
+  const setup: RouterSetup = { config, directory, log, pool, signIn };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });

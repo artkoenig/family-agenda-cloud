@@ -15,7 +15,8 @@ import type { AddressInfo } from "node:net";
  * when the scope `urn:logto:scope:organizations` was asked for. Who is signed in is set with
  * `signInAs`; `/oidc/auth` with nobody signed in answers `error=login_required` to `prompt=none`
  * and shows a sign-in page otherwise. The claim is taken when `/oidc/auth` answers, as Logto
- * issues the code then. The ID token's signature is no real one: central sign-in does not check it.
+ * issues the code then; with the scope `email` the token claims the user's verified email
+ * (`emailOf`). The ID token's signature is no real one: central sign-in does not check it.
  */
 export type StandInLogto = {
   /** IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET for it. */
@@ -56,7 +57,10 @@ export type StandInLogto = {
 export type Application = { id: string; name: string; type: string; secret: string; oidcClientMetadata: { redirectUris: string[]; postLogoutRedirectUris: string[] } };
 
 /** What `/oidc/auth` issued a code for. */
-type Grant = { clientId: string; redirectUri: string; codeChallenge: string; nonce: string | undefined; userId: string; organizations: string[] | undefined };
+type Grant = { clientId: string; redirectUri: string; codeChallenge: string; nonce: string | undefined; userId: string; email: boolean; organizations: string[] | undefined };
+
+/** The verified email of each user, as the ID token claims it when the scope `email` was asked for. */
+export const emailOf = (userId: string): string => `${userId}@family.test`;
 
 const CLIENT_ID = "routing-m2m";
 const CLIENT_SECRET = "routing-m2m-secret";
@@ -216,7 +220,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     const scopes = (query.get("scope") ?? "").split(" ");
     const code = randomBytes(16).toString("hex");
     const organizations = scopes.includes(ORGANIZATIONS_SCOPE) ? organizationsOf(signedIn) : undefined;
-    grants.set(code, { clientId: client.id, redirectUri, codeChallenge: challenge, nonce: query.get("nonce") ?? undefined, userId: signedIn, organizations });
+    grants.set(code, { clientId: client.id, redirectUri, codeChallenge: challenge, nonce: query.get("nonce") ?? undefined, userId: signedIn, email: scopes.includes("email"), organizations });
     back.searchParams.set("code", code);
     outgoing.writeHead(302, { location: back.toString() }).end();
   }
@@ -236,7 +240,8 @@ export async function startStandInLogto(): Promise<StandInLogto> {
       return void outgoing.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
     }
     const now = Math.floor(Date.now() / 1000);
-    const claims = { iss: issuer, aud: clientId, sub: grant.userId, nonce: grant.nonce, iat: now, exp: now + 3600, organizations: grant.organizations };
+    const email = grant.email ? { email: emailOf(grant.userId), email_verified: true } : {};
+    const claims = { iss: issuer, aud: clientId, sub: grant.userId, ...email, nonce: grant.nonce, iat: now, exp: now + 3600, organizations: grant.organizations };
     const idToken = [{ alg: "ES384", typ: "JWT" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".c3RhbmQtaW4";
     outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: "opaque", token_type: "Bearer", expires_in: 3600, id_token: idToken, scope: "openid" }));
   }

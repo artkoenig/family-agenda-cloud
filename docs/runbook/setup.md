@@ -119,7 +119,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `LOGTO_DATABASE_PASSWORD` | Logto's role on Postgres, which owns Logto's database | `openssl rand -hex 32` (it goes into a URL) |
    | `IDP_MANAGEMENT_CLIENT_ID`, `IDP_MANAGEMENT_CLIENT_SECRET` | Logto's Machine-to-Machine application with the Management API role: the cores create the Organizations with it, `routing delete` deletes them | `pending` at first; [Setting up Logto](#setting-up-logto) |
    | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Logto's Traditional Web application "Family Agenda" the cores sign in with; redirect URI `https://app.family-agenda.cloud/sso/callback` | `pending` at first; the core's `logto-setup` prints them |
-   | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events` | `pending` at first; the core's `logto-setup` prints it |
+   | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events`; the Router signs a lost PostRegister it sends again with it | `pending` at first; the core's `logto-setup` prints it |
    | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the Google OAuth client of Logto's Google connector; optional, empty leaves Google off the sign-in screen | empty at first; [Google sign-in](#google-sign-in) |
    | `LLM_API_KEY` | the AI Model Hub token every core extracts with | [step 6](#6-ai-model-hub-token) |
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |

@@ -73,6 +73,7 @@ describe("readConfig", () => {
       OIDC_ISSUER_URL: "https://auth.family-agenda.cloud/oidc/",
       CENTRAL_SIGN_IN_CLIENT_ID: "central",
       CENTRAL_SIGN_IN_CLIENT_SECRET: "central-secret",
+      IDP_WEBHOOK_SECRET: "logto-signing-key",
     });
     expect(config).toMatchObject({
       familyDatabaseHost: "families.internal",
@@ -88,7 +89,7 @@ describe("readConfig", () => {
       receiverPort: 9000,
       idpManagement: { endpoint: "http://logto:3001", clientId: "m2m", clientSecret: "m2m-secret" },
       google: { clientId: "client.apps.googleusercontent.com", clientSecret: "google-secret" },
-      centralSignIn: { issuerUrl: "https://auth.family-agenda.cloud/oidc", clientId: "central", clientSecret: "central-secret" },
+      centralSignIn: { issuerUrl: "https://auth.family-agenda.cloud/oidc", clientId: "central", clientSecret: "central-secret", webhookSecret: "logto-signing-key" },
     });
   });
 
@@ -104,6 +105,12 @@ describe("readConfig", () => {
 
   it("refuses central sign-in without OIDC_ISSUER_URL", () => {
     expect(() => readConfig({ ...minimal, CENTRAL_SIGN_IN_CLIENT_ID: "c", CENTRAL_SIGN_IN_CLIENT_SECRET: "s" })).toThrow(new ConfigError("OIDC_ISSUER_URL is not set"));
+  });
+
+  it("refuses central sign-in without IDP_WEBHOOK_SECRET, which it sends PostRegister again with", () => {
+    expect(() => readConfig({ ...minimal, OIDC_ISSUER_URL: "https://auth.example/oidc", CENTRAL_SIGN_IN_CLIENT_ID: "c", CENTRAL_SIGN_IN_CLIENT_SECRET: "s" })).toThrow(
+      new ConfigError("IDP_WEBHOOK_SECRET is not set"),
+    );
   });
 
   it.each(["auth.example/oidc", "ftp://auth.example/oidc", "http://"])("refuses OIDC_ISSUER_URL %j", (issuer) => {
