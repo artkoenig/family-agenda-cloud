@@ -41,7 +41,7 @@ The Router's sign-in from the landing page, with its own Logto client, which fin
 _Avoid_: Login portal, SSO hub
 
 **Directory**:
-The one list of every Family, holding per Family its Family id, status (being prepared, active, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, and how its due work last ended.
+The one list of every Family, holding per Family its Family id, status (being prepared, active, locked, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, and how its due work last ended.
 _Avoid_: Registry, tenant table, control database
 
 **Scheduler**:
@@ -99,3 +99,11 @@ _Avoid_: Plan, tier, package
 **Subscription**:
 A Family's paid contract with the Operator for the Tariff, ordered and held by the Admin who orders it.
 _Avoid_: Customer (Stripe's term), account, membership
+
+**Trial**:
+The free 14 days a Family has from its registration; it ends without cost and never turns into a Subscription by itself.
+_Avoid_: Test phase, free plan
+
+**Locked**:
+A Family whose Trial ended without an order: kept but not served, its Admins can only order, download a backup or delete it, and it is deleted 30 days after the Trial ended. Unlike a suspended Family, which the Operator stops by hand, an order unlocks it.
+_Avoid_: Expired, suspended (the Operator's), inactive
