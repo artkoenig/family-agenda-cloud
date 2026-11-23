@@ -77,6 +77,15 @@ Stages:
   [#60](https://github.com/artkoenig/family-agenda-cloud/issues/60)).
 - **Measured:** — **Date:** — **Proof:**
 
+### 15. Error alert and heartbeat live
+
+Numbered after the last gate so that gates 10 to 14, which issues cite by number, keep their numbers.
+
+- **Threshold:** on the Cube, an error written on purpose by a container reaches the Operator by mail, and a stopped
+  `health` timer reaches the Operator's private address through healthchecks.io, **each within 15 minutes**
+  ([ADR 0003](adr/0003-error-alerts-come-from-journald-and-a-host-timer-not-a-log-service.md)).
+- **Measured:** — **Date:** — **Proof:**
+
 ## Stage (c) — registration opens
 
 ### 10. Capacity check
