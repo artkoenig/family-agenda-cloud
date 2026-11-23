@@ -89,3 +89,13 @@ _Avoid_: Shared secret, Ticket key
 **Trigger token**:
 The bearer token, shared by the Routing module and the cores, that a call to a core's trigger port must carry.
 _Avoid_: API key, operations secret
+
+### Billing
+
+**Tariff**:
+The one offer the Operator sells to a Family: every feature included, billed monthly or yearly at a fixed price that includes VAT.
+_Avoid_: Plan, tier, package
+
+**Subscription**:
+A Family's paid contract with the Operator for the Tariff, ordered and held by the Admin who orders it.
+_Avoid_: Customer (Stripe's term), account, membership
