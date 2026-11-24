@@ -105,6 +105,7 @@ describe("A mail put in the outbox", () => {
         to: "anna.mueller@example.org",
         subject: "Ihre Kündigung ist eingegangen",
         text: mail.text,
+        html: null,
         charset: "utf-8",
       },
     ]);
@@ -145,6 +146,17 @@ describe("A mail put in the outbox", () => {
     expect(logLines()).toEqual([
       expect.objectContaining({ level: "info", message: "Sending a mail failed; it is tried again", type: "suspension", familyId, attempts: 1, reason: "ESOCKET" }),
     ]);
+  });
+
+  it("is sent with its HTML next to its text, if it has any", async () => {
+    const mail = { ...mailTo("anna.mueller@example.org"), html: "<p>Grüße</p>" };
+    await outbox(await connect()).enqueue(mail, { type: "family-invitation" });
+
+    expect(await deliverDue(await sender())).toEqual({ sent: 1, failed: 0 });
+
+    expect(smtp.received).toMatchObject([{ text: mail.text, html: "<p>Grüße</p>" }]);
+    expectNoMailIn(logged, [mail]);
+    expect(logged).not.toContain("Grüße");
   });
 
   it("can be about no Family, and refuses a type that is no type", async () => {

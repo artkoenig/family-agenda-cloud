@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { LANGUAGES, LOGO_URL, mailTemplates, TEMPLATE_TYPES } from "../../src/mail-templates";
+import { LANGUAGES, LOGO_URL } from "../../src/mail-card";
+import { mailTemplates, TEMPLATE_TYPES } from "../../src/mail-templates";
 
 const templates = mailTemplates();
 const template = (languageTag: string, templateType: string) => templates.find((each) => each.languageTag === languageTag && each.templateType === templateType)!;
