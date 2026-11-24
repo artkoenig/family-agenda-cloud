@@ -30,6 +30,7 @@
     "src/post-register.ts",
     "src/legal-texts.ts",
     "src/legal-pages.ts",
+    "src/legal-footer.ts",
     "src/contract-wording.ts",
     "src/contract-pages.ts",
     "src/contract-mails.ts",

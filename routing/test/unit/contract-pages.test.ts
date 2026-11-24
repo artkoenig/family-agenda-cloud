@@ -10,6 +10,7 @@ import {
   withdrawReceiptPage,
 } from "../../src/contract-pages";
 import type { Contract } from "../../src/contract-wording";
+import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "../../src/legal-footer";
 
 const erika = { name: "Erika Muster", email: "erika@example.org" };
 const monthly: Contract = { billing: "monthly", familyName: "Muster", orderedOn: new Date("2026-03-05T09:05:00Z") };
@@ -85,15 +86,15 @@ describe("the /cancel page", () => {
     for (const language of ["de", "en"] as const) {
       const html = cancelPage(language, values);
       expect(tagsOf(html)).toEqual(["h1", "form", "dl", ...Array<string[]>(4).fill(["div", "dt", "dd"]).flat(), "div", "dt", "label", "dd", "select", "option", "option", "option", "p", "button", ...(language === "en" ? ["span"] : [])]);
-      expect(between(html, "<body", "</body>").match(/<a /g)).toHaveLength(2);
+      expect(between(html, "<body", "</body>").match(/<a /g)).toHaveLength(3);
       expect(html.match(/<button/g)).toHaveLength(1);
       expect(html).not.toContain("<script");
     }
     expect(between(cancelPage("de", values), "</main>", "</body>").trim()).toBe(
-      '<footer class="legal" aria-label="Rechtliches"><a href="/impressum">Impressum</a> · <a href="/datenschutz">Datenschutz</a></footer>',
+      '<footer class="legal" aria-label="Rechtliches"><a href="https://family-agenda.cloud/impressum">Impressum</a> · <a href="https://family-agenda.cloud/datenschutz">Datenschutz</a> · <a href="https://family-agenda.cloud/agb">AGB</a></footer>',
     );
     expect(between(cancelPage("en", values), "</main>", "</body>").trim()).toBe(
-      '<footer class="legal" aria-label="Legal"><a href="/impressum">Imprint</a> · <a href="/datenschutz">Privacy</a></footer>',
+      '<footer class="legal" aria-label="Legal"><a href="https://family-agenda.cloud/en/imprint">Imprint</a> · <a href="https://family-agenda.cloud/en/privacy">Privacy</a> · <a href="https://family-agenda.cloud/en/terms">Terms</a></footer>',
     );
   });
 
@@ -131,7 +132,8 @@ describe("the /cancel receipt", () => {
     );
     expect(cancelReceiptPage("en", values)).toContain("<title>We have received your cancellation. · Family Agenda</title>");
     // On paper, without the button and the footer.
-    expect(cancelReceiptPage("de", values)).toContain("@media print{.no-print,.legal{display:none}");
+    expect(cancelReceiptPage("de", values)).toContain("@media print{.no-print{display:none}");
+    expect(cancelReceiptPage("de", values)).toContain("@media print{.legal{display:none}}");
   });
 });
 
@@ -268,6 +270,28 @@ describe("the /delete page", () => {
     expect(deletePage("de", withdrawable)).toContain('<a href="/withdraw">Vertrag widerrufen</a>.</p>');
     expect(deletePage("en", withdrawable)).toContain('<a href="/en/withdraw">Vertrag widerrufen</a>.</p>');
   });
+});
+
+describe("the legal footer", () => {
+  const pages = {
+    "/cancel": (language: "de" | "en") => cancelPage(language, { holder: erika, contract: monthly, endDates: ends }),
+    "/cancel receipt": (language: "de" | "en") => cancelReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date(), endsOn: new Date() }),
+    "/withdraw": (language: "de" | "en") => withdrawPage(language, { holder: erika, contract: monthly }),
+    "/withdraw receipt": (language: "de" | "en") => withdrawReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date() }),
+    "/delete": (language: "de" | "en") => deletePage(language, { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null }),
+  };
+  const footers = { de: legalFooterHtml("de"), en: legalFooterHtml("en") };
+
+  for (const [name, render] of Object.entries(pages)) {
+    for (const language of ["de", "en"] as const) {
+      it(`ends ${name} in ${language}, with the footer's style`, () => {
+        const html = render(language);
+        expect(between(html, "</main>", "</body>").trim()).toBe(footers[language]);
+        expect(html).toContain(LEGAL_FOOTER_STYLE);
+        expect(html).not.toMatch(/href="\/(impressum|datenschutz|agb|en\/)/);
+      });
+    }
+  }
 });
 
 describe("escaping", () => {
