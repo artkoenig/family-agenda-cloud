@@ -1,0 +1,32 @@
+name: Cube
+
+on:
+  pull_request:
+    # What the image, the compose project and ShellCheck read. routing/src and routing/test can't break
+    # the image build beyond what the CI workflow's typecheck and tests find; the nightly run builds it.
+    paths:
+      - "cube/**"
+      - "scripts/**"
+      - "routing/Dockerfile"
+      - "routing/.dockerignore"
+      - "routing/package.json"
+      - "routing/pnpm-lock.yaml"
+      - "routing/pnpm-workspace.yaml"
+      - "routing/tsconfig.json"
+      - .github/workflows/cube.yml
+  # By nightly.yml.
+  workflow_call:
+
+jobs:
+  cube:
+    # The Cube's deployment: the Routing module's image builds, the compose project resolves with
+    # every key of cube/.env.example set (to placeholders), and the scripts pass ShellCheck.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build --build-context legal=site/legal routing
+      - name: Resolve the compose project
+        run: |
+          sed -E -e 's/^([A-Z_]+)=.*/\1=placeholder/' cube/.env.example > "$RUNNER_TEMP/cube.env"
+          docker compose -f cube/compose.yaml --env-file "$RUNNER_TEMP/cube.env" config -q
+      - run: shellcheck -x -P SCRIPTDIR scripts/bootstrap.sh scripts/deploy.sh scripts/smoke.sh

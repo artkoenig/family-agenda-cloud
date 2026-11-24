@@ -32,7 +32,7 @@
       "groupName": "all dependencies"
     },
     {
-      "description": "The core image (cube/compose.yaml) is pinned by hand together with the core's commit in ci.yml (real-core job); its sha- tags are no versions Renovate could order",
+      "description": "The core image (cube/compose.yaml) is pinned by hand together with the core's commit in real-core.yml; its sha- tags are no versions Renovate could order",
       "matchPackageNames": ["ghcr.io/artkoenig/family-agenda"],
       "enabled": false
     }

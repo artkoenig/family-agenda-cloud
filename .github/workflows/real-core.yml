@@ -1,0 +1,91 @@
+name: Real core
+
+on:
+  pull_request:
+    # What the walk-through runs: the Routing module, and the core image cube/compose.yaml pins.
+    paths:
+      - "routing/**"
+      - "!routing/test/unit/**"
+      - cube/compose.yaml
+      - .github/workflows/real-core.yml
+      - .github/actions/setup/action.yml
+  # By nightly.yml.
+  workflow_call:
+
+defaults:
+  run:
+    working-directory: routing
+
+jobs:
+  real-core:
+    # The walk-through against the core in supplied mode (test/real-core), which the stand-in core
+    # of the other tests mirrors: the image cube/compose.yaml pins, with TRUST_PROXY=true as on the
+    # Cube, and the demo Source plugin built from the core's repository at the same commit (no image
+    # of it is published). Both run on the network of the postgres service, so the core reaches the
+    # Families' databases by the service's name and the plugin by its own; the tests reach the core
+    # and Postgres on localhost.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The image cube/compose.yaml pins; the core's commit below is the one it was built from.
+      CORE_IMAGE: ghcr.io/artkoenig/family-agenda:sha-3088dda@sha256:86d95e134231229b2d3c9306584e0cc27aa32c1392d571d1255b9a6be47d9b0c
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      REAL_CORE_URL: http://localhost:3002
+      REAL_CORE_TRIGGER_URL: http://localhost:3001
+      REAL_CORE_CONTEXT_KEY: ci-walk-through-context-key-of-32-characters
+      REAL_CORE_TRIGGER_TOKEN: ci-walk-through-trigger-token-of-32-characters
+      # The core refuses PLUGIN_URLS without it; no Egress Proxy runs here.
+      REAL_CORE_EGRESS_TICKET_KEY: Y2ktd2Fsay10aHJvdWdoLWVncmVzcy10aWNrZXQta2V5
+      REAL_CORE_DATABASE_HOST: postgres
+      # Supplied mode requires the one Identity Provider; the walk-through signs in nowhere, so none
+      # answers at this address. Registration (FAMILY_WEBHOOK_URL) stays off.
+      REAL_CORE_OIDC_ISSUER_URL: https://sign-in.example.invalid/oidc
+      REAL_CORE_OIDC_CALLBACK_URL: https://app.family-agenda.cloud/sso/callback
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - name: Check out the core at the pinned image's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: artkoenig/family-agenda
+          ref: 3088ddae247242f4e3c1f7702d32e035850dd307
+          path: core
+          persist-credentials: false
+      - name: Start the demo Source plugin and the core
+        working-directory: .
+        env:
+          NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          docker build -f core/tools/demo-source/Dockerfile -t demo-source core
+          docker run -d --name plugin-demo --network "$NETWORK" demo-source
+          docker run -d --name core --network "$NETWORK" -p 3001:3001 -p 3002:3002 \
+            -e CONTEXT_MODE=supplied -e CONTEXT_KEY="$REAL_CORE_CONTEXT_KEY" -e CALLER_PORT=3002 \
+            -e TRIGGER_TOKEN="$REAL_CORE_TRIGGER_TOKEN" -e TRIGGER_PORT=3001 -e TRUST_PROXY=true \
+            -e PLUGIN_URLS=demo=http://plugin-demo:8080 -e EGRESS_TICKET_KEY="$REAL_CORE_EGRESS_TICKET_KEY" \
+            -e OIDC_ISSUER_URL="$REAL_CORE_OIDC_ISSUER_URL" -e OIDC_CLIENT_ID=ci-walk-through \
+            -e OIDC_CLIENT_SECRET=ci-walk-through-client-secret -e OIDC_FAMILY_ID_CLAIM=custom_data.familyId \
+            -e OIDC_CALLBACK_URL="$REAL_CORE_OIDC_CALLBACK_URL" \
+            --health-cmd "node -e \"fetch('http://localhost:3002/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))\"" \
+            --health-interval 2s "$CORE_IMAGE"
+          for _ in $(seq 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' core)" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs core
+          exit 1
+      - run: pnpm vitest run --project real-core
+      - name: The logs of the core and the plugin
+        if: failure()
+        working-directory: .
+        run: docker logs core; docker logs plugin-demo

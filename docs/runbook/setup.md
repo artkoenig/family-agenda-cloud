@@ -365,7 +365,7 @@ cores run.
 1. Read the release's notes in the public repo (`docs/upgrading.md`). Take a backup first if they say its migration
    cannot be undone: a core never goes back to a database a newer release migrated.
 2. Change the core image in `cube/compose.yaml` (`x-core-image`) to the release's tag and digest, and the same image
-   in the `real-core` job of `.github/workflows/ci.yml`, together with the core commit that job checks out (`ref`,
+   in the `real-core` job of `.github/workflows/real-core.yml`, together with the core commit that job checks out (`ref`,
    the commit the image was built from; the demo Source plugin is built from it). The job's walk-through must pass.
 3. `scripts/deploy.sh`. Compose replaces the cores.
 
