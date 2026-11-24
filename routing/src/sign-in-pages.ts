@@ -11,7 +11,7 @@ export type Language = "de" | "en";
 export type SignInPage = "preparing" | "unavailable" | "several" | "failed";
 
 /** Where Caddy serves the landing page's tokens.css, design.css and fonts on the Router's host. */
-const DESIGN_PATH = "/design";
+export const DESIGN_PATH = "/design";
 
 /** Where the waiting page asks again. */
 export const WAITING_PATH = "/sign-in/waiting";

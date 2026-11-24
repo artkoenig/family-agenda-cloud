@@ -28,7 +28,7 @@ export type LegalPage = {
 /** Every legal page, in the footer's order. To publish one, write its two texts and set `text: true`. */
 export const LEGAL_PAGES: readonly LegalPage[] = [
   { name: "impressum", paths: { de: "/impressum", en: "/en/imprint" }, labels: { de: "Impressum", en: "Imprint" }, text: true },
-  { name: "datenschutz", paths: { de: "/datenschutz", en: "/en/privacy" }, labels: { de: "Datenschutz", en: "Privacy" }, text: false },
+  { name: "datenschutz", paths: { de: "/datenschutz", en: "/en/privacy" }, labels: { de: "Datenschutz", en: "Privacy" }, text: true },
   { name: "agb", paths: { de: "/agb", en: "/en/terms" }, labels: { de: "AGB", en: "Terms" }, text: true },
   {
     name: "widerrufsbelehrung",
