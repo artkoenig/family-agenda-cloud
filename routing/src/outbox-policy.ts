@@ -45,12 +45,8 @@ export function smtpReasonOf(error: unknown): string {
   return typeof responseCode === "number" ? `${code} ${responseCode}` : code;
 }
 
-/** What a mail address ends at in an SMTP server's message: white space, angle brackets and quotes. */
-const ADDRESS_BOUNDS = /([\s<>"']+)/;
+/** A word of an SMTP server's message: what lies between white space, angle brackets and quotes. */
+const WORD = /[^\s<>"']+/g;
 
 /** The text with every mail address in it, any word with an `@`, replaced by `address`, for the last error the outbox keeps. */
-export const withoutAddresses = (text: string): string =>
-  text
-    .split(ADDRESS_BOUNDS)
-    .map((part) => (part.includes("@") ? "address" : part))
-    .join("");
+export const withoutAddresses = (text: string): string => text.replace(WORD, (word) => (word.includes("@") ? "address" : word));

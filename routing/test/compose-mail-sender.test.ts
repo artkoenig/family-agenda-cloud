@@ -8,7 +8,7 @@ import { parse } from "yaml";
  * the mail sender alone gets it, and only the Directory's keys beside it.
  */
 type Service = { environment?: Record<string, string>; command?: string[]; networks?: string[] | Record<string, unknown> };
-const compose = parse(readFileSync(fileURLToPath(new URL("../../../cube/compose.yaml", import.meta.url)), "utf8"), { merge: true }) as {
+const compose = parse(readFileSync(fileURLToPath(new URL("../../cube/compose.yaml", import.meta.url)), "utf8"), { merge: true }) as {
   services: Record<string, Service>;
 };
 
