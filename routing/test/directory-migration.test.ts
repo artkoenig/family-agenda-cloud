@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 /** The Directory's schema version now. */
-const LATEST = 12;
+const LATEST = 13;
 
 /** The columns of a Family that #225 added. */
 const TRIAL_COLUMNS = ["lock_reason", "locked_at", "registered_by", "trial_starts_at"];

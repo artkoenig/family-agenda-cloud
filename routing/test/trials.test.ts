@@ -254,13 +254,20 @@ describe("A Family's Subscription", () => {
     expect(await subscriptionOf(familyId)).toBeNull();
   });
 
-  it("is the latest ordered of two running ones, and not another Family's", async () => {
+  it("is the one running one beside ended ones, and not another Family's", async () => {
     const familyId = await createFamily();
     const other = await createFamily();
-    await subscribe(familyId, "active", null, new Date("2026-11-01T00:00:00Z"));
-    const latest = await subscribe(familyId, "trialing", null, new Date("2026-11-02T00:00:00Z"));
+    await subscribe(familyId, "canceled", new Date("2026-11-01T12:00:00Z"), new Date("2026-11-01T00:00:00Z"));
+    const running = await subscribe(familyId, "active", null, new Date("2026-11-02T00:00:00Z"));
     await subscribe(other, "active", null, new Date("2026-11-03T00:00:00Z"));
 
-    expect(await subscriptionOf(familyId)).toMatchObject({ subscriptionId: latest });
+    expect(await subscriptionOf(familyId)).toMatchObject({ subscriptionId: running });
+  });
+
+  it("refuses a second running one for a Family", async () => {
+    const familyId = await createFamily();
+    await subscribe(familyId, "active", null, new Date("2026-11-01T00:00:00Z"));
+
+    await expect(subscribe(familyId, "trialing", null, new Date("2026-11-02T00:00:00Z"))).rejects.toThrow(/duplicate key/);
   });
 });

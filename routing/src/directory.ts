@@ -167,6 +167,9 @@ const MIGRATIONS = [
      event_id text PRIMARY KEY,
      received_at timestamptz NOT NULL DEFAULT now()
    )`,
+  // At most one running Subscription per Family; ended ones may stand beside it (#225).
+  `CREATE UNIQUE INDEX subscription_running_family_id ON subscription (family_id)
+     WHERE status IN (${RUNNING_SUBSCRIPTION.map((status) => `'${status}'`).join(", ")})`,
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */
@@ -217,7 +220,7 @@ export type Directory = {
    * answers when it started, or null if it did not.
    */
   startTrial(familyId: string): Promise<Date | null>;
-  /** The Family's running Subscription, the latest ordered; null when it has none. */
+  /** The Family's running Subscription, of which it has at most one; null when it has none. */
   subscriptionOf(familyId: string): Promise<Subscription | null>;
   /**
    * Records the founder, unless one is recorded and `overwrite` is false; answers the founder the
@@ -518,8 +521,7 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async subscriptionOf(familyId) {
       const { rows } = await client.query<SubscriptionRow>(
-        `SELECT * FROM subscription WHERE family_id = $1 AND status = ANY($2::text[])
-         ORDER BY ordered_at DESC NULLS LAST, subscription_id LIMIT 1`,
+        "SELECT * FROM subscription WHERE family_id = $1 AND status = ANY($2::text[])",
         [familyId, RUNNING_SUBSCRIPTION],
       );
       const row = rows[0];
