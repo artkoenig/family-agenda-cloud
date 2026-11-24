@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { LockReason } from "../src/directory";
@@ -52,6 +55,20 @@ const familyLine = async (familyId: string) => {
   return result.stdout.split("\n").find((line) => line.startsWith(familyId));
 };
 
+/** The Family's data: its database, its blobs, and what the Directory needs to open them. */
+async function dataOf(familyId: string, blobRoot: string) {
+  const [entry] = await routing.directory(
+    "SELECT database_name, database_role, blob_location, time_zone, wrapped_family_key, wrapped_database_password FROM family WHERE family_id = $1",
+    [familyId],
+  );
+  return {
+    entry,
+    appointments: await routing.family(familyId, "SELECT title FROM appointment"),
+    blobs: (await readdir(join(blobRoot, familyId), { recursive: true })).sort(),
+    flyer: await readFile(join(blobRoot, familyId, "attachments", "flyer.pdf"), "utf8"),
+  };
+}
+
 describe("Locking a Family", () => {
   it("withholds it, removes its schedules, and `families` says it is locked", async () => {
     const familyId = await createFamily();
@@ -92,6 +109,36 @@ describe("Locking a Family", () => {
     await expect.poll(() => scheduledCallsOf(other)).toContain("/operations/due-work");
     expect(scheduledCallsOf(familyId)).toEqual([]);
     expect(routing.log()).toContain(`"message":"The Family is not active; nothing is triggered","familyId":"${familyId}","occasion":"due-work","status":"locked"`);
+  });
+
+  it("leaves its data untouched, through the lock, the Scheduler's ticks and the unlock", async () => {
+    const blobRoot = await mkdtemp(join(tmpdir(), "routing-blobs-"));
+    try {
+      routing.env.BLOB_ROOT = blobRoot;
+      const familyId = await createFamily();
+      const other = await createFamily();
+      await routing.family(familyId, "CREATE TABLE appointment (title text)");
+      await routing.family(familyId, "INSERT INTO appointment VALUES ('Dentist')");
+      await mkdir(join(blobRoot, familyId, "attachments"), { recursive: true });
+      await writeFile(join(blobRoot, familyId, "attachments", "flyer.pdf"), "a flyer");
+      const before = await dataOf(familyId, blobRoot);
+
+      await lock(familyId);
+      const clock = new TestClock("2026-11-16T08:01:10Z");
+      await routing.startScheduler(clock);
+      for (let minute = 0; minute < 3; minute++) await clock.tick(MINUTE);
+      await expect.poll(() => scheduledCallsOf(other)).toContain("/operations/due-work");
+
+      expect(await dataOf(familyId, blobRoot)).toEqual(before);
+      expect(before).toMatchObject({ appointments: [{ title: "Dentist" }], blobs: ["attachments", join("attachments", "flyer.pdf")], flyer: "a flyer" });
+      expect(scheduledCallsOf(familyId)).toEqual([]);
+
+      await unlock(familyId);
+
+      expect(await dataOf(familyId, blobRoot)).toEqual(before);
+    } finally {
+      await rm(blobRoot, { recursive: true, force: true });
+    }
   });
 
   it("is refused for a deleted Family, and for one still being prepared", async () => {
