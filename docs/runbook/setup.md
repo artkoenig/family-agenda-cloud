@@ -69,7 +69,8 @@ Bucket names are global; record the chosen names in the ticket.
 
 ## 5. Mailbox
 
-Not set up yet: the domain contract includes no Mail Basic mailbox, it has to be booked as its own product.
+Set up: the domain contract includes no Mail Basic mailbox, so it is booked as its own product. Logto's SMTP
+connector already sends through it ([#192](https://github.com/artkoenig/family-agenda-cloud/issues/192)).
 
 IONOS Mail Basic 1, mailbox `no-reply@family-agenda.cloud`. Store the password in the password manager.
 Add the mailbox to the Operator's mail client (bounces are read by hand, once a week: [The mail
