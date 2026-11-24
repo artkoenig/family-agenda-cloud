@@ -84,7 +84,7 @@ Stand: {{STAND}}
 
 ## § 10 Ihre Inhalte
 
-(1) Die Inhalte Ihrer Familie bleiben Ihre.
+(1) Die Inhalte Ihrer Familie gehören weiterhin Ihnen.
 
 (2) Sie räumen uns nur die Rechte ein, die zum Betrieb des Dienstes nötig sind: speichern, verarbeiten (auch mit dem KI-Modell nach § 2 Abs. 2) und sichern.
 

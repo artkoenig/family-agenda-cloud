@@ -125,5 +125,5 @@ export function cancelledLine(endsOn: Date, language: Language): CancelledLine {
   const undo = "Kündigung zurücknehmen";
   return language === "de"
     ? { status: `Gekündigt zum ${dateOf(endsOn, language)}`, undo, undoNote: null }
-    : { status: `Cancelled as of ${dateOf(endsOn, language)}`, undo, undoNote: "(undo cancellation)" };
+    : { status: `Cancelled with effect from ${dateOf(endsOn, language)}`, undo, undoNote: "(undo cancellation)" };
 }

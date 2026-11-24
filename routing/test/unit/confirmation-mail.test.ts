@@ -47,7 +47,7 @@ Impressum: https://family-agenda.cloud/impressum
 `,
   en: `${SEPARATOR}
 Family Agenda · Erika Betreiberin · Postfach 12, 10115 Berlin
-Questions? Just reply to this mail or write to support@family-agenda.cloud.
+Questions? Just reply to this email or write to support@family-agenda.cloud.
 Imprint: https://family-agenda.cloud/en/imprint
 `,
 };
@@ -104,7 +104,7 @@ Widerrufsfrist: bis einschließlich 19.03.2026
       subject: "Contract confirmation: your Family Agenda subscription",
       text: `Hello Erika Muster,
 
-thank you for your order. This mail confirms the contract.
+thank you for your order. This email confirms the contract.
 
 Contract holder: Erika Muster, erika@example.org
 Family: Muster
@@ -112,14 +112,14 @@ Plan: Family Agenda Cloud, monthly
 Price: €4.99 per month, VAT included
 Ordered on: 5 March 2026 at 23:30 (Berlin time)
 First payment on: 7 March 2026
-Term and cancellation: one month, renewing for one month at a time, cancellable any time to the end of the month.
+Term and cancellation: one month, renewing for one month at a time, cancellable any time with effect from the end of the month.
 Withdrawal period: until and including 19 March 2026
 
 Cancel: https://app.family-agenda.cloud/en/cancel (button "Verträge hier kündigen")
 Withdraw: https://app.family-agenda.cloud/en/withdraw (button "Vertrag widerrufen")
 Payment method and invoices: in the Admin area under "Subscription"
 
-Below are our terms, the withdrawal policy and the model withdrawal form. The contract language is German, so these are the binding German texts; English translations are at https://family-agenda.cloud/en/terms and https://family-agenda.cloud/en/withdrawal. Please keep this mail.
+Below are our terms, the withdrawal policy and the model withdrawal form. The contract language is German, so these are the binding German texts; English translations are at https://family-agenda.cloud/en/terms and https://family-agenda.cloud/en/withdrawal. Please keep this email.
 
 ${EMBEDDED}
 
@@ -134,7 +134,7 @@ ${FOOTER.en}`,
 Price: €49.90 per year, VAT included
 Ordered on: 5 March 2026 at 23:30 (Berlin time)
 First payment on: 7 March 2026
-Term and cancellation: one year, renewing for one year at a time; cancellable to the end of the first year, after that any time to the end of the month with a pro-rata refund.
+Term and cancellation: one year, renewing for one year at a time; cancellable with effect from the end of the first year, after that any time with effect from the end of the month with a pro-rata refund.
 Withdrawal period: until and including 19 March 2026
 `);
   });

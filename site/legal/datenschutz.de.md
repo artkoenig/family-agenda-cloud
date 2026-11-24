@@ -70,7 +70,7 @@ Dieser Abschnitt informiert Personen, die selbst nicht Mitglied einer Familie si
 
 Für Testzeitraum und Abonnement verarbeiten wir Name und E-Mail-Adresse des Vertragspartners, Tarif, Laufzeit, Bestell-, Kündigungs- und Widerrufszeitpunkte.
 
-Bezahlt wird über **Stripe Payments Europe, Limited**, 1 Grand Canal Street Lower, Dublin 2, Irland. Stripe verarbeitet Zahlungsdaten (Karte oder Konto), Rechnungsadresse und Land in unserem Auftrag, für Betrugsprävention und Identitätsprüfung als eigener Verantwortlicher. Daten können an Stripe, Inc. in den USA gehen (EU-US Data Privacy Framework, ergänzend Standardvertragsklauseln). Auf seiner Bezahlseite setzt Stripe eigene Cookies; dazu gilt die Datenschutzerklärung von Stripe.
+Bezahlt wird über **Stripe Payments Europe, Limited**, 1 Grand Canal Street Lower, Dublin 2, Irland. Stripe verarbeitet Zahlungsdaten (Karte oder Konto), Rechnungsadresse und Land in unserem Auftrag. Für Betrugsprävention und Identitätsprüfung ist Stripe selbst verantwortlich. Daten können an Stripe, Inc. in den USA gehen (EU-US Data Privacy Framework, ergänzend Standardvertragsklauseln). Auf seiner Bezahlseite setzt Stripe eigene Cookies; dazu gilt die Datenschutzerklärung von Stripe.
 
 - Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO; für Rechnungen Art. 6 Abs. 1 lit. c DSGVO.
 - Speicherdauer: Rechnungen und Buchungsbelege 8 Jahre ab Ende des Kalenderjahres (§ 147 Abs. 3 AO, § 14b UStG); danach wird der Kunde bei Stripe gelöscht.
@@ -94,7 +94,7 @@ Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO.
 - Server-Protokolle: 14 Tage
 - Anmeldeprotokolle: 30 Tage
 - E-Mail-Versandaufträge, Unzustellbarkeitsmeldungen: 30 Tage
-- Verzeichnis der Familien: ein Eintrag ohne Namen und E-Mail-Adresse bleibt (Kennung, Zeitzone, Daten)
+- Verzeichnis der Familien: ein Eintrag ohne Namen und E-Mail-Adresse bleibt (Kennung, Zeitzone, Datumsangaben)
 - Rechnungen bei Stripe: 8 Jahre ab Ende des Kalenderjahres
 
 Admins können die Familie jederzeit selbst löschen. Vorher können sie einen Export herunterladen.

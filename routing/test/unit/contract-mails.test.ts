@@ -27,7 +27,7 @@ Impressum: https://family-agenda.cloud/impressum
 `,
   en: `${SEPARATOR}
 Family Agenda · {{NAME}} · {{POSTFLEX_ADDRESS}}
-Questions? Just reply to this mail or write to support@family-agenda.cloud.
+Questions? Just reply to this email or write to support@family-agenda.cloud.
 Imprint: https://family-agenda.cloud/en/imprint
 `,
 };
@@ -52,14 +52,14 @@ describe("cancellationMail", () => {
       from: "Family Agenda <support@family-agenda.cloud>",
       replyTo: "support@family-agenda.cloud",
       to: "erika@example.org",
-      subject: "Eingang Ihrer Kündigung – Family Agenda",
+      subject: "Eingangsbestätigung Ihrer Kündigung – Family Agenda",
       text: `Guten Tag Erika Muster,
 
 Ihre Kündigung ist am 10.03.2026 um 18:42 Uhr bei uns eingegangen.
 
 Inhalt: Ordentliche Kündigung des Vertrags Family Agenda, monatlich, Familie Muster, zum 05.04.2026.
 
-Der Vertrag endet am 05.04.2026. Bis dahin können alle wie gewohnt weiterarbeiten.
+Der Vertrag endet am 05.04.2026. Bis dahin können alle Family Agenda wie gewohnt nutzen.
 
 Ab dem 05.04.2026 ist Ihre Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am 05.05.2026 löschen wir die Familie mit allen Daten.
 
@@ -77,7 +77,7 @@ Sie können die Kündigung bis zum 05.04.2026 im Admin-Bereich zurücknehmen.`,
 
 We received your cancellation on 10 March 2026 at 18:42 (Berlin time).
 
-Content: ordinary cancellation of the contract Family Agenda, monthly, family Muster, as of 5 April 2026.
+Content: ordinary cancellation of the contract Family Agenda, monthly, family Muster, with effect from 5 April 2026.
 
 The contract ends on 5 April 2026. Until then everyone can use Family Agenda as usual.
 
@@ -90,10 +90,10 @@ You can undo the cancellation in the Admin area until 5 April 2026.`,
   it("says nothing of money for a yearly Subscription in year one", () => {
     const values = { ...monthlyCancellation, contract: yearlyInYearOne, endsOn: new Date("2027-03-05T09:05:00Z") };
     expect(parts(cancellationMail("de", values), "de").text).toContain(
-      "Inhalt: Ordentliche Kündigung des Vertrags Family Agenda, jährlich, Familie Muster, zum 05.03.2027.\n\nDer Vertrag endet am 05.03.2027. Bis dahin können alle wie gewohnt weiterarbeiten.\n\nAb dem 05.03.2027",
+      "Inhalt: Ordentliche Kündigung des Vertrags Family Agenda, jährlich, Familie Muster, zum 05.03.2027.\n\nDer Vertrag endet am 05.03.2027. Bis dahin können alle Family Agenda wie gewohnt nutzen.\n\nAb dem 05.03.2027",
     );
     expect(parts(cancellationMail("en", values), "en").text).toContain(
-      "family Muster, as of 5 March 2027.\n\nThe contract ends on 5 March 2027. Until then everyone can use Family Agenda as usual.\n\nFrom 5 March 2027 your family is locked.",
+      "family Muster, with effect from 5 March 2027.\n\nThe contract ends on 5 March 2027. Until then everyone can use Family Agenda as usual.\n\nFrom 5 March 2027 your family is locked.",
     );
     for (const language of ["de", "en"] as const) {
       expect(cancellationMail(language, values).text).not.toMatch(/€|erstatten|refund|berechnet|charged/);
@@ -114,7 +114,7 @@ Ihre Kündigung ist am 10.06.2026 um 10:00 Uhr bei uns eingegangen.
 
 Inhalt: Ordentliche Kündigung des Vertrags Family Agenda, jährlich, Familie Muster, zum 05.07.2026.
 
-Der Vertrag endet am 05.07.2026. Bis dahin können alle wie gewohnt weiterarbeiten.
+Der Vertrag endet am 05.07.2026. Bis dahin können alle Family Agenda wie gewohnt nutzen.
 Den nicht genutzten Teil Ihres Jahresbeitrags, 66,67 €, erstatten wir mit dem Vertragsende auf Ihr Zahlungsmittel.
 
 Ab dem 05.07.2026 ist Ihre Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am 04.08.2026 löschen wir die Familie mit allen Daten.
@@ -133,7 +133,7 @@ Sie können die Kündigung bis zum 05.07.2026 im Admin-Bereich zurücknehmen.`);
       settlement: { case: "ordered-during-trial" },
     } as const;
     expect(parts(cancellationMail("de", values), "de").text).toContain(
-      "Der Vertrag endet am 12.03.2026. Bis dahin können alle wie gewohnt weiterarbeiten.\nEs wird nichts berechnet.\n\nAb dem 12.03.2026 ist Ihre Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am 11.04.2026 löschen wir",
+      "Der Vertrag endet am 12.03.2026. Bis dahin können alle Family Agenda wie gewohnt nutzen.\nEs wird nichts berechnet.\n\nAb dem 12.03.2026 ist Ihre Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am 11.04.2026 löschen wir",
     );
     expect(parts(cancellationMail("en", values), "en").text).toContain(
       "The contract ends on 12 March 2026. Until then everyone can use Family Agenda as usual.\nNothing will be charged.\n\nFrom 12 March 2026",
@@ -175,7 +175,7 @@ Content: withdrawal from the contract Family Agenda, monthly, family Muster, ord
 
 The subscription therefore ends at once, and your family is locked. We will refund all amounts paid, €12.99 in total, to your payment method within 14 days.
 
-Admins can still download an export in the Admin area. On 9 April 2026 we delete the family with all its data. If you want to continue, you can order again in the Admin area until then.`,
+Admins can still download an export in the Admin area. On 9 April 2026 we delete the family with all its data. If you want to continue, you can subscribe again in the Admin area until then.`,
     });
   });
 
@@ -197,7 +197,7 @@ Ihre Erklärung ist am 25.03.2026 um 08:15 Uhr bei uns eingegangen.
 
 Inhalt: Widerruf des Vertrags Family Agenda, monatlich, Familie Muster, bestellt am 05.03.2026.
 
-Die Widerrufsfrist von 14 Tagen ist am 19.03.2026 abgelaufen. Wir behandeln Ihre Erklärung deshalb als ordentliche Kündigung zum frühestmöglichen Zeitpunkt: Der Vertrag endet am 05.04.2026. Bis dahin können alle wie gewohnt weiterarbeiten.
+Die Widerrufsfrist von 14 Tagen ist am 19.03.2026 abgelaufen. Wir behandeln Ihre Erklärung deshalb als ordentliche Kündigung zum frühestmöglichen Zeitpunkt: Der Vertrag endet am 05.04.2026. Bis dahin können alle Family Agenda wie gewohnt nutzen.
 
 Ab dem 05.04.2026 ist Ihre Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am 05.05.2026 löschen wir die Familie mit allen Daten.
 
@@ -235,7 +235,7 @@ You can undo the cancellation in the Admin area until 5 April 2026.`,
       },
     } as const;
     expect(withdrawalMail("de", values).text).toContain(
-      "Der Vertrag endet am 05.04.2026. Bis dahin können alle wie gewohnt weiterarbeiten.\nDen nicht genutzten Teil Ihres Jahresbeitrags, 1.234,56 €, erstatten wir mit dem Vertragsende auf Ihr Zahlungsmittel.\n\n",
+      "Der Vertrag endet am 05.04.2026. Bis dahin können alle Family Agenda wie gewohnt nutzen.\nDen nicht genutzten Teil Ihres Jahresbeitrags, 1.234,56 €, erstatten wir mit dem Vertragsende auf Ihr Zahlungsmittel.\n\n",
     );
     expect(withdrawalMail("en", values).text).toContain("€1,234.56");
   });
@@ -253,7 +253,7 @@ describe("familyDeletedMail", () => {
       subject: "Ihre Familie wurde gelöscht – Family Agenda",
       text: `Guten Tag Erika Muster,
 
-Sie haben die Familie Muster am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen sind am 24.06.2026 entfernt.
+Sie haben die Familie Muster am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
 
 Danke, dass Sie Family Agenda genutzt haben.`,
     });
@@ -264,7 +264,7 @@ Danke, dass Sie Family Agenda genutzt haben.`,
       subject: "Your family has been deleted – Family Agenda",
       text: `Hello Erika Muster,
 
-You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data are deleted; the last copies in our backups are gone on 24 June 2026.
+You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
 
 Thank you for using Family Agenda.`,
     });
@@ -275,21 +275,21 @@ Thank you for using Family Agenda.`,
     const yearly = { recipient: erika, familyName: "Muster", deletedAt, by: "recipient", subscription: { endsOn, settlement: { case: "yearly-after-year-one", refundCents: 6667 } } } as const;
     expect(parts(familyDeletedMail("de", yearly), "de").text).toBe(`Guten Tag Erika Muster,
 
-Sie haben die Familie Muster am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen sind am 24.06.2026 entfernt.
+Sie haben die Familie Muster am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
 Ihr Abonnement ist zum 05.07.2026 gekündigt. Den nicht genutzten Teil, 66,67 €, erstatten wir auf Ihr Zahlungsmittel.
 
 Danke, dass Sie Family Agenda genutzt haben.`);
     expect(parts(familyDeletedMail("en", yearly), "en").text).toBe(`Hello Erika Muster,
 
-You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data are deleted; the last copies in our backups are gone on 24 June 2026.
-Your subscription is cancelled as of 5 July 2026. We will refund the unused part, €66.67, to your payment method.
+You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
+Your subscription is cancelled with effect from 5 July 2026. We will refund the unused part, €66.67, to your payment method.
 
 Thank you for using Family Agenda.`);
 
     for (const settlement of [{ case: "plain" }, { case: "ordered-during-trial" }] as const) {
       const values = { ...yearly, subscription: { endsOn, settlement } };
       expect(familyDeletedMail("de", values).text).toContain("entfernt.\nIhr Abonnement ist zum 05.07.2026 gekündigt.\n\nDanke");
-      expect(familyDeletedMail("en", values).text).toContain("24 June 2026.\nYour subscription is cancelled as of 5 July 2026.\n\nThank you");
+      expect(familyDeletedMail("en", values).text).toContain("24 June 2026.\nYour subscription is cancelled with effect from 5 July 2026.\n\nThank you");
     }
   });
 
@@ -299,7 +299,7 @@ Thank you for using Family Agenda.`);
       subject: "Ihre Familie wurde gelöscht – Family Agenda",
       text: `Guten Tag Erika Muster,
 
-Wie angekündigt haben wir die Familie Muster 30 Tage nach der Sperre am 10.06.2026 gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen sind am 24.06.2026 entfernt.
+Wie angekündigt haben wir die Familie Muster am 10.06.2026, 30 Tage nach der Sperre, gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
 
 Danke, dass Sie Family Agenda genutzt haben.`,
     });
@@ -307,7 +307,7 @@ Danke, dass Sie Family Agenda genutzt haben.`,
       subject: "Your family has been deleted – Family Agenda",
       text: `Hello Erika Muster,
 
-As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. All of the family's data are deleted; the last copies in our backups are gone on 24 June 2026.
+As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
 
 Thank you for using Family Agenda.`,
     });
@@ -335,7 +335,7 @@ Erika Muster hat die Familie Muster am 10.06.2026 gelöscht. Ihr Zugang und alle
       subject: "The family Muster has been deleted – Family Agenda",
       text: `Hello Max Muster,
 
-Erika Muster deleted the family Muster on 10 June 2026. Your access and all of the family's data are deleted with it.`,
+Erika Muster deleted the family Muster on 10 June 2026. Your access and all of the family's data have been deleted with it.`,
     });
   });
 
@@ -343,10 +343,10 @@ Erika Muster deleted the family Muster on 10 June 2026. Your access and all of t
     const values = { recipient: max, familyName: "Muster", deletedAt, by: "automatic" } as const;
     expect(parts(familyDeletedNoticeMail("de", values), "de").text).toBe(`Guten Tag Max Muster,
 
-Wie angekündigt haben wir die Familie Muster 30 Tage nach der Sperre am 10.06.2026 gelöscht. Ihr Zugang und alle Daten der Familie sind damit gelöscht.`);
+Wie angekündigt haben wir die Familie Muster am 10.06.2026, 30 Tage nach der Sperre, gelöscht. Ihr Zugang und alle Daten der Familie sind damit gelöscht.`);
     expect(parts(familyDeletedNoticeMail("en", values), "en").text).toBe(`Hello Max Muster,
 
-As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. Your access and all of the family's data are deleted with it.`);
+As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. Your access and all of the family's data have been deleted with it.`);
   });
 });
 

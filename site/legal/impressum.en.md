@@ -7,7 +7,7 @@ Family Agenda
 {{POSTFLEX_ADDRESS}}
 
 **Contact**
-Mail: support@family-agenda.cloud
+Email: support@family-agenda.cloud
 We usually reply within two working days.
 
 **VAT identification number** under § 27a of the German VAT Act: {{UST_IDNR}}
