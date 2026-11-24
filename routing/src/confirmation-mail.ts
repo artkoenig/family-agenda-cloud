@@ -40,11 +40,11 @@ const BILLING: Record<Language, Record<Billing, { name: string; price: (price: s
     },
   },
   en: {
-    monthly: { name: "monthly", price: (price) => `${price} per month`, term: "one month, renewing for one month at a time, cancellable any time to the end of the month." },
+    monthly: { name: "monthly", price: (price) => `${price} per month`, term: "one month, renewing for one month at a time, cancellable any time with effect from the end of the month." },
     yearly: {
       name: "yearly",
       price: (price) => `${price} per year`,
-      term: "one year, renewing for one year at a time; cancellable to the end of the first year, after that any time to the end of the month with a pro-rata refund.",
+      term: "one year, renewing for one year at a time; cancellable with effect from the end of the first year, after that any time with effect from the end of the month with a pro-rata refund.",
     },
   },
 };
@@ -72,7 +72,7 @@ const WORDS: Record<Language, Words> = {
   },
   en: {
     subject: "Contract confirmation: your Family Agenda subscription",
-    thanks: "thank you for your order. This mail confirms the contract.",
+    thanks: "thank you for your order. This email confirms the contract.",
     facts: ({ holder, familyName, billing, price, ordered, firstPayment, withdrawUntil }) => [
       `Contract holder: ${holder.name}, ${holder.email}`,
       `Family: ${familyName}`,
@@ -89,7 +89,7 @@ const WORDS: Record<Language, Words> = {
       'Payment method and invoices: in the Admin area under "Subscription"',
     ],
     below:
-      "Below are our terms, the withdrawal policy and the model withdrawal form. The contract language is German, so these are the binding German texts; English translations are at https://family-agenda.cloud/en/terms and https://family-agenda.cloud/en/withdrawal. Please keep this mail.",
+      "Below are our terms, the withdrawal policy and the model withdrawal form. The contract language is German, so these are the binding German texts; English translations are at https://family-agenda.cloud/en/terms and https://family-agenda.cloud/en/withdrawal. Please keep this email.",
   },
 };
 

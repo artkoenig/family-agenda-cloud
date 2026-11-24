@@ -27,7 +27,7 @@ Impressum: https://family-agenda.cloud/impressum
 `,
   en: `${SEPARATOR}
 Family Agenda · {{NAME}} · {{POSTFLEX_ADDRESS}}
-Questions? Just reply to this mail or write to support@family-agenda.cloud.
+Questions? Just reply to this email or write to support@family-agenda.cloud.
 Imprint: https://family-agenda.cloud/en/imprint
 `,
 };
@@ -77,7 +77,7 @@ Sie können die Kündigung bis zum 05.04.2026 im Admin-Bereich zurücknehmen.`,
 
 We received your cancellation on 10 March 2026 at 18:42 (Berlin time).
 
-Content: ordinary cancellation of the contract Family Agenda, monthly, family Muster, as of 5 April 2026.
+Content: ordinary cancellation of the contract Family Agenda, monthly, family Muster, with effect from 5 April 2026.
 
 The contract ends on 5 April 2026. Until then everyone can use Family Agenda as usual.
 
@@ -93,7 +93,7 @@ You can undo the cancellation in the Admin area until 5 April 2026.`,
       "Inhalt: Ordentliche Kündigung des Vertrags Family Agenda, jährlich, Familie Muster, zum 05.03.2027.\n\nDer Vertrag endet am 05.03.2027. Bis dahin können alle Family Agenda wie gewohnt nutzen.\n\nAb dem 05.03.2027",
     );
     expect(parts(cancellationMail("en", values), "en").text).toContain(
-      "family Muster, as of 5 March 2027.\n\nThe contract ends on 5 March 2027. Until then everyone can use Family Agenda as usual.\n\nFrom 5 March 2027 your family is locked.",
+      "family Muster, with effect from 5 March 2027.\n\nThe contract ends on 5 March 2027. Until then everyone can use Family Agenda as usual.\n\nFrom 5 March 2027 your family is locked.",
     );
     for (const language of ["de", "en"] as const) {
       expect(cancellationMail(language, values).text).not.toMatch(/€|erstatten|refund|berechnet|charged/);
@@ -175,7 +175,7 @@ Content: withdrawal from the contract Family Agenda, monthly, family Muster, ord
 
 The subscription therefore ends at once, and your family is locked. We will refund all amounts paid, €12.99 in total, to your payment method within 14 days.
 
-Admins can still download an export in the Admin area. On 9 April 2026 we delete the family with all its data. If you want to continue, you can order again in the Admin area until then.`,
+Admins can still download an export in the Admin area. On 9 April 2026 we delete the family with all its data. If you want to continue, you can subscribe again in the Admin area until then.`,
     });
   });
 
@@ -264,7 +264,7 @@ Danke, dass Sie Family Agenda genutzt haben.`,
       subject: "Your family has been deleted – Family Agenda",
       text: `Hello Erika Muster,
 
-You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data are deleted; the last copies in our backups are gone on 24 June 2026.
+You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
 
 Thank you for using Family Agenda.`,
     });
@@ -281,15 +281,15 @@ Ihr Abonnement ist zum 05.07.2026 gekündigt. Den nicht genutzten Teil, 66,67 �
 Danke, dass Sie Family Agenda genutzt haben.`);
     expect(parts(familyDeletedMail("en", yearly), "en").text).toBe(`Hello Erika Muster,
 
-You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data are deleted; the last copies in our backups are gone on 24 June 2026.
-Your subscription is cancelled as of 5 July 2026. We will refund the unused part, €66.67, to your payment method.
+You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
+Your subscription is cancelled with effect from 5 July 2026. We will refund the unused part, €66.67, to your payment method.
 
 Thank you for using Family Agenda.`);
 
     for (const settlement of [{ case: "plain" }, { case: "ordered-during-trial" }] as const) {
       const values = { ...yearly, subscription: { endsOn, settlement } };
       expect(familyDeletedMail("de", values).text).toContain("entfernt.\nIhr Abonnement ist zum 05.07.2026 gekündigt.\n\nDanke");
-      expect(familyDeletedMail("en", values).text).toContain("24 June 2026.\nYour subscription is cancelled as of 5 July 2026.\n\nThank you");
+      expect(familyDeletedMail("en", values).text).toContain("24 June 2026.\nYour subscription is cancelled with effect from 5 July 2026.\n\nThank you");
     }
   });
 
@@ -307,7 +307,7 @@ Danke, dass Sie Family Agenda genutzt haben.`,
       subject: "Your family has been deleted – Family Agenda",
       text: `Hello Erika Muster,
 
-As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. All of the family's data are deleted; the last copies in our backups are gone on 24 June 2026.
+As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
 
 Thank you for using Family Agenda.`,
     });
@@ -335,7 +335,7 @@ Erika Muster hat die Familie Muster am 10.06.2026 gelöscht. Ihr Zugang und alle
       subject: "The family Muster has been deleted – Family Agenda",
       text: `Hello Max Muster,
 
-Erika Muster deleted the family Muster on 10 June 2026. Your access and all of the family's data are deleted with it.`,
+Erika Muster deleted the family Muster on 10 June 2026. Your access and all of the family's data have been deleted with it.`,
     });
   });
 
@@ -346,7 +346,7 @@ Erika Muster deleted the family Muster on 10 June 2026. Your access and all of t
 Wie angekündigt haben wir die Familie Muster am 10.06.2026, 30 Tage nach der Sperre, gelöscht. Ihr Zugang und alle Daten der Familie sind damit gelöscht.`);
     expect(parts(familyDeletedNoticeMail("en", values), "en").text).toBe(`Hello Max Muster,
 
-As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. Your access and all of the family's data are deleted with it.`);
+As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. Your access and all of the family's data have been deleted with it.`);
   });
 });
 

@@ -91,6 +91,6 @@ describe("Admin area and Locked page", () => {
   it("shows a Cancellation with the German way to take it back", () => {
     const endsOn = new Date("2026-04-05T09:05:00Z");
     expect(cancelledLine(endsOn, "de")).toEqual({ status: "Gekündigt zum 05.04.2026", undo: "Kündigung zurücknehmen", undoNote: null });
-    expect(cancelledLine(endsOn, "en")).toEqual({ status: "Cancelled as of 5 April 2026", undo: "Kündigung zurücknehmen", undoNote: "(undo cancellation)" });
+    expect(cancelledLine(endsOn, "en")).toEqual({ status: "Cancelled with effect from 5 April 2026", undo: "Kündigung zurücknehmen", undoNote: "(undo cancellation)" });
   });
 });

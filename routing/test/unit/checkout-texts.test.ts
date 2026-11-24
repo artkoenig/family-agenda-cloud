@@ -26,21 +26,21 @@ Kündigung: zum Ende des ersten Jahres, danach jederzeit zum Monatsende mit ante
 14 Tage Widerrufsrecht; bei Widerruf erstatten wir alles Gezahlte.`,
   },
   en: {
-    monthly: `Important: an AI model detects dates in mails and documents. Detection may be incomplete or wrong.
+    monthly: `Important: an AI model detects dates in emails and documents. Detection may be incomplete or wrong.
 
-Family Agenda Cloud for your family: every member with their own agenda, timetable, calendars, mails and documents as sources, run in Germany.
+Family Agenda Cloud for your family: every member with their own agenda, timetable, calendars, emails and documents as sources, run in Germany.
 Price: €4.99 per month, VAT included.
 First payment on 20 March 2026, then monthly.
 Term: one month, renewing for one month at a time.
-Cancellation: any time to the end of the month, online in the Admin area.
+Cancellation: any time with effect from the end of the month, online in the Admin area.
 14-day right of withdrawal; on withdrawal we refund everything you paid.`,
-    yearly: `Important: an AI model detects dates in mails and documents. Detection may be incomplete or wrong.
+    yearly: `Important: an AI model detects dates in emails and documents. Detection may be incomplete or wrong.
 
-Family Agenda Cloud for your family: every member with their own agenda, timetable, calendars, mails and documents as sources, run in Germany.
+Family Agenda Cloud for your family: every member with their own agenda, timetable, calendars, emails and documents as sources, run in Germany.
 Price: €49.90 per year, VAT included.
 First payment on 20 March 2026, then yearly.
 Term: one year, renewing for one year at a time.
-Cancellation: to the end of the first year, after that any time to the end of the month with a pro-rata refund, online in the Admin area.
+Cancellation: with effect from the end of the first year, after that any time with effect from the end of the month with a pro-rata refund, online in the Admin area.
 14-day right of withdrawal; on withdrawal we refund everything you paid.`,
   },
 };

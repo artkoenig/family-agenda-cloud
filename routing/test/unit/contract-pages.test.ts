@@ -77,7 +77,7 @@ describe("the /cancel page", () => {
       "Name: Erika Muster",
       "Email for the confirmation: erika@example.org",
       "Contract: Family Agenda, monthly, family Muster, ordered on 5 March 2026",
-      "Cancel as of: [5 April 2026][5 May 2026][5 June 2026]",
+      "Cancel with effect from: [5 April 2026][5 May 2026][5 June 2026]",
       'jetzt kündigen (German for "cancel now")',
     ]);
   });
@@ -122,7 +122,7 @@ describe("the /cancel receipt", () => {
     expect(linesOf(cancelReceiptPage("en", values))).toEqual([
       "We have received your cancellation.",
       "Received on 10 March 2026 at 18:42 (Berlin time).",
-      "Content: ordinary cancellation of the contract Family Agenda, monthly, family Muster, by Erika Muster, as of 5 April 2026.",
+      "Content: ordinary cancellation of the contract Family Agenda, monthly, family Muster, by Erika Muster, with effect from 5 April 2026.",
       "The contract ends on 5 April 2026.",
       "A confirmation is on its way to erika@example.org.",
       "Print / save as PDF",
@@ -211,9 +211,9 @@ describe("the /delete page", () => {
     ],
     en: [
       "Delete family",
-      "If you delete the family Muster, it is gone at once, for all members. This cannot be undone.",
+      "If you delete the family Muster, it is deleted immediately for all members. This cannot be undone.",
       "What is deleted when:",
-      "at once: all agendas, entries, sources and their credentials, stored files and the accounts of all Admins",
+      "immediately: all agendas, entries, sources and their credentials, stored files and the accounts of all Admins",
       "after 14 days at the latest: the last copies in our backups",
       "after 8 years: invoices we must keep for tax reasons",
       "Download the export first if you want to keep your data.",
@@ -222,7 +222,7 @@ describe("the /delete page", () => {
   };
   const confirm = {
     de: ["Ich verstehe, dass alle Daten der Familie endgültig gelöscht werden.", "Familie endgültig löschen"],
-    en: ["I understand that all of the family's data will be deleted for good.", "Delete family for good"],
+    en: ["I understand that all of the family's data will be permanently deleted.", "Delete family permanently"],
   };
 
   it("lists what goes when and offers the Export first; without a Subscription, nothing about one", () => {

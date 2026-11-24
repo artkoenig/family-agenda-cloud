@@ -113,7 +113,7 @@ const CODE_MAILS: Record<Exclude<TemplateType, "OrganizationInvitation">, Record
       subject: "Confirm the change: your code {{code}}",
       heading: "Confirm it is you",
       intro: "Enter this code to confirm the change to your account:",
-      unasked: "This was not you? Ignore this email, and best change your password.",
+      unasked: "Wasn't you? Ignore this email; we recommend changing your password.",
     },
   },
   BindNewIdentifier: {
@@ -127,7 +127,7 @@ const CODE_MAILS: Record<Exclude<TemplateType, "OrganizationInvitation">, Record
       subject: "Confirm your new email address: your code {{code}}",
       heading: "Confirm your new email address",
       intro: "Enter this code to link this email address to your account:",
-      unasked: "This was not you? Just ignore this email.",
+      unasked: "Wasn't you? Just ignore this email.",
     },
   },
   MfaVerification: {
@@ -141,7 +141,7 @@ const CODE_MAILS: Record<Exclude<TemplateType, "OrganizationInvitation">, Record
       subject: "Your Family Agenda verification code: {{code}}",
       heading: "Confirm your sign-in",
       intro: "Enter this code to confirm your sign-in:",
-      unasked: "You did not sign in? Best change your password.",
+      unasked: "You did not sign in? We recommend changing your password.",
     },
   },
   BindMfa: {
@@ -155,7 +155,7 @@ const CODE_MAILS: Record<Exclude<TemplateType, "OrganizationInvitation">, Record
       subject: "Set up a second factor: your code {{code}}",
       heading: "Set up a second factor",
       intro: "Enter this code to set up this email address as a second factor:",
-      unasked: "This was not you? Ignore this email, and best change your password.",
+      unasked: "Wasn't you? Ignore this email; we recommend changing your password.",
     },
   },
 };

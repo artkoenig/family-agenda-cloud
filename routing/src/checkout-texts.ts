@@ -43,8 +43,8 @@ const SHARED: Record<Language, { ai: string; offer: string; withdrawal: string }
     withdrawal: "14 Tage Widerrufsrecht; bei Widerruf erstatten wir alles Gezahlte.",
   },
   en: {
-    ai: "Important: an AI model detects dates in mails and documents. Detection may be incomplete or wrong.",
-    offer: "Family Agenda Cloud for your family: every member with their own agenda, timetable, calendars, mails and documents as sources, run in Germany.",
+    ai: "Important: an AI model detects dates in emails and documents. Detection may be incomplete or wrong.",
+    offer: "Family Agenda Cloud for your family: every member with their own agenda, timetable, calendars, emails and documents as sources, run in Germany.",
     withdrawal: "14-day right of withdrawal; on withdrawal we refund everything you paid.",
   },
 };
@@ -65,11 +65,11 @@ Kündigung: zum Ende des ersten Jahres, danach jederzeit zum Monatsende mit ante
     monthly: (price, date) => `Price: ${price} per month, VAT included.
 First payment on ${date}, then monthly.
 Term: one month, renewing for one month at a time.
-Cancellation: any time to the end of the month, online in the Admin area.`,
+Cancellation: any time with effect from the end of the month, online in the Admin area.`,
     yearly: (price, date) => `Price: ${price} per year, VAT included.
 First payment on ${date}, then yearly.
 Term: one year, renewing for one year at a time.
-Cancellation: to the end of the first year, after that any time to the end of the month with a pro-rata refund, online in the Admin area.`,
+Cancellation: with effect from the end of the first year, after that any time with effect from the end of the month with a pro-rata refund, online in the Admin area.`,
   },
 };
 

@@ -59,18 +59,18 @@ const TEXTS: Record<Language, Record<SignInPage, Text>> = {
   },
   en: {
     preparing: {
-      title: "Your Family is being prepared",
-      lines: ["This usually takes only a moment.", "This page moves on by itself as soon as your Family is ready."],
+      title: "Your family is being prepared",
+      lines: ["This usually takes only a moment.", "You'll be redirected automatically as soon as your family is ready."],
       actions: [],
     },
     unavailable: {
       title: "Family not available",
-      lines: ["This Family is not available at the moment.", `Questions? Write to us: ${SUPPORT_LINK}`],
+      lines: ["This family is not available at the moment.", `Questions? Write to us: ${SUPPORT_LINK}`],
       actions: [SIGN_OUT.en],
     },
     several: {
       title: "Sign-in not possible",
-      lines: ["Your account belongs to more than one Family.", `Please write to us: ${SUPPORT_LINK}`],
+      lines: ["Your account belongs to more than one family.", `Please write to us: ${SUPPORT_LINK}`],
       actions: [SIGN_OUT.en],
     },
     failed: { title: "Sign-in failed", lines: ["Sign-in could not be completed."], actions: [{ href: "/sign-in", label: "Sign in again" }] },

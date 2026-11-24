@@ -313,7 +313,7 @@ describe("Central sign-in", () => {
   it("shows its pages in English to a browser that prefers English", async () => {
     signInMemberOf("u-1", "org_new");
 
-    expect((await browserFor(router, "en-GB,en;q=0.9,de;q=0.5").visit("/sign-in")).body).toContain("Your Family is being prepared");
+    expect((await browserFor(router, "en-GB,en;q=0.9,de;q=0.5").visit("/sign-in")).body).toContain("Your family is being prepared");
   });
 
   it("sends a browser without a waiting claim to sign in", async () => {

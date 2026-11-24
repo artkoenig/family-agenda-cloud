@@ -129,11 +129,11 @@ const WORDS: Record<Language, Words> = {
       name: "Name:",
       email: "Email for the confirmation:",
       contract: "Contract:",
-      endDate: "Cancel as of:",
+      endDate: "Cancel with effect from:",
       button: { label: "jetzt kündigen", note: '(German for "cancel now")' },
       receipt: {
         title: "We have received your cancellation.",
-        content: (contract, name, end) => `Content: ordinary cancellation of the contract ${contract}, by ${name}, as of ${end}.`,
+        content: (contract, name, end) => `Content: ordinary cancellation of the contract ${contract}, by ${name}, with effect from ${end}.`,
         ends: (end) => `The contract ends on ${end}.`,
         mail: (email) => `A confirmation is on its way to ${email}.`,
       },
@@ -154,10 +154,10 @@ const WORDS: Record<Language, Words> = {
     print: "Print / save as PDF",
     delete: {
       title: "Delete family",
-      intro: (familyName) => `If you delete the family ${familyName}, it is gone at once, for all members. This cannot be undone.`,
+      intro: (familyName) => `If you delete the family ${familyName}, it is deleted immediately for all members. This cannot be undone.`,
       when: "What is deleted when:",
       stages: [
-        "at once: all agendas, entries, sources and their credentials, stored files and the accounts of all Admins",
+        "immediately: all agendas, entries, sources and their credentials, stored files and the accounts of all Admins",
         "after 14 days at the latest: the last copies in our backups",
         "after 8 years: invoices we must keep for tax reasons",
       ],
@@ -165,8 +165,8 @@ const WORDS: Record<Language, Words> = {
       exportButton: "Download export",
       subscription: "Deleting also cancels your subscription at the earliest possible date. We refund nothing beyond that.",
       withdrawInstead: (periodEnd) => `Instead, you can withdraw from the contract until ${periodEnd} and get everything you paid back:`,
-      understood: "I understand that all of the family's data will be deleted for good.",
-      button: "Delete family for good",
+      understood: "I understand that all of the family's data will be permanently deleted.",
+      button: "Delete family permanently",
     },
   },
 };
