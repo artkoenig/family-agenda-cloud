@@ -34,7 +34,7 @@ export const LEGAL_PAGES: readonly LegalPage[] = [
     name: "widerrufsbelehrung",
     paths: { de: "/widerrufsbelehrung", en: "/en/withdrawal" },
     labels: { de: "Widerrufsbelehrung", en: "Withdrawal policy" },
-    text: false,
+    text: true,
   },
 ];
 

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Widerrufsbelehrung · Family Agenda Cloud</title>
+  <meta name="theme-color" content="#faf6f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://family-agenda.cloud/widerrufsbelehrung">
+  <link rel="alternate" hreflang="de" href="https://family-agenda.cloud/widerrufsbelehrung">
+  <link rel="alternate" hreflang="en" href="https://family-agenda.cloud/en/withdrawal">
+  <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/landing.css">
+</head>
+<body class="fam-page lp">
+  <header class="lp-nav">
+    <div class="lp-nav__inner">
+      <a class="lp-brand" href="/" aria-label="Family Agenda"><img src="/app-icon.svg" alt="" width="28" height="28"><span class="lp-brand__name">Family Agenda</span></a>
+      <nav class="lp-nav__links" aria-label="Seite">
+        <a class="lp-nav__link lp-nav__lang" href="/en/withdrawal" lang="en" hreflang="en" data-lang="en" aria-label="English" title="English">EN</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="lp-legal">
+<h1>Widerrufsbelehrung</h1>
+<h2>Widerrufsrecht</h2>
+<p>Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen.</p>
+<p>Die Widerrufsfrist beträgt vierzehn Tage ab dem Tag des Vertragsabschlusses.</p>
+<p>Um Ihr Widerrufsrecht auszuüben, müssen Sie uns ({{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}, E-Mail: <a href="mailto:support@family-agenda.cloud">support@family-agenda.cloud</a>) mittels einer eindeutigen Erklärung (z. B. ein mit der Post versandter Brief oder eine E-Mail) über Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das beigefügte Muster-Widerrufsformular verwenden, das jedoch nicht vorgeschrieben ist. Sie können Ihr Widerrufsrecht auch online unter <a href="https://app.family-agenda.cloud/withdraw">https://app.family-agenda.cloud/withdraw</a> (Schaltfläche „Vertrag widerrufen“ im Admin-Bereich) ausüben. Wenn Sie diese Online-Funktion nutzen, übermitteln wir Ihnen auf einem dauerhaften Datenträger (z. B. durch eine E-Mail) unverzüglich eine Eingangsbestätigung mit Informationen zum Inhalt der Widerrufserklärung sowie dem Datum und der Uhrzeit ihres Eingangs.</p>
+<p>Zur Wahrung der Widerrufsfrist reicht es aus, dass Sie die Mitteilung über die Ausübung des Widerrufsrechts vor Ablauf der Widerrufsfrist absenden.</p>
+<h2>Folgen des Widerrufs</h2>
+<p>Wenn Sie diesen Vertrag widerrufen, haben wir Ihnen alle Zahlungen, die wir von Ihnen erhalten haben, einschließlich der Lieferkosten (mit Ausnahme der zusätzlichen Kosten, die sich daraus ergeben, dass Sie eine andere Art der Lieferung als die von uns angebotene, günstigste Standardlieferung gewählt haben), unverzüglich und spätestens binnen vierzehn Tagen ab dem Tag zurückzuzahlen, an dem die Mitteilung über Ihren Widerruf dieses Vertrags bei uns eingegangen ist. Für diese Rückzahlung verwenden wir dasselbe Zahlungsmittel, das Sie bei der ursprünglichen Transaktion eingesetzt haben, es sei denn, mit Ihnen wurde ausdrücklich etwas anderes vereinbart; in keinem Fall werden Ihnen wegen dieser Rückzahlung Entgelte berechnet.</p>
+<h2>Muster-Widerrufsformular</h2>
+<p>(Wenn Sie den Vertrag widerrufen wollen, dann füllen Sie bitte dieses Formular aus und senden Sie es zurück.)</p>
+<p>– An {{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}, E-Mail: <a href="mailto:support@family-agenda.cloud">support@family-agenda.cloud</a>:</p>
+<p>– Hiermit widerrufe(n) ich/wir (*) den von mir/uns (*) abgeschlossenen Vertrag über den Kauf der folgenden Waren (*)/die Erbringung der folgenden Dienstleistung (*)</p>
+<p>– Bestellt am (*)/erhalten am (*)</p>
+<p>– Name des/der Verbraucher(s)</p>
+<p>– Anschrift des/der Verbraucher(s)</p>
+<p>– Unterschrift des/der Verbraucher(s) (nur bei Mitteilung auf Papier)</p>
+<p>– Datum</p>
+<p>(*) Unzutreffendes streichen.</p>
+  </main>
+
+  <footer class="lp-footer">
+    <nav class="lp-footer__contracts" aria-label="Verträge">
+      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/cancel">Verträge hier kündigen</a>
+      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/withdraw">Vertrag widerrufen</a>
+    </nav>
+    <span>Mit Liebe (und zu wenig Schlaf) von Eltern gemacht.</span>
+    <nav class="lp-footer__links" aria-label="Rechtliches">
+      <a href="/impressum">Impressum</a>
+      <a href="/datenschutz">Datenschutz</a>
+      <a href="/agb">AGB</a>
+      <a href="/widerrufsbelehrung">Widerrufsbelehrung</a>
+      <a href="/en/withdrawal" lang="en" hreflang="en" data-lang="en">English</a>
+    </nav>
+  </footer>
+
+  <script>
+    // Remembers a language picked by hand, so the landing page's first-visit choice by browser language does not override it.
+    for (const link of document.querySelectorAll("[data-lang]")) {
+      link.addEventListener("click", () => { try { localStorage.setItem("lp-lang", link.dataset.lang); } catch {} });
+    }
+  </script>
+</body>
+</html>
