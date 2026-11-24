@@ -352,7 +352,7 @@ Check, which is [gate 15](../launch-checklist.md#15-error-alert-and-heartbeat-li
   `journalctl -u family-agenda-health -n 20`; each run logs `Checked the Cube` with the numbers of lines,
   containers and findings. The check at healthchecks.io is `up`.
 - An error on purpose reaches the Operator within 15 minutes:
-  `docker exec -u 0 family-agenda-core-1 sh -c 'echo "Error: gate 15 test" > /proc/1/fd/1'`.
+  `docker exec -u 1000 family-agenda-core-1 sh -c 'echo "Error: gate 15 test" > /proc/1/fd/1'`.
 - A stopped timer reaches the Operator through healthchecks.io within 15 minutes:
   `systemctl stop family-agenda-health.timer`, wait for the mail, then `systemctl start family-agenda-health.timer`.
 - The journal holds each line once: `journalctl -u docker.service CONTAINER_NAME=family-agenda-core-1 -n 5` shows
