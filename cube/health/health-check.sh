@@ -62,8 +62,9 @@ finish() {
 trap finish EXIT
 
 # The state of each container of the project, of docker inspect's: only what the checker needs,
-# no environment and no labels but the service's.
-CONTAINER_FORMAT='{"id":{{json .Id}},"name":{{json .Name}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"status":{{json .State.Status}},"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}""{{end}},"restartCount":{{.RestartCount}},"restartPolicy":{{json .HostConfig.RestartPolicy.Name}},"exitCode":{{.State.ExitCode}}}'
+# no environment and no labels but the service's. A container without a healthcheck has no Health at
+# all, which `index` takes and `.State.Health` does not (Docker 29).
+CONTAINER_FORMAT='{"id":{{json .Id}},"name":{{json .Name}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"status":{{json .State.Status}},"health":{{with index .State "Health"}}{{json .Status}}{{else}}""{{end}},"restartCount":{{.RestartCount}},"restartPolicy":{{json .HostConfig.RestartPolicy.Name}},"exitCode":{{.State.ExitCode}}}'
 
 collect() {
 	local since=(--since "$FIRST_SINCE")
