@@ -216,6 +216,27 @@ html:not([data-scripted]) .lp-stage { width: 360px; }
   padding: var(--space-5) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line);
   color: var(--ink-muted); font-size: 14px; line-height: 20px;
 }
+/* The contract buttons (#216): on every page, always in view, never behind hover or a menu. */
+.lp-footer__contracts { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: var(--space-3); padding-bottom: var(--space-2); }
+.lp .lp-footer__button {
+  display: inline-block; border: 2px solid var(--hearth); background: var(--hearth-tint); color: var(--hearth-strong);
+  padding: 10px var(--space-4); font-size: 15px; font-weight: 700; text-align: center; white-space: normal;
+}
+.lp .lp-footer__button:hover { background: var(--hearth); color: var(--on-hearth); }
+.lp-footer__gloss { font-weight: 500; }
+
+/* Legal pages (site/legal/, built by routing/src/legal-pages.ts) --------- */
+.lp-legal { max-width: calc(var(--content-width) + 2 * var(--space-5)); margin: 0 auto; padding: var(--space-7) var(--space-5); font-size: 17px; line-height: 27px; overflow-wrap: break-word; }
+.lp-legal h1 { margin-bottom: var(--space-5); font-size: clamp(32px, 5vw, 44px); line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; }
+.lp-legal h2 { margin: var(--space-6) 0 var(--space-3); font-size: 22px; line-height: 28px; font-weight: 800; }
+.lp-legal h3 { margin: var(--space-5) 0 var(--space-2); font-size: 18px; line-height: 26px; font-weight: 700; }
+.lp-legal p, .lp-legal ul, .lp-legal ol { margin-bottom: var(--space-4); }
+.lp .lp-legal ul, .lp .lp-legal ol { padding-left: var(--space-5); }
+.lp .lp-legal ul { list-style: disc; }
+.lp .lp-legal ol { list-style: decimal; }
+.lp-legal li + li { margin-top: var(--space-1); }
+.lp-legal blockquote { margin: 0 0 var(--space-5); padding: var(--space-3) var(--space-4); border-left: 4px solid var(--hearth); border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink-muted); }
+.lp-legal blockquote p { margin: 0; }
 
 /* Phone and small tablet: the stage stays at the top, the steps scroll by below it. */
 @media (max-width: 859px) {
@@ -231,6 +252,7 @@ html:not([data-scripted]) .lp-stage { width: 360px; }
   .lp-step p:not(.lp-step__eyebrow) { font-size: 16px; line-height: 24px; }
   .lp-section { padding-left: var(--space-4); padding-right: var(--space-4); }
   .lp-footer { padding-left: var(--space-4); padding-right: var(--space-4); }
+  .lp-legal { padding: var(--space-6) var(--space-4); font-size: 16px; line-height: 25px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
