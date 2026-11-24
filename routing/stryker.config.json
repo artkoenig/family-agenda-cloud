@@ -28,6 +28,8 @@
     "src/id-token.ts",
     "src/sign-in-cookie.ts",
     "src/post-register.ts",
+    "src/legal-texts.ts",
+    "src/legal-pages.ts",
     "src/contract-wording.ts",
     "src/contract-pages.ts",
     "src/contract-mails.ts"

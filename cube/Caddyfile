@@ -10,6 +10,9 @@ family-agenda.cloud {
 	}
 
 	root * /srv/site
+	# The legal pages, built from site/legal/ (routing/src/legal-pages.ts), at their paths without
+	# .html: /impressum is site/impressum.html, /en/imprint is site/en/imprint.html.
+	try_files {path} {path}.html
 	file_server
 }
 
