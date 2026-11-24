@@ -7,7 +7,7 @@ import type { Reported } from "./health-check";
  */
 
 /** The address the health check's mails come from, the one of Logto's and the contract mails. */
-export const ALERT_FROM = "no-reply@family-agenda.cloud";
+export const ALERT_FROM = "support@family-agenda.cloud";
 
 /** At most this many lines in one mail; the rest are counted at the end. */
 export const MAX_REPORTED = 50;

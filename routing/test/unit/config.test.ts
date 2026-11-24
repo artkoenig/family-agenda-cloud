@@ -301,7 +301,7 @@ describe("readMailConfig", () => {
     DIRECTORY_DATABASE_PASSWORD: "directory-password",
     SMTP_HOST: "smtp.ionos.de",
     SMTP_PORT: "465",
-    SMTP_USER: "no-reply@family-agenda.cloud",
+    SMTP_USER: "support@family-agenda.cloud",
     SMTP_PASSWORD: "mailbox-password",
   };
 
@@ -310,7 +310,7 @@ describe("readMailConfig", () => {
     expect(config).toEqual({
       directoryDatabaseUrl: "postgres://routing@db.internal:6543/directory",
       directoryDatabasePassword: "directory-password",
-      smtp: { host: "smtp.ionos.de", port: 465, user: "no-reply@family-agenda.cloud", password: "mailbox-password" },
+      smtp: { host: "smtp.ionos.de", port: 465, user: "support@family-agenda.cloud", password: "mailbox-password" },
     });
     expect(directoryConnection(config)).toMatchObject({ host: "db.internal", port: 6543, password: "directory-password" });
   });

@@ -36,7 +36,7 @@ export type ReceivedMail = {
   charset: string;
 };
 
-export const USER = "no-reply@family-agenda.test";
+export const USER = "support@family-agenda.test";
 export const PASSWORD = "the mailbox password";
 
 /** A key and a certificate for localhost, made with openssl, valid for a day. */

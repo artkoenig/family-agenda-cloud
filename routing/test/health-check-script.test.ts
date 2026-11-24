@@ -141,10 +141,10 @@ describe("the health check of the Cube", () => {
 
     const smtp = result.calls.find((call) => call.includes("--mail-rcpt"));
     expect(smtp).toMatch(
-      /^curl -sS -m 60 --ssl-reqd --url smtps:\/\/smtp\.ionos\.de:465 --mail-from no-reply@family-agenda\.cloud --mail-rcpt operator@example\.org --upload-file \S+\/out\/mail\.txt -K -$/,
+      /^curl -sS -m 60 --ssl-reqd --url smtps:\/\/smtp\.ionos\.de:465 --mail-from support@family-agenda\.cloud --mail-rcpt operator@example\.org --upload-file \S+\/out\/mail\.txt -K -$/,
     );
     expect(smtp).not.toContain("pa\\ss");
-    expect(await readFile(join(stub, "curl-config"), "utf8")).toBe('user = "no-reply@family-agenda.cloud:pa\\\\ss\\"word"\n');
+    expect(await readFile(join(stub, "curl-config"), "utf8")).toBe('user = "support@family-agenda.cloud:pa\\\\ss\\"word"\n');
 
     expect(result.mail).toContain("To: operator@example.org\r\n");
     const text = textOf(result.mail!);

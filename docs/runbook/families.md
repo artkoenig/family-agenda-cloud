@@ -303,9 +303,9 @@ Do not copy addresses, subjects or texts off the Cube; the [rule on logs](#two-r
 
 ### Bounces
 
-A mail the mail server took but could not deliver comes back to `no-reply@family-agenda.cloud` as a bounce (a
+A mail the mail server took but could not deliver comes back to `support@family-agenda.cloud` as a bounce (a
 delivery status notification). **Once a week**, read the bounces in that mailbox in the Operator's mail client and
-delete them; the privacy policy promises they are deleted once read, within 30 days at most. A bounce for an address
+delete them, and only them, since support requests arrive there too; the privacy policy promises they are deleted once read, within 30 days at most. A bounce for an address
 that does not exist needs nothing more: the Family's Admin entered it. Bounces for many recipients at once, or IONOS's
 notice of a limit, mean the mailbox's reputation or limit is the matter: see the next section.
 
@@ -322,7 +322,7 @@ Transactional Email instead:
    lists them), and create an IAM API key that may send mail. Scaleway sends 10,000 mails a month unless
    its support raises the limit.
 3. In the `.env`: `SMTP_HOST=smtp.tem.scaleway.com`, `SMTP_PORT=465`, `SMTP_USER=<the project id>`,
-   `SMTP_PASSWORD=<the API key's secret>`. The From stays `no-reply@family-agenda.cloud`.
+   `SMTP_PASSWORD=<the API key's secret>`. The From stays `support@family-agenda.cloud`.
 4. Logto's codes go through the same server: run the core's setup again ([Setting up Logto](setup.md#setting-up-logto),
    step 3) with the same `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` and `SMTP_PASSWORD`, then `scripts/deploy.sh`.
 5. Check: `docker compose logs --tail 20 mail-sender` shows `The mail sender is running`; the next mail put in is

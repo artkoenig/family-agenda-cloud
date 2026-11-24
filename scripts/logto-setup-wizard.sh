@@ -31,14 +31,14 @@ printf '%s\n' "$app_secret" | set_env IDP_MANAGEMENT_CLIENT_SECRET
 echo "Written to the .env."
 
 step "3/6 logto-setup"
-read -rsp "Password of no-reply@family-agenda.cloud (hidden): " smtp_password; echo
+read -rsp "Password of support@family-agenda.cloud (hidden): " smtp_password; echo
 printf '%s\n' "$smtp_password" | cube_ssh "cd $CUBE_DIR && umask 077 && IFS= read -r SMTP_PASSWORD && export SMTP_PASSWORD \
 	LOGTO_M2M_APP_ID=\$(sed -n 's/^IDP_MANAGEMENT_CLIENT_ID=//p' .env) \
 	LOGTO_M2M_APP_SECRET=\$(sed -n 's/^IDP_MANAGEMENT_CLIENT_SECRET=//p' .env) \
 	&& docker compose run -T --rm --no-deps -e LOGTO_M2M_APP_ID -e LOGTO_M2M_APP_SECRET \
 		-e LOGTO_ENDPOINT=https://auth.family-agenda.cloud -e IDP_EVENTS_URL=http://router:8080/idp/events \
-		-e SMTP_HOST=smtp.ionos.de -e SMTP_PORT=465 -e SMTP_USER=no-reply@family-agenda.cloud -e SMTP_PASSWORD \
-		-e SMTP_FROM=no-reply@family-agenda.cloud core logto-setup > /root/logto-setup.out 2>&1; s=\$?; \
+		-e SMTP_HOST=smtp.ionos.de -e SMTP_PORT=465 -e SMTP_USER=support@family-agenda.cloud -e SMTP_PASSWORD \
+		-e SMTP_FROM=support@family-agenda.cloud core logto-setup > /root/logto-setup.out 2>&1; s=\$?; \
 	grep -vE '^(OIDC_CLIENT_SECRET|IDP_WEBHOOK_SECRET|IDP_MANAGEMENT_CLIENT_SECRET)=' /root/logto-setup.out; exit \$s"
 cube_ssh "grep -q '^Registration open' /root/logto-setup.out" || { echo "logto-setup did not open registration; see above." >&2; exit 1; }
 

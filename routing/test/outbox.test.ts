@@ -98,9 +98,9 @@ describe("A mail put in the outbox", () => {
 
     expect(smtp.received).toEqual([
       {
-        envelopeFrom: "no-reply@family-agenda.cloud",
+        envelopeFrom: "support@family-agenda.cloud",
         envelopeTo: ["anna.mueller@example.org"],
-        from: '"Family Agenda" <no-reply@family-agenda.cloud>',
+        from: '"Family Agenda" <support@family-agenda.cloud>',
         replyTo: "support@family-agenda.cloud",
         to: "anna.mueller@example.org",
         subject: "Ihre Kündigung ist eingegangen",

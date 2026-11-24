@@ -66,13 +66,13 @@ describe("the digest's text", () => {
 });
 
 describe("the digest mail", () => {
-  it("is a message as SMTP sends it, from no-reply to the Operator, its UTF-8 text in base64", () => {
+  it("is a message as SMTP sends it, from support to the Operator, its UTF-8 text in base64", () => {
     const entries = [reported(), reported({ container: "family-agenda-core-2", message: "Error: ä" })];
     const mail = digestMail({ reported: entries, to: "operator@example.org", now: NOW, messageId: "health-1" });
     const { headers, body, text } = read(mail);
 
     expect(headers).toEqual([
-      "From: Family Agenda Cube <no-reply@family-agenda.cloud>",
+      "From: Family Agenda Cube <support@family-agenda.cloud>",
       "To: operator@example.org",
       "Subject: Family Agenda Cube: 2 findings in 2 containers",
       "Date: Tue, 24 Nov 2026 10:05:00 +0000",

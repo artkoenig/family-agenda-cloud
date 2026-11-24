@@ -72,16 +72,16 @@ Bucket names are global; record the chosen names in the ticket.
 Set up: the domain contract includes no Mail Basic mailbox, so it is booked as its own product. Logto's SMTP
 connector already sends through it ([#192](https://github.com/artkoenig/family-agenda-cloud/issues/192)).
 
-IONOS Mail Basic 1, mailbox `no-reply@family-agenda.cloud`. Store the password in the password manager.
+IONOS Mail Basic 1, mailbox `support@family-agenda.cloud`. Store the password in the password manager.
 Add the mailbox to the Operator's mail client (bounces are read by hand, once a week: [The mail
 outbox](families.md#bounces)). Put the password into the `.env` as `SMTP_PASSWORD`: the `mail-sender` service sends the
 Routing module's mails with it ([#233](https://github.com/artkoenig/family-agenda-cloud/issues/233)), and Logto's
 SMTP connector gets it from the setup ([Setting up Logto](#setting-up-logto), step 3). Another mail server is
 `SMTP_HOST`, `SMTP_PORT` and `SMTP_USER` in the `.env` ([families.md](families.md#another-mail-server-scaleway-tem)).
 
-Support alias: in the IONOS mail settings, set up the alias (forwarding) `support@family-agenda.cloud` to the
-Operator's mailbox. Central sign-in's pages name it to a person who cannot get into their Family
-(`routing/src/sign-in-pages.ts`). Check: a mail to it arrives in the Operator's mailbox.
+It is the one mailbox of the domain: every mail goes out from it, and answers, support requests and bounces come in.
+The legal pages and central sign-in's pages (`routing/src/sign-in-pages.ts`) name it, so read it daily, not only for
+bounces. Check: a mail to it arrives.
 
 Check: SPF (`v=spf1 include:_spf-eu.ionos.com ~all`) and the DKIM records resolve; add a DMARC record
 `_dmarc` TXT `v=DMARC1; p=none; rua=mailto:<operator address>` if none exists.
@@ -135,8 +135,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
    | `OPERATOR_ALERT_ADDRESS` | where the [health check](#the-health-check)'s digest mail of errors goes | the Operator's own address, not one at `family-agenda.cloud` |
    | `HEALTH_HEARTBEAT_URL` | the ping URL of the Cube's check at healthchecks.io | [The health check](#the-health-check) |
-   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` | the SMTP server and login the mail sender and the health check send through; `smtp.ionos.de`, `465` and `no-reply@family-agenda.cloud` unless set | as in `cube/.env.example` |
-   | `SMTP_PASSWORD` | the password of the mailbox `no-reply@family-agenda.cloud` | [step 5](#5-mailbox), the password manager |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` | the SMTP server and login the mail sender and the health check send through; `smtp.ionos.de`, `465` and `support@family-agenda.cloud` unless set | as in `cube/.env.example` |
+   | `SMTP_PASSWORD` | the password of the mailbox `support@family-agenda.cloud` | [step 5](#5-mailbox), the password manager |
 
    Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped
    again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` and
@@ -205,8 +205,8 @@ console listens on the Cube's loopback alone.
      LOGTO_M2M_APP_SECRET=$(sed -n 's/^IDP_MANAGEMENT_CLIENT_SECRET=//p' .env) \
      && docker compose run --rm --no-deps -e LOGTO_M2M_APP_ID -e LOGTO_M2M_APP_SECRET \
        -e LOGTO_ENDPOINT=https://auth.family-agenda.cloud -e IDP_EVENTS_URL=http://router:8080/idp/events \
-       -e SMTP_HOST=smtp.ionos.de -e SMTP_PORT=465 -e SMTP_USER=no-reply@family-agenda.cloud -e SMTP_PASSWORD \
-       -e SMTP_FROM=no-reply@family-agenda.cloud core logto-setup
+       -e SMTP_HOST=smtp.ionos.de -e SMTP_PORT=465 -e SMTP_USER=support@family-agenda.cloud -e SMTP_PASSWORD \
+       -e SMTP_FROM=support@family-agenda.cloud core logto-setup
    ```
 
    The `core` service brings the rest: `CONTEXT_MODE=supplied`, the callback `OIDC_CALLBACK_URL`, and
@@ -328,7 +328,7 @@ runs `cube/health/health-check.sh` every 5 minutes
 the containers' states, and the checker (`routing/src/health-*.ts`, run in the Routing module's image without a
 network) applies one rule per service (`routing/src/health-rules.ts`). Its findings: a service's error lines, and a
 container that is unhealthy, restarting, restarted, or exited or dead with a non-zero code or a restart policy.
-It sends at most one digest mail per run to `OPERATOR_ALERT_ADDRESS`, from `no-reply@family-agenda.cloud` over
+It sends at most one digest mail per run to `OPERATOR_ALERT_ADDRESS`, from `support@family-agenda.cloud` over
 SMTP. The same error of the same container is mailed again after 24 hours at the earliest; the mail then counts
 how often it came in between. A run that fails, its mail included, keeps the last state, so the next run checks
 the same lines again. Each run pings healthchecks.io, a failed run `<URL>/fail`. `scripts/deploy.sh` installs the

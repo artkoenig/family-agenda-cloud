@@ -6,7 +6,7 @@
 # no docker.sock, no journal, no network and read-only. The checker's rule file
 # (routing/src/health-rules.ts) says which lines are errors; it writes at most one digest mail.
 #
-# This script sends that mail through the mailbox no-reply@family-agenda.cloud (SMTP_* of the .env)
+# This script sends that mail through the mailbox support@family-agenda.cloud (SMTP_* of the .env)
 # to OPERATOR_ALERT_ADDRESS, and only then keeps the checker's state and the journal's cursor, so
 # that a run whose mail fails is checked again in the next. Every run ends with a ping to
 # HEALTH_HEARTBEAT_URL (healthchecks.io), a run that fails, its mail included, with one to its
@@ -20,7 +20,7 @@ ENV_FILE=${HEALTH_ENV_FILE:-/opt/family-agenda/.env}
 STATE_DIR=${HEALTH_STATE_DIR:-/var/lib/family-agenda-health}
 IMAGE=${HEALTH_CHECKER_IMAGE:-family-agenda-routing:local}
 PROJECT=family-agenda
-MAIL_FROM=no-reply@family-agenda.cloud
+MAIL_FROM=support@family-agenda.cloud
 # On the first run, or when the cursor is lost: the last quarter of an hour.
 FIRST_SINCE=-15min
 

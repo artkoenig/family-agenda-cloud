@@ -49,7 +49,7 @@ describe("the health check's checker", () => {
     expect(result.exitCode).toBe(0);
     expect(result.files).toEqual(["cursor", "mail.txt", "state.json"]);
     expect(await readFile(join(outDir, "cursor"), "utf8")).toBe("s=2");
-    expect(await readFile(join(outDir, "mail.txt"), "utf8")).toMatch(/^From: Family Agenda Cube <no-reply@family-agenda\.cloud>\r\nTo: operator@example\.org\r\n/);
+    expect(await readFile(join(outDir, "mail.txt"), "utf8")).toMatch(/^From: Family Agenda Cube <support@family-agenda\.cloud>\r\nTo: operator@example\.org\r\n/);
     expect(JSON.parse(await readFile(join(outDir, "state.json"), "utf8"))).toMatchObject({ fingerprints: { "family-agenda-core-1\nError: boom": { suppressed: 0 } } });
     expect(JSON.parse(result.stdout)).toEqual({ time: NOW.toISOString(), level: "info", message: "Checked the Cube", lines: 2, containers: 0, reported: 1 });
   });

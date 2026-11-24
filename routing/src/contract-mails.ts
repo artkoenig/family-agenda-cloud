@@ -1,6 +1,6 @@
 /**
  * The mails of a Cancellation, a Withdrawal and a deleted Family (#214), in plain text, for the
- * outbox to send (#192): From the one no-reply mailbox, with Reply-To the support address, in the
+ * outbox to send (#192): From the one support@ mailbox, with Reply-To the same address, in the
  * recipient's language (`mailLanguageOf`), each ending with the standard footer. They acknowledge
  * receipt and say what follows; none says a Cancellation or Withdrawal was confirmed or is valid.
  * The footer keeps `{{NAME}}` and `{{POSTFLEX_ADDRESS}}` unless the Operator's imprint is given.
@@ -19,7 +19,7 @@ import {
   type Settlement,
 } from "./contract-wording";
 
-export const MAIL_FROM = "Family Agenda <no-reply@family-agenda.cloud>";
+export const MAIL_FROM = "Family Agenda <support@family-agenda.cloud>";
 export const MAIL_REPLY_TO = "support@family-agenda.cloud";
 
 /** A mail as the outbox sends it. */

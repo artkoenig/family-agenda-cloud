@@ -27,7 +27,7 @@ Everything to reproduce it is in [`logto-passwordless/`](logto-passwordless/): `
    LOGTO_ENDPOINT=http://localhost:3201 LOGTO_API_ENDPOINT=http://localhost:3201 \
    CONTEXT_MODE=supplied OIDC_CALLBACK_URL=http://localhost:8228/core/callback \
    IDP_MANAGEMENT_API=logto IDP_EVENTS_URL=http://receiver:8080/idp/events \
-   SMTP_HOST=mailpit SMTP_PORT=1025 SMTP_FROM=noreply@family-agenda.test \
+   SMTP_HOST=mailpit SMTP_PORT=1025 SMTP_FROM=support@family-agenda.test \
    npx -y tsx@4.20.3 src/main.ts
    ```
 

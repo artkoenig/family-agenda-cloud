@@ -91,7 +91,7 @@ type Env = Record<string, string | undefined>;
 /** The Directory's database, as every command opens it. */
 export type DirectorySettings = Pick<Config, "directoryDatabaseUrl" | "directoryDatabasePassword">;
 
-/** The mail server the outbox sends through: SMTP with implicit TLS, as no-reply's mailbox. */
+/** The mail server the outbox sends through: SMTP with implicit TLS, as the support@ mailbox. */
 export type SmtpSettings = { host: string; port: number; user: string; password: string };
 
 /**
