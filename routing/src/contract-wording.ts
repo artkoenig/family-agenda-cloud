@@ -37,10 +37,11 @@ export const CONTRACT_PATHS: Record<"cancel" | "withdraw" | "delete", Record<Lan
 
 /**
  * The language of a mail for the recipient's Logto locale (#192): German for any German locale,
- * else English.
+ * English for any other. German for none, until people have a locale at Logto (#243).
  */
 export function mailLanguageOf(locale: string | null | undefined): Language {
-  return locale?.toLowerCase().split(/[-_]/)[0] === "de" ? "de" : "en";
+  if (!locale) return "de";
+  return locale.toLowerCase().split(/[-_]/)[0] === "de" ? "de" : "en";
 }
 
 const BERLIN = "Europe/Berlin";
