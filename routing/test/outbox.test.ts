@@ -26,7 +26,7 @@ const clients: pg.Client[] = [];
 const transports: MailTransport[] = [];
 let logged: string;
 let log: Log;
-/** The sender's time: a little after the Directory's, so that a mail put in is due at once. */
+/** The sender's time: a minute after the Directory's, so that a mail put in is due at once, however slowly the test runs. */
 let time: Date;
 
 beforeEach(async () => {
@@ -43,7 +43,7 @@ beforeEach(async () => {
     }),
     () => time,
   );
-  time = new Date(Date.now() + 1000);
+  time = new Date(Date.now() + MINUTE);
 });
 afterEach(async () => {
   for (const transport of transports.splice(0)) transport.close();
