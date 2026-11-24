@@ -28,7 +28,7 @@ const ASK_AGAIN_SECONDS = 5;
 
 /** The support contact these pages give a person who cannot get in (#173). */
 const SUPPORT_EMAIL = "support@family-agenda.cloud";
-const SUPPORT_LINK = `<a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>`;
+export const SUPPORT_LINK = `<a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>`;
 
 type Action = { href: string; label: string };
 

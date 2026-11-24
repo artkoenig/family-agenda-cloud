@@ -116,6 +116,11 @@ export function deleterLine(deleterName: string, language: Language): string {
   return language === "de" ? `Löschen kann nur: ${deleterName}` : `Only ${deleterName} can delete the family`;
 }
 
+/** What other Admins see instead of the button to order: the one Admin who may. */
+export function ordererLine(ordererName: string, language: Language): string {
+  return language === "de" ? `Bestellen kann nur: ${ordererName}` : `Only ${ordererName} can order`;
+}
+
 /**
  * What the holder sees after a Cancellation, shown as `<status> · <undo> <undoNote>`: the link to
  * take it back keeps its German label, which English explains in `undoNote`.

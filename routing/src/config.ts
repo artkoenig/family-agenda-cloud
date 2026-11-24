@@ -1,4 +1,6 @@
+import type { Billing } from "./contract-wording";
 import type { IdpManagement } from "./logto-management";
+import { orderPathOf } from "./routing-pages";
 import type { GoogleClient, Registration } from "./sign-in-experience";
 
 /**
@@ -68,6 +70,12 @@ export type Config = {
    * again (#155); without it /sign-in answers 404.
    */
   centralSignIn: CentralSignIn | null;
+  /**
+   * Stripe (STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY and _YEARLY), which the Tariff is ordered at
+   * (#226); without it the order page and every other path of Stripe's is off. Only the Router
+   * needs it.
+   */
+  stripe: StripeSettings | null;
   /** Where the Router listens for the browsers' requests. */
   listenHost: string;
   listenPort: number;
@@ -83,6 +91,9 @@ export type Config = {
  * credentials; and the key of Logto's PostRegister webhook to the cores.
  */
 export type CentralSignIn = { issuerUrl: string; clientId: string; clientSecret: string; webhookSecret: string };
+
+/** Stripe's restricted key and the ids of the Tariff's two Prices. */
+export type StripeSettings = { secretKey: string; prices: Record<Billing, string> };
 
 export class ConfigError extends Error {}
 
@@ -139,6 +150,7 @@ export function readConfig(env: Env): Config {
     google: google(env),
     registration: registration(env),
     centralSignIn: centralSignIn(env),
+    stripe: stripe(env),
     ...listenSettings(env),
   };
 }
@@ -204,6 +216,22 @@ function centralSignIn(env: Env): CentralSignIn | null {
   return { issuerUrl, clientId, clientSecret, webhookSecret: required(env, "IDP_WEBHOOK_SECRET") };
 }
 
+const STRIPE = ["STRIPE_SECRET_KEY", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_YEARLY"] as const;
+
+/**
+ * STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY and STRIPE_PRICE_YEARLY: all three, or none; with them,
+ * central sign-in and Logto's Management API, which say who orders.
+ */
+function stripe(env: Env): StripeSettings | null {
+  const given = STRIPE.filter((name) => env[name]);
+  if (given.length === 0) return null;
+  if (given.length < STRIPE.length) throw new ConfigError(`${STRIPE.join(", ")} must be set all three, or none`);
+  for (const name of ["CENTRAL_SIGN_IN_CLIENT_ID", "IDP_MANAGEMENT_ENDPOINT"]) {
+    if (!env[name]) throw new ConfigError(`STRIPE_SECRET_KEY needs ${name}`);
+  }
+  return { secretKey: required(env, "STRIPE_SECRET_KEY"), prices: { monthly: required(env, "STRIPE_PRICE_MONTHLY"), yearly: required(env, "STRIPE_PRICE_YEARLY") } };
+}
+
 /** Where and how the Router listens. */
 function listenSettings(env: Env): Pick<Config, "listenHost" | "listenPort" | "trustProxy"> {
   return { listenHost: env.LISTEN_HOST ?? "0.0.0.0", listenPort: port(env, "PORT", "8080"), trustProxy: env.TRUST_PROXY === "true" };
@@ -237,6 +265,7 @@ function callbackPath(env: Env): string {
     throw new ConfigError("OIDC_CALLBACK_URL must be an http or https address with a path, without query or fragment");
   }
   if (isSignInPath(url.pathname)) throw new ConfigError("OIDC_CALLBACK_URL must not be below /sign-in, central sign-in's paths");
+  if (orderPathOf(url.pathname)) throw new ConfigError("OIDC_CALLBACK_URL must not be a page of the order");
   return url.pathname;
 }
 

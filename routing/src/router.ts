@@ -11,10 +11,13 @@ import { isBodiless, mayRefuseOpening, neverConnected } from "./failover";
 import { sealedContext, unwrappedFamily } from "./family-context";
 import { reasonOf, type Log } from "./log";
 import { hostnameOf, poolAt, type Pool, type Resolve } from "./pool";
+import { answerOrder, type OrderSetup } from "./order";
 import { postRegisterAgain } from "./post-register";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
 import { systemResolve } from "./resolve";
+import { orderPathOf, type OrderPath } from "./routing-pages";
+import { checkPrices, stripePort, type StripePort } from "./stripe";
 
 /** The Router, listening for the browsers' requests. */
 export type Router = { url: string; close(): Promise<void> };
@@ -28,6 +31,8 @@ type RouterSetup = {
   pool: Pool;
   /** Central sign-in below /sign-in; none unless configured, and /sign-in is then no path of the Router's. */
   signIn: SignInSetup | null;
+  /** The order at Stripe; none unless configured, and its pages are then no paths of the Router's. */
+  order: OrderSetup | null;
 };
 
 /** A request as the Router passes it on to a core. */
@@ -47,6 +52,9 @@ type CoreRequest = {
  */
 const HELD_BODY_BYTES = 1024 * 1024;
 
+/** How much of a posted order the Router reads: more than any form of its has. */
+const ORDER_BYTES = 8 * 1024;
+
 /** How much of a core's answer the Router reads to tell whether it is a refusal: more than any refusal has. */
 const REFUSAL_BYTES = 1024;
 
@@ -54,9 +62,18 @@ const REFUSAL_BYTES = 1024;
  * Starts the Router: it finds each request's Family by the Family id in its path and passes the
  * request on to any core with that Family's Context. It opens the Directory on the first request
  * that names a Family. `resolve` finds the cores the pool's name stands for, at each request;
- * `now` is the time central sign-in goes by.
+ * `now` is the time central sign-in and the order go by, and `connectStripe` answers Stripe with the
+ * restricted key. Refuses to start with Prices at Stripe that are not the Tariff's.
  */
-export async function startRouter(config: Config, log: Log, resolve: Resolve = systemResolve, now: () => Date = () => new Date()): Promise<Router> {
+export async function startRouter(
+  config: Config,
+  log: Log,
+  resolve: Resolve = systemResolve,
+  now: () => Date = () => new Date(),
+  connectStripe: (secretKey: string) => StripePort = stripePort,
+): Promise<Router> {
+  const stripe = config.stripe && { prices: config.stripe.prices, port: connectStripe(config.stripe.secretKey) };
+  if (stripe) await checkPrices(stripe.port, stripe.prices);
   const directoryPool = new pg.Pool({ ...directoryConnection(config), max: 10 });
   // An idle connection the server closed is replaced on the next request; it is no reason to stop.
   directoryPool.on("error", (error) => {
@@ -73,7 +90,8 @@ export async function startRouter(config: Config, log: Log, resolve: Resolve = s
     postRegisterAgain: postRegisterAgain(pool, config.centralSignIn.webhookSecret, log),
     now,
   };
-  const setup: RouterSetup = { config, directory, log, pool, signIn };
+  const order = stripe && config.idpManagement && { config, directory, idp: config.idpManagement, prices: stripe.prices, stripe: stripe.port, now };
+  const setup: RouterSetup = { config, directory, log, pool, signIn, order };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -92,13 +110,20 @@ export async function startRouter(config: Config, log: Log, resolve: Resolve = s
   };
 }
 
-async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const { config, directory, signIn } = setup;
+/** Answers a request for central sign-in or a page of the order; false if it is for neither. */
+async function ownPageRequest(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<boolean> {
+  const { signIn, order } = setup;
   const [pathname = ""] = (incoming.url ?? "/").split("?", 1);
-  if (signIn && isSignInPath(pathname)) {
-    await signInRequest(setup, signIn, incoming, outgoing);
-    return;
-  }
+  const orderPath = orderPathOf(pathname);
+  if (signIn && isSignInPath(pathname)) await signInRequest(setup, signIn, incoming, outgoing);
+  else if (order && orderPath) await orderRequest(order, orderPath, incoming, outgoing);
+  else return false;
+  return true;
+}
+
+async function route(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
+  const { config, directory } = setup;
+  if (await ownPageRequest(setup, incoming, outgoing)) return;
   const routed = await routeRequest({ method: incoming.method, target: incoming.url ?? "/" }, (familyId) => directory.find(familyId), config.callbackPath);
   if (routed.to === "refused") {
     outgoing.writeHead(routed.status, routed.headers).end(routed.body);
@@ -122,6 +147,18 @@ async function signInRequest(setup: RouterSetup, signIn: SignInSetup, incoming: 
   const request = { method: incoming.method, target: incoming.url ?? "/", cookie: incoming.headers.cookie, acceptLanguage: incoming.headers["accept-language"] };
   const { status, headers, body, landing } = await answerSignIn(request, signIn);
   if (landing) setup.log.info("Central sign-in landed", { landing: landing.page, ...(landing.page === "family" ? { familyId: landing.familyId } : {}) });
+  outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
+}
+
+/** Answers a request for a page of the order. */
+async function orderRequest(order: OrderSetup, path: OrderPath, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
+  const form = async (): Promise<URLSearchParams | undefined> => {
+    const body = await beginningOf(incoming, ORDER_BYTES);
+    return body?.whole ? new URLSearchParams(Buffer.concat(body.chunks).toString()) : undefined;
+  };
+  const { status, headers, body } = await answerOrder({ method: incoming.method, path, cookie: incoming.headers.cookie, form }, order);
+  // What was posted and not read would stay on the connection.
+  if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
 }
 

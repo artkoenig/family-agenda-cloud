@@ -46,6 +46,7 @@ describe("readConfig", () => {
       google: null,
       registration: "closed",
       centralSignIn: null,
+      stripe: null,
       listenHost: "0.0.0.0",
       listenPort: 8080,
       trustProxy: false,
@@ -93,7 +94,41 @@ describe("readConfig", () => {
       google: { clientId: "client.apps.googleusercontent.com", clientSecret: "google-secret" },
       registration: "open",
       centralSignIn: { issuerUrl: "https://auth.family-agenda.cloud/oidc", clientId: "central", clientSecret: "central-secret", webhookSecret: "logto-signing-key" },
+      stripe: null,
     });
+  });
+
+  const withStripe: Record<string, string | undefined> = {
+    ...minimal,
+    OIDC_ISSUER_URL: "https://auth.example/oidc",
+    CENTRAL_SIGN_IN_CLIENT_ID: "c",
+    CENTRAL_SIGN_IN_CLIENT_SECRET: "s",
+    IDP_WEBHOOK_SECRET: "w",
+    IDP_MANAGEMENT_ENDPOINT: "https://auth.example",
+    IDP_MANAGEMENT_CLIENT_ID: "m",
+    IDP_MANAGEMENT_CLIENT_SECRET: "ms",
+    STRIPE_SECRET_KEY: "key",
+    STRIPE_PRICE_MONTHLY: "price_m",
+    STRIPE_PRICE_YEARLY: "price_y",
+  };
+
+  it("takes Stripe's key and Prices, and empty ones as not set", () => {
+    expect(readConfig(withStripe).stripe).toEqual({ secretKey: "key", prices: { monthly: "price_m", yearly: "price_y" } });
+    expect(readConfig({ ...withStripe, STRIPE_SECRET_KEY: "", STRIPE_PRICE_MONTHLY: "", STRIPE_PRICE_YEARLY: "" }).stripe).toBeNull();
+  });
+
+  it.each(["STRIPE_SECRET_KEY", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_YEARLY"])("refuses Stripe without %s", (name) => {
+    expect(() => readConfig({ ...withStripe, [name]: "" })).toThrow(new ConfigError("STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY, STRIPE_PRICE_YEARLY must be set all three, or none"));
+  });
+
+  it("refuses Stripe without central sign-in or Logto's Management API", () => {
+    expect(() => readConfig({ ...withStripe, CENTRAL_SIGN_IN_CLIENT_ID: "", CENTRAL_SIGN_IN_CLIENT_SECRET: "" })).toThrow(new ConfigError("STRIPE_SECRET_KEY needs CENTRAL_SIGN_IN_CLIENT_ID"));
+    const idpOff = { IDP_MANAGEMENT_ENDPOINT: "", IDP_MANAGEMENT_CLIENT_ID: "", IDP_MANAGEMENT_CLIENT_SECRET: "" };
+    expect(() => readConfig({ ...withStripe, ...idpOff })).toThrow(new ConfigError("STRIPE_SECRET_KEY needs IDP_MANAGEMENT_ENDPOINT"));
+  });
+
+  it.each(["/order", "/en/order", "/order/done", "/en/order/done"])("refuses a callback at the order's page %s", (path) => {
+    expect(() => readConfig({ ...minimal, OIDC_CALLBACK_URL: `https://app.example${path}` })).toThrow(new ConfigError("OIDC_CALLBACK_URL must not be a page of the order"));
   });
 
   it("takes empty CENTRAL_SIGN_IN_CLIENT_* as not set, as Compose passes them before the setup wizard ran", () => {

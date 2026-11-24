@@ -131,6 +131,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events`; the Router signs a lost PostRegister it sends again with it | `pending` at first; the core's `logto-setup` prints it |
    | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the Google OAuth client of Logto's Google connector; optional, empty leaves Google off the sign-in screen | empty at first; [Google sign-in](#google-sign-in) |
    | `REGISTRATION` | whether anyone may register at Logto: `open` or `closed`, closed unless set | `closed`; [Opening and closing registration](#opening-and-closing-registration) |
+   | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY` | Stripe's restricted key and the ids of the Tariff's two Prices, for the Router alone; optional, empty leaves the order page off | empty at first; [Stripe](#stripe) |
    | `LLM_API_KEY` | the AI Model Hub token every core extracts with | [step 6](#6-ai-model-hub-token) |
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
    | `OPERATOR_ALERT_ADDRESS` | where the [health check](#the-health-check)'s digest mail of errors goes | the Operator's own address, not one at `family-agenda.cloud` |
@@ -296,6 +297,41 @@ Google shows the app's name and logo on its screen only after brand verification
 privacy policy reachable without Basic Auth; until launch Google's screen names the domain instead. Rotating the
 secret: change the `.env`, deploy; the run says `connector updated`. Emptying both keys leaves the connector and its
 button as they are: remove it in the console.
+
+### Stripe
+
+Once per Stripe environment, by the Operator: first in a sandbox
+([#186](https://github.com/artkoenig/family-agenda-cloud/issues/186)), in live mode at gate 13b of the
+[launch checklist](../launch-checklist.md). Until then the order page (`/order`) is off.
+
+1. **Settings → Business → Public details**: terms of service `https://family-agenda.cloud/agb`. Checkout asks for
+   consent to them, and Stripe refuses every Checkout Session without this address.
+2. **Product catalog → Create product**: `Family Agenda Cloud`, tax code *Software as a service (SaaS)*, with two
+   recurring Prices in EUR, both **including tax**: 4,99 monthly and 49,90 yearly.
+3. **Tax**: turn Stripe Tax on, with the business's address and an active registration for Germany. Without a
+   registration Stripe calculates no tax and says nothing.
+4. **Settings → Payments → Payment methods**: cards and SEPA Direct Debit on, all others off. Checkout offers none
+   but these two, and each only while it is on here.
+5. **Developers → API keys → Create restricted key**, with these permissions and no others:
+
+   | Resource | Permission | For |
+   | --- | --- | --- |
+   | Prices | Read | the check at the Router's start |
+   | Checkout Sessions | Write | the order: creating, listing and expiring Sessions |
+
+   The webhooks and the Customer Portal (#227) and the Cancellation, Withdrawal and deletion pages (#229–#231) need
+   more; add it to the key with them.
+6. Put the key and the ids of the Prices (`price_…`) into the Cube's `.env` (`STRIPE_SECRET_KEY`,
+   `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`) and deploy. The key is a secret; the password manager keeps it.
+
+The Router reads both Prices when it starts and refuses to start unless they are active, in EUR, recurring every
+month and every year, including tax, and cost what the Tariff does (`PRICE_CENTS` in
+`routing/src/contract-wording.ts`); its log says which is not. It does not start while Stripe does not answer
+either: emptying the three keys and deploying turns the order off and lets it start.
+
+Check: `https://app.family-agenda.cloud/order` sends a browser that is not signed in to the sign-in, and the founder
+of a Family in its Trial back to the order page; the button leads to Stripe's Checkout, in the sandbox paid with
+Stripe's test cards.
 
 ### Logto's sign-in log
 

@@ -10,8 +10,8 @@
 #   pool       the Routing module (Router, Scheduler, receiver) and the cores: the cores' Context
 #              interface, and the cores' family.created to the receiver.
 #   directory  Postgres, the Routing module and the cores, which open their Family's database.
-#   outbound   the cores, the Egress Proxies, the blob mount, Logto and the mail sender, which reach
-#              the internet; the cores reach Logto's Management API here.
+#   outbound   the cores, the Egress Proxies, the blob mount, Logto, the mail sender and the Router
+#              (Stripe's API), which reach the internet; the cores reach Logto's Management API here.
 #   plugin-<id>         the cores and that plugin.
 #   plugin-<id>-egress  that plugin and its Egress Proxy alone.
 # The plugins and the Egress Proxies share a network with the cores, so they can reach the cores'
@@ -143,7 +143,7 @@ x-routing: &routing
   image: family-agenda-routing:local
   restart: unless-stopped
   logging: *logging
-  environment:
+  environment: &routing-environment
     DIRECTORY_DATABASE_URL: postgres://routing@postgres:5432/directory
     DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
     OPERATOR_KEY: ${OPERATOR_KEY:?}
@@ -232,8 +232,8 @@ services:
       - ./site:/srv/site:ro
       - caddy_data:/data
       - caddy_config:/config
-    # The Router reaches Logto's OIDC endpoints by their public address, as Logto issues them, but
-    # sits on internal networks only: on `edge` that address is Caddy's.
+    # The Router reaches Logto's OIDC endpoints by their public address, as Logto issues them:
+    # on `edge` that address is Caddy's, so the requests stay on the Cube.
     networks:
       public:
       edge:
@@ -242,7 +242,13 @@ services:
   router:
     <<: *routing
     command: ["routing", "serve"]
-    networks: [edge, pool, directory]
+    environment:
+      <<: *routing-environment
+      # Stripe, which the Tariff is ordered at; empty leaves /order out. The Router alone gets it.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PRICE_MONTHLY: ${STRIPE_PRICE_MONTHLY:-}
+      STRIPE_PRICE_YEARLY: ${STRIPE_PRICE_YEARLY:-}
+    networks: [edge, pool, directory, outbound]
     healthcheck:
       test: ["CMD", "node", "-e", "require('node:net').connect(8080, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
       interval: 30s
