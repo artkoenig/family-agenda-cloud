@@ -12,6 +12,9 @@ export type { Language } from "./sign-in-pages";
 /** How the Tariff is billed. */
 export type Billing = "monthly" | "yearly";
 
+/** What the Tariff costs per billing period, in cents, VAT included (#187). */
+export const PRICE_CENTS: Record<Billing, number> = { monthly: 499, yearly: 4990 };
+
 /** The Subscription as the pages and mails name it. */
 export type Contract = { billing: Billing; familyName: string; orderedOn: Date };
 

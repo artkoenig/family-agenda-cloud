@@ -32,7 +32,9 @@
     "src/legal-pages.ts",
     "src/contract-wording.ts",
     "src/contract-pages.ts",
-    "src/contract-mails.ts"
+    "src/contract-mails.ts",
+    "src/checkout-texts.ts",
+    "src/confirmation-mail.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

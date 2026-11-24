@@ -156,7 +156,7 @@ jobs:
         working-directory: .
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: docker build routing
+      - run: docker build --build-context legal=site/legal routing
       - name: Resolve the compose project
         run: |
           sed -E -e 's/^([A-Z_]+)=.*/\1=placeholder/' cube/.env.example > "$RUNNER_TEMP/cube.env"

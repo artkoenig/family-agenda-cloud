@@ -20,13 +20,14 @@ cube_ssh "test -d /var/lib/family-agenda-blobs" || {
 
 # --inplace keeps the inode of the Caddyfile, which is mounted as a single file.
 rsync -rlt --delete --inplace -e "$RSYNC_SSH" \
-	--exclude '.env' --exclude '*.key' --exclude '.env.example' --exclude '/site/' --exclude '/routing' \
+	--exclude '.env' --exclude '*.key' --exclude '.env.example' --exclude '/site' --exclude '/routing' \
 	"$REPO_ROOT/cube/" "$CUBE_HOST:$CUBE_DIR/"
 
 rsync -rlt --delete -e "$RSYNC_SSH" --exclude '.DS_Store' \
 	"$REPO_ROOT/site/" "$CUBE_HOST:$CUBE_DIR/site/"
 
-# compose.yaml builds the Routing module from ./routing, which is a link in the repository.
+# compose.yaml builds the Routing module from ./routing and ./site/legal, which are links in the
+# repository (cube/routing, cube/site) and copies on the Cube.
 rsync -rlt --delete -e "$RSYNC_SSH" \
 	--exclude 'node_modules/' --exclude 'reports/' --exclude '.stryker-tmp/' --exclude '.DS_Store' \
 	"$REPO_ROOT/routing/" "$CUBE_HOST:$CUBE_DIR/routing/"
