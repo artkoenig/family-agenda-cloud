@@ -9,6 +9,7 @@
  * receipt only. Every value is escaped. The forms post to the page's own address. No I/O.
  */
 import { CONTRACT_PATHS, dateOf, orderedContractOf, contractOf, timeOf, type Contract, type Language, type Person } from "./contract-wording";
+import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "./legal-footer";
 import { DESIGN_PATH } from "./sign-in-pages";
 
 /** The holder's `/cancel`: `endDates` are the next ends of billing periods to choose from; the earliest is chosen. */
@@ -71,7 +72,6 @@ type Words = {
     understood: string;
     button: string;
   };
-  legal: { label: string; imprint: string; privacy: string };
 };
 
 const WORDS: Record<Language, Words> = {
@@ -121,7 +121,6 @@ const WORDS: Record<Language, Words> = {
       understood: "Ich verstehe, dass alle Daten der Familie endgültig gelöscht werden.",
       button: "Familie endgültig löschen",
     },
-    legal: { label: "Rechtliches", imprint: "Impressum", privacy: "Datenschutz" },
   },
   en: {
     cancel: {
@@ -169,7 +168,6 @@ const WORDS: Record<Language, Words> = {
       understood: "I understand that all of the family's data will be deleted for good.",
       button: "Delete family for good",
     },
-    legal: { label: "Legal", imprint: "Imprint", privacy: "Privacy" },
   },
 };
 
@@ -270,7 +268,6 @@ function printButton(label: string): string {
 
 /** The whole HTML document: the title, the body and the legal footer. */
 function page(language: Language, title: string, body: string): string {
-  const legal = WORDS[language].legal;
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -287,7 +284,7 @@ function page(language: Language, title: string, body: string): string {
 <h1>${escape(title)}</h1>
 ${body}
 </main>
-<footer class="legal" aria-label="${legal.label}"><a href="/impressum">${legal.imprint}</a> · <a href="/datenschutz">${legal.privacy}</a></footer>
+${legalFooterHtml(language)}
 </body>
 </html>
 `;
@@ -314,7 +311,6 @@ p,li{margin:0 0 8px;color:var(--ink-muted)}
 .action{margin-top:20px}
 .note{margin-left:8px;color:var(--ink-muted)}
 .understood{margin-top:20px}
-.legal{font-size:14px;color:var(--ink-muted)}
-.legal a{color:inherit}
-@media print{.no-print,.legal{display:none}.card{border:0;box-shadow:none}}
+@media print{.no-print{display:none}.card{border:0;box-shadow:none}}
+${LEGAL_FOOTER_STYLE}
 `;

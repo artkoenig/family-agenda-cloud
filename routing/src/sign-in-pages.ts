@@ -2,8 +2,9 @@
  * The pages of central sign-in (#154): German or English by the browser's Accept-Language,
  * German unless it prefers English. In the landing page's design system: its tokens.css and
  * design.css, which Caddy serves at DESIGN_PATH (cube/Caddyfile), since the Router serves no files.
- * No I/O.
+ * Like every page the Routing module serves, they carry the legal footer (legal-footer.ts). No I/O.
  */
+import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "./legal-footer";
 
 export type Language = "de" | "en";
 
@@ -123,17 +124,19 @@ export function signInPage(page: SignInPage, language: Language, waitedLong = fa
 <h1>${title}</h1>
 ${paragraphs}${action}
 </main>
+${legalFooterHtml(language)}
 </body>
 </html>
 `;
 }
 
-/** The card around a page; everything else comes from the design system. */
+/** The card around a page and the footer below it; everything else comes from the design system. */
 const STYLE = `
-body{display:grid;place-items:center;padding:24px 16px}
+body{display:grid;place-items:center;gap:16px;padding:24px 16px}
 .card{max-width:480px;width:100%;padding:28px;background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-raised)}
 .brand{margin:0 0 16px;font-weight:800;color:var(--ink)}
 h1{margin:0 0 12px;font-size:26px;line-height:32px}
 p{margin:0 0 8px;color:var(--ink-muted)}
 .action{margin-top:20px}
+${LEGAL_FOOTER_STYLE}
 `;
