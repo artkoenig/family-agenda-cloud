@@ -53,9 +53,9 @@ Imprint: https://family-agenda.cloud/en/imprint
 };
 
 describe("confirmationMail", () => {
-  it("confirms a monthly Subscription to the Contract holder, from no-reply with Reply-To support, in German", () => {
+  it("confirms a monthly Subscription to the Contract holder, from support with Reply-To support, in German", () => {
     expect(confirmationMail("de", values("monthly"), legal, imprint)).toEqual({
-      from: "Family Agenda <no-reply@family-agenda.cloud>",
+      from: "Family Agenda <support@family-agenda.cloud>",
       replyTo: "support@family-agenda.cloud",
       to: "erika@example.org",
       subject: "Vertragsbestätigung: Ihr Abonnement bei Family Agenda",
@@ -98,7 +98,7 @@ Widerrufsfrist: bis einschließlich 19.03.2026
 
   it("confirms a monthly Subscription in English, embedding the German texts", () => {
     expect(confirmationMail("en", values("monthly"), legal, imprint)).toEqual({
-      from: "Family Agenda <no-reply@family-agenda.cloud>",
+      from: "Family Agenda <support@family-agenda.cloud>",
       replyTo: "support@family-agenda.cloud",
       to: "erika@example.org",
       subject: "Contract confirmation: your Family Agenda subscription",

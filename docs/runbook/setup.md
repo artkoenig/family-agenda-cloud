@@ -69,14 +69,19 @@ Bucket names are global; record the chosen names in the ticket.
 
 ## 5. Mailbox
 
-Not set up yet: the domain contract includes no Mail Basic mailbox, it has to be booked as its own product.
+Set up: the domain contract includes no Mail Basic mailbox, so it is booked as its own product. Logto's SMTP
+connector already sends through it ([#192](https://github.com/artkoenig/family-agenda-cloud/issues/192)).
 
-IONOS Mail Basic 1, mailbox `no-reply@family-agenda.cloud`. Store the password in the password manager.
-Add the mailbox to the Operator's mail client (bounces are read by hand).
+IONOS Mail Basic 1, mailbox `support@family-agenda.cloud`. Store the password in the password manager.
+Add the mailbox to the Operator's mail client (bounces are read by hand, once a week: [The mail
+outbox](families.md#bounces)). Put the password into the `.env` as `SMTP_PASSWORD`: the `mail-sender` service sends the
+Routing module's mails with it ([#233](https://github.com/artkoenig/family-agenda-cloud/issues/233)), and Logto's
+SMTP connector gets it from the setup ([Setting up Logto](#setting-up-logto), step 3). Another mail server is
+`SMTP_HOST`, `SMTP_PORT` and `SMTP_USER` in the `.env` ([families.md](families.md#another-mail-server-scaleway-tem)).
 
-Support alias: in the IONOS mail settings, set up the alias (forwarding) `support@family-agenda.cloud` to the
-Operator's mailbox. Central sign-in's pages name it to a person who cannot get into their Family
-(`routing/src/sign-in-pages.ts`). Check: a mail to it arrives in the Operator's mailbox.
+It is the one mailbox of the domain: every mail goes out from it, and answers, support requests and bounces come in.
+The legal pages and central sign-in's pages (`routing/src/sign-in-pages.ts`) name it, so read it daily, not only for
+bounces. Check: a mail to it arrives.
 
 Check: SPF (`v=spf1 include:_spf-eu.ionos.com ~all`) and the DKIM records resolve; add a DMARC record
 `_dmarc` TXT `v=DMARC1; p=none; rua=mailto:<operator address>` if none exists.
@@ -128,6 +133,10 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `REGISTRATION` | whether anyone may register at Logto: `open` or `closed`, closed unless set | `closed`; [Opening and closing registration](#opening-and-closing-registration) |
    | `LLM_API_KEY` | the AI Model Hub token every core extracts with | [step 6](#6-ai-model-hub-token) |
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
+   | `OPERATOR_ALERT_ADDRESS` | where the [health check](#the-health-check)'s digest mail of errors goes | the Operator's own address, not one at `family-agenda.cloud` |
+   | `HEALTH_HEARTBEAT_URL` | the ping URL of the Cube's check at healthchecks.io | [The health check](#the-health-check) |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` | the SMTP server and login the mail sender and the health check send through; `smtp.ionos.de`, `465` and `support@family-agenda.cloud` unless set | as in `cube/.env.example` |
+   | `SMTP_PASSWORD` | the password of the mailbox `support@family-agenda.cloud` | [step 5](#5-mailbox), the password manager |
 
    Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped
    again, from a backup either: the password manager's copy is the one that counts. `DIRECTORY_DATABASE_PASSWORD` and
@@ -165,7 +174,9 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
 7. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
    Basic Auth. It fails when that Family's address does not answer or an unknown Family id does not get 404.
 8. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke
-   check again, which must pass; then `docker start family-agenda-core-1`.
+   check again, which must pass; then `docker start family-agenda-core-1`. The
+   [health check](#the-health-check) mails that the core exited, which is expected.
+9. Once: set up [the health check](#the-health-check)'s heartbeat, and check that an error reaches the Operator.
 
 The plugins and their Egress Proxies share a network with the cores and can reach the cores' ports 3002 (requests
 with a Context) and 3001 (the Routing module's triggered operations); only the Context key and the trigger token, which
@@ -194,8 +205,8 @@ console listens on the Cube's loopback alone.
      LOGTO_M2M_APP_SECRET=$(sed -n 's/^IDP_MANAGEMENT_CLIENT_SECRET=//p' .env) \
      && docker compose run --rm --no-deps -e LOGTO_M2M_APP_ID -e LOGTO_M2M_APP_SECRET \
        -e LOGTO_ENDPOINT=https://auth.family-agenda.cloud -e IDP_EVENTS_URL=http://router:8080/idp/events \
-       -e SMTP_HOST=smtp.ionos.de -e SMTP_PORT=465 -e SMTP_USER=no-reply@family-agenda.cloud -e SMTP_PASSWORD \
-       -e SMTP_FROM=no-reply@family-agenda.cloud core logto-setup
+       -e SMTP_HOST=smtp.ionos.de -e SMTP_PORT=465 -e SMTP_USER=support@family-agenda.cloud -e SMTP_PASSWORD \
+       -e SMTP_FROM=support@family-agenda.cloud core logto-setup
    ```
 
    The `core` service brings the rest: `CONTEXT_MODE=supplied`, the callback `OIDC_CALLBACK_URL`, and
@@ -306,6 +317,52 @@ message, which the `health` cron reports ([#208](https://github.com/artkoenig/fa
   that the table is still `logs` with its `created_at`, and that the new version still deletes nothing from it
   itself; otherwise change `cube/logto-log-retention.sql` with it. A renamed table makes every run fail with
   `relation "logs" does not exist`.
+
+### The health check
+
+Every container logs to the Cube's systemd journal (log driver `journald`, the `x-logging` anchor of
+`cube/compose.yaml`), which keeps it for 14 days (`cube/health/journald.conf`). The timer `family-agenda-health`
+runs `cube/health/health-check.sh` every 5 minutes
+([ADR-0003](../adr/0003-error-alerts-come-from-journald-and-a-host-timer-not-a-log-service.md),
+[#208](https://github.com/artkoenig/family-agenda-cloud/issues/208)). It reads the journal since its last run and
+the containers' states, and the checker (`routing/src/health-*.ts`, run in the Routing module's image without a
+network) applies one rule per service (`routing/src/health-rules.ts`). Its findings: a service's error lines, and a
+container that is unhealthy, restarting, restarted, or exited or dead with a non-zero code or a restart policy.
+It sends at most one digest mail per run to `OPERATOR_ALERT_ADDRESS`, from `support@family-agenda.cloud` over
+SMTP. The same error of the same container is mailed again after 24 hours at the earliest; the mail then counts
+how often it came in between. A run that fails, its mail included, keeps the last state, so the next run checks
+the same lines again. Each run pings healthchecks.io, a failed run `<URL>/fail`. `scripts/deploy.sh` installs the
+journald setting and the units and enables the timer.
+
+The example line of a mail has IP addresses and every id but a Family's masked; it holds no more than 300
+characters. The whole line is in the journal.
+
+Once, before the first deploy with the health check:
+
+1. The mailbox of [step 5](#5-mailbox) must exist: its password is the `.env`'s `SMTP_PASSWORD`.
+2. At healthchecks.io, with the Operator's private address: create the check "Family Agenda Cube" with
+   **period 5 minutes and grace 5 minutes**, and keep its email integration to that address on. Its ping URL
+   (`https://hc-ping.com/<uuid>`) is the `.env`'s `HEALTH_HEARTBEAT_URL`. healthchecks.io then mails when the pings
+   stop for 10 minutes (Cube, timer or Docker down) or a run pings `/fail` (SMTP refused, checker failed).
+3. Set `OPERATOR_ALERT_ADDRESS` in the `.env` and deploy.
+
+Check, which is [gate 15](../launch-checklist.md#15-error-alert-and-heartbeat-live):
+
+- The timer runs and its runs pass: `systemctl list-timers family-agenda-health.timer` and
+  `journalctl -u family-agenda-health -n 20`; each run logs `Checked the Cube` with the numbers of lines,
+  containers and findings. The check at healthchecks.io is `up`.
+- An error on purpose reaches the Operator within 15 minutes:
+  `docker exec -u 0 family-agenda-core-1 sh -c 'echo "Error: gate 15 test" > /proc/1/fd/1'`.
+- A stopped timer reaches the Operator through healthchecks.io within 15 minutes:
+  `systemctl stop family-agenda-health.timer`, wait for the mail, then `systemctl start family-agenda-health.timer`.
+- The journal holds each line once: `journalctl -u docker.service CONTAINER_NAME=family-agenda-core-1 -n 5` shows
+  the test line once, and `/var/log/syslog` does not have it (`ForwardToSyslog=no`).
+
+Reading the logs: `journalctl -u docker.service CONTAINER_NAME=family-agenda-core-1 --since -1h`, or by service,
+`journalctl -u docker.service COM_DOCKER_COMPOSE_SERVICE=router`. `docker compose logs` reads the journal too.
+
+A new service needs its rule in `routing/src/health-rules.ts` (a test checks that every service of
+`cube/compose.yaml` has one; without one it is checked for Node's errors) and `logging: *logging`, which CI checks.
 
 ### Checking the blob mount
 

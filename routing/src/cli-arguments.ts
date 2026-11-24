@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import type { CreateFamilyInput } from "./create-family";
 import type { DeleteFamilyInput } from "./delete-family";
+import type { SetFounderInput } from "./founder";
 import { isFamilyId, isOrganizationId } from "./family-id";
 
 /**
@@ -39,9 +40,13 @@ function familyIdValue(value: string | undefined): string {
 }
 
 function options(args: string[], names: string[]): Record<string, string | undefined> {
+  return parsed(() => parseArgs({ args, options: Object.fromEntries(names.map((name) => [name, { type: "string" }])), strict: true }).values);
+}
+
+/** What `parse` reads of the arguments; arguments it does not take are a UsageError. */
+function parsed<T>(parse: () => T): T {
   try {
-    const { values } = parseArgs({ args, options: Object.fromEntries(names.map((name) => [name, { type: "string" }])), strict: true });
-    return values;
+    return parse();
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : String(error));
   }
@@ -70,4 +75,25 @@ export function parseDelete(args: string[]): DeleteFamilyInput {
 /** The Family that `suspend` or `resume` is asked for. */
 export function parseFamilyId(args: string[]): string {
   return familyIdValue(options(args, ["family-id"])["family-id"]);
+}
+
+/** The Families that `open-trials` leaves without a Trial: those its --except options name. */
+export function parseOpenTrials(args: string[]): string[] {
+  const { except = [] } = parsed(() => parseArgs({ args, options: { except: { type: "string", multiple: true } }, strict: true }).values);
+  return except.map((value) => {
+    const familyId = value.toLowerCase();
+    if (!isFamilyId(familyId)) throw new UsageError("--except needs a Family id, a UUID");
+    return familyId;
+  });
+}
+
+/** What `set-founder <Family id> <Admin's email or user id> [--force]` is asked for. */
+export function parseSetFounder(args: string[]): SetFounderInput {
+  const { values, positionals } = parsed(() => parseArgs({ args, options: { force: { type: "boolean" } }, allowPositionals: true, strict: true }));
+  const [family = "", admin = "", ...rest] = positionals;
+  const familyId = family.toLowerCase();
+  if (!isFamilyId(familyId) || admin === "" || rest.length > 0) {
+    throw new UsageError("set-founder needs the Family id, a UUID, then the Admin's email or user id");
+  }
+  return { familyId, admin, force: values.force === true };
 }

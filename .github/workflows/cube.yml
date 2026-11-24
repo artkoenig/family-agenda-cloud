@@ -21,6 +21,7 @@ jobs:
   cube:
     # The Cube's deployment: the Routing module's image builds, the compose project resolves with
     # every key of cube/.env.example set (to placeholders), and the scripts pass ShellCheck.
+    # The health check's own tests (routing/test/health-*.test.ts) run in the CI workflow.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,4 +30,9 @@ jobs:
         run: |
           sed -E -e 's/^([A-Z_]+)=.*/\1=placeholder/' cube/.env.example > "$RUNNER_TEMP/cube.env"
           docker compose -f cube/compose.yaml --env-file "$RUNNER_TEMP/cube.env" config -q
-      - run: shellcheck -x -P SCRIPTDIR scripts/bootstrap.sh scripts/deploy.sh scripts/smoke.sh cube/logto-log-retention.sh
+          # Every service logs to the journal, where the health check reads it (cube/health).
+          docker compose -f cube/compose.yaml --env-file "$RUNNER_TEMP/cube.env" config --format json \
+            | jq -e '[.services[] | .logging.driver == "journald" and .logging.options.tag == "{{.Name}}"] | all'
+      - run: shellcheck -x -P SCRIPTDIR scripts/bootstrap.sh scripts/deploy.sh scripts/smoke.sh cube/logto-log-retention.sh cube/health/health-check.sh
+      - name: Check the health check's systemd units
+        run: systemd-analyze verify --man=no cube/health/family-agenda-health.timer cube/health/family-agenda-health.service

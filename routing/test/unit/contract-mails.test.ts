@@ -47,9 +47,9 @@ describe("cancellationMail", () => {
     settlement: { case: "plain" },
   } as const;
 
-  it("acknowledges a monthly Subscription's Cancellation, from no-reply with Reply-To support, in German", () => {
+  it("acknowledges a monthly Subscription's Cancellation, from support with Reply-To support, in German", () => {
     expect(parts(cancellationMail("de", monthlyCancellation), "de")).toEqual({
-      from: "Family Agenda <no-reply@family-agenda.cloud>",
+      from: "Family Agenda <support@family-agenda.cloud>",
       replyTo: "support@family-agenda.cloud",
       to: "erika@example.org",
       subject: "Eingang Ihrer Kündigung – Family Agenda",

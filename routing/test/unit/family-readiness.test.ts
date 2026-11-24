@@ -5,7 +5,7 @@ import { readinessOf } from "../../src/family-readiness";
 const entry = (status: FamilyStatus) => ({ familyId: "f-1", status });
 
 describe("readinessOf", () => {
-  it.each(["active", "suspended", "being_prepared", "deleted"] as const)("answers the entry of a Family %s with its readiness", (status) => {
+  it.each(["active", "locked", "suspended", "being_prepared", "deleted"] as const)("answers the entry of a Family %s with its readiness", (status) => {
     const known = entry(status);
     expect(readinessOf(known).entry).toBe(known);
   });
@@ -18,7 +18,7 @@ describe("readinessOf", () => {
     expect(readinessOf(entry("active")).readiness).toBe("served");
   });
 
-  it.each(["suspended", "being_prepared"] as const)("is withheld for a Family %s", (status) => {
+  it.each(["locked", "suspended", "being_prepared"] as const)("is withheld for a Family %s", (status) => {
     expect(readinessOf(entry(status)).readiness).toBe("withheld");
   });
 

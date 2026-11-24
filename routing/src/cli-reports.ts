@@ -1,4 +1,5 @@
 import type { FamilyOverview } from "./directory";
+import type { WaitingMail } from "./outbox";
 
 /** What the Operator is told after a command: the text on the output and the exit code. No I/O. */
 
@@ -15,5 +16,17 @@ export function familyLine({ familyId, status, dueWork }: FamilyOverview): strin
       `${dueWork.failures} ${dueWork.failures === 1 ? "failure" : "failures"} in a row, next try ${dueWork.retryAt.toISOString()}`,
     );
   }
+  return columns.join("\t");
+}
+
+/**
+ * A mail's line in `outbox`: its id, type and Family (a dash for none), when it was put in, and
+ * whether it was tried, how often, when next and why it failed last. Never its address, subject
+ * or text: the last error has its addresses masked.
+ */
+export function waitingMailLine({ id, type, familyId, createdAt, attempts, nextAttemptAt, lastError }: WaitingMail): string {
+  const columns = [id, type, familyId ?? "-", `queued ${createdAt.toISOString()}`];
+  if (attempts === 0) columns.push(`not tried yet, due ${nextAttemptAt.toISOString()}`);
+  else columns.push(`${attempts} failed ${attempts === 1 ? "attempt" : "attempts"}, next try ${nextAttemptAt.toISOString()}`, `last error: ${lastError ?? "unknown"}`);
   return columns.join("\t");
 }

@@ -7,7 +7,8 @@ import type { DirectoryEntry } from "./directory";
 
 /**
  * - `served`: active; it is routed to and scheduled.
- * - `withheld`: suspended, or still being prepared by `create`; its data stays, but it is not served.
+ * - `withheld`: Locked, suspended, or still being prepared by `create`; its data stays, but it is not
+ *   served, and the Scheduler gives it no due work.
  * - `gone`: deleted, or unknown to the Directory.
  */
 export type Readiness = "served" | "withheld" | "gone";

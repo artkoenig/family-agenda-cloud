@@ -1,5 +1,5 @@
 #!/bin/sh
-# Checks the model of a Family's lifecycle (familyLifecycle.qnt, #148). Run from anywhere,
+# Checks the model of a Family's lifecycle (familyLifecycle.qnt, #148, locking #225). Run from anywhere,
 # with quint 0.33.1 on the PATH (npm i -g @informalsystems/quint@0.33.1) or QUINT naming it:
 #   sh spec/familyLifecycle-check.sh [scenarios|simulation|counterexample]   (without a check, all of them)
 # Not run in CI: run it after changing the spec or the lifecycle commands of the Routing module.
@@ -16,9 +16,11 @@ scenarios() {
 }
 
 simulation() {
-  # Every command, failures, a Scheduler job and a request: safety, and a deletion begun finishes.
-  quint run familyLifecycle_test.qnt --backend=typescript --main=checked --invariants safety deletionFinishes \
+  # Every command, failures, a Scheduler job and a request: safety, and a deletion, lock or unlock begun finishes.
+  quint run familyLifecycle_test.qnt --backend=typescript --main=checked \
+    --invariants safety deletionFinishes lockFinishes unlockFinishes \
     --witnesses someActive someSuspended someResumed someDeletionBegun someDeleted someServed \
+      someLocked someLockedSuspended someUnlocked \
     --max-samples=3000 --max-steps=40
   # Deliveries only: one more delivery always makes the Family active and whole.
   quint run familyLifecycle_test.qnt --backend=typescript --main=deliveries --invariants safety deliveryFinishes \

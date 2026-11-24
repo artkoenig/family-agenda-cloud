@@ -4,18 +4,20 @@ import pg from "pg";
 import { afterAll, inject } from "vitest";
 import type { TestClock } from "pg-boss";
 import { run } from "../../src/cli";
-import { readConfig } from "../../src/config";
+import { directoryConnection, readConfig } from "../../src/config";
+import { migrateDirectory } from "../../src/directory";
+import { provisioning, type ScheduledProvisioning } from "../../src/provisioning";
 import { createLog } from "../../src/log";
 import { startReceiver, type Receiver } from "../../src/receiver";
 import { startRouter, type Router } from "../../src/router";
-import { SCHEDULER_RUNNING } from "../../src/scheduler";
+import { familySchedules, openQueues, SCHEDULER_RUNNING } from "../../src/scheduler";
 import { startStandInLogto, type StandInLogto } from "./stand-in-logto";
 import { poolOf, resolveStandIns, startStandInCore, type StandInCore } from "./stand-in-core";
 
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
 
 /** How a command runs that runs until stopped: on a clock the test moves, until `until` settles. */
-export type RunOptions = { clock?: TestClock; until?: Promise<unknown> };
+export type RunOptions = { clock?: TestClock; until?: Promise<unknown>; smtpCa?: string };
 
 export type TestRouting = {
   /** The environment the Routing module runs with: its Directory, keys and the stand-in core. */
@@ -41,6 +43,12 @@ export type TestRouting = {
    * once it is under way, with these changes to the environment. close() stops it.
    */
   startScheduler(clock: TestClock, env?: Record<string, string | undefined>): Promise<void>;
+  /**
+   * Runs `work` with what a command that changes a Family and its schedules runs with: the Directory,
+   * brought up to date, and the Scheduler's queues. For the changes that no command makes, such as
+   * locking a Family. What it logs goes into the same log.
+   */
+  provisioned<T>(work: (provisioning: ScheduledProvisioning) => Promise<T>): Promise<T>;
   /** The names of the Family's schedules, as pg-boss keeps them in the Directory's database. */
   schedules(familyId: string): Promise<string[]>;
   /** Everything the Routing module logged so far, over all runs, Routers and Schedulers. */
@@ -223,6 +231,20 @@ export async function setUpRouting(): Promise<TestRouting> {
         stopped();
         await result;
       });
+    },
+    async provisioned(work) {
+      const config = readConfig(withOverrides({}));
+      const client = new pg.Client(directoryConnection(config));
+      await client.connect();
+      const boss = openQueues(config, { supervise: false, schedule: false, registerInstance: false, max: 1 });
+      try {
+        await migrateDirectory(client);
+        await boss.start();
+        return await work({ ...provisioning(config, client, createLog(logSink()), resolveStandIns), schedules: await familySchedules(boss) });
+      } finally {
+        await boss.stop({ graceful: false });
+        await client.end();
+      }
     },
     async schedules(familyId) {
       const rows = await query(directoryName, "SELECT name FROM scheduler.schedule WHERE key = $1 ORDER BY name", [familyId]);

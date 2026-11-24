@@ -41,3 +41,12 @@ cube_ssh "cd $CUBE_DIR && docker compose pull -q --ignore-buildable && docker co
 	&& docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile \
 	&& docker compose exec -T router routing mail-templates \
 	&& docker compose exec -T router routing sign-in-experience"
+
+# The health check (cube/health/health-check.sh): its timer every 5 minutes, and the journal that
+# holds the containers' logs for 14 days. journald starts anew only when its settings changed.
+# After the services, so that its first run finds the Routing module's image it runs the checker in.
+cube_ssh "cd $CUBE_DIR/health \
+	&& if ! cmp -s journald.conf /etc/systemd/journald.conf.d/family-agenda.conf; then \
+		install -D -m 0644 journald.conf /etc/systemd/journald.conf.d/family-agenda.conf && systemctl restart systemd-journald; fi \
+	&& install -m 0644 family-agenda-health.service family-agenda-health.timer /etc/systemd/system/ \
+	&& systemctl daemon-reload && systemctl enable --now family-agenda-health.timer"

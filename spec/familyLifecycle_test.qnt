@@ -1,12 +1,13 @@
 // -*- mode: Bluespec; -*-
 // Instances of the lifecycle model (familyLifecycle.qnt) and scenarios of it, run by familyLifecycle-check.sh.
 // Runs: 0..2 deliveries of family.created, 3 the Operator's create --family-id, 4 suspend,
-// 5 resume, 6 and 7 delete. Readers: 0 a Scheduler job, 1 a browser's request.
+// 5 resume, 6 and 7 delete, 8 and 9 lock, 10 unlock. Readers: 0 a Scheduler job, 1 a browser's request.
 
 /** The code, with every command, failures and readers: safety, and that a deletion begun finishes. */
 module checked {
   import familyLifecycle(
-    RUNS = Map(0 -> "deliver", 1 -> "deliver", 2 -> "deliver", 3 -> "finish", 4 -> "suspend", 5 -> "resume", 6 -> "delete", 7 -> "delete"),
+    RUNS = Map(0 -> "deliver", 1 -> "deliver", 2 -> "deliver", 3 -> "finish", 4 -> "suspend", 5 -> "resume", 6 -> "delete", 7 -> "delete",
+      8 -> "lock", 9 -> "lock", 10 -> "unlock"),
     READERS = Map(0 -> "job", 1 -> "request"),
     FAILURES = true, LOCKING = true).* from "./familyLifecycle"
 }
@@ -38,7 +39,8 @@ module unlocked {
 /** Scenarios of the code. */
 module scenarios {
   import familyLifecycle(
-    RUNS = Map(0 -> "deliver", 1 -> "deliver", 2 -> "deliver", 3 -> "finish", 4 -> "suspend", 5 -> "resume", 6 -> "delete", 7 -> "delete"),
+    RUNS = Map(0 -> "deliver", 1 -> "deliver", 2 -> "deliver", 3 -> "finish", 4 -> "suspend", 5 -> "resume", 6 -> "delete", 7 -> "delete",
+      8 -> "lock", 9 -> "lock", 10 -> "unlock"),
     READERS = Map(0 -> "job", 1 -> "request"),
     FAILURES = true, LOCKING = true).* from "./familyLifecycle"
 
@@ -113,7 +115,51 @@ module scenarios {
       .then(runStep(4)).then(runStep(4))
       .then(runStep(5)).then(crash(5))
       .then(crash(1)).then(crash(2)).then(crash(3)).then(crash(6)).then(crash(7))
+      .then(crash(8)).then(crash(9)).then(crash(10))
       .expect(w.status == "active" and not(w.schedules) and not(activeIsScheduled))
+
+  /** A lock withholds an active Family and removes its schedules; a second lock keeps the first. */
+  run lockWithholdsTest =
+    init.then(runToEnd(0))
+      .then(runStep(8)).expect(readiness(w) == "withheld" and w.schedules)
+      .then(runStep(8)).expect(w.lockedBy == 8 and not(w.schedules) and safety)
+      .then(runStep(9)).then(runStep(9)).expect(w.lockedBy == 8 and not(w.schedules) and safety)
+
+  /** A lock that failed before removing the schedules: a job finds the Family withheld and triggers nothing. */
+  run lockFailedJobTriggersNothingTest =
+    init.then(runToEnd(0))
+      .then(runStep(8)).then(crash(8))
+      .then(find(0))
+      .expect(w.schedules and readers.get(0).pc == "idle" and lockFinishes and safety)
+
+  /** An unlock serves the Family again and brings back its schedules. */
+  run unlockServesAgainTest =
+    init.then(runToEnd(0))
+      .then(runStep(8)).then(runStep(8))
+      .then(runStep(10)).then(runStep(10))
+      .expect(readiness(w) == "served" and w.schedules and someUnlocked and safety)
+
+  /** A Locked Family suspended and resumed stays Locked and without schedules. */
+  run lockedResumedStaysLockedTest =
+    init.then(runToEnd(0))
+      .then(runStep(8)).then(runStep(8))
+      .then(runStep(4)).then(runStep(4)).expect(w.status == "suspended" and someLockedSuspended)
+      .then(runStep(5)).then(runStep(5))
+      .expect(w.status == "active" and w.lockedBy == 8 and not(w.schedules) and readiness(w) == "withheld" and safety)
+
+  /** Locking and unlocking a deleted Family is refused. */
+  run deletedNotLockedTest =
+    init.then(runToEnd(0))
+      .then(runStep(6)).then(runStep(6)).then(runStep(6)).then(runStep(6))
+      .then(runStep(8)).then(runStep(10))
+      .expect(not(isLocked(w)) and runs.get(8).pc == "done" and runs.get(10).pc == "done" and not(w.schedules) and safety)
+
+  /** A delivery again for a Locked Family gives it no schedules. */
+  run redeliveryOfLockedTest =
+    init.then(runToEnd(0))
+      .then(runStep(8)).then(runStep(8))
+      .then(runStep(1))
+      .expect(not(w.schedules) and runs.get(1).pc == "done" and safety)
 }
 
 /** Scenarios without the lock. */
