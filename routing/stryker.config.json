@@ -27,7 +27,10 @@
     "src/landing.ts",
     "src/id-token.ts",
     "src/sign-in-cookie.ts",
-    "src/post-register.ts"
+    "src/post-register.ts",
+    "src/contract-wording.ts",
+    "src/contract-pages.ts",
+    "src/contract-mails.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,
