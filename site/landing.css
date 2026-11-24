@@ -20,6 +20,8 @@ html { scroll-behavior: smooth; scroll-padding-top: 72px; }
 .lp .lp-nav__link { color: var(--ink-muted); font-weight: 600; text-decoration: none; }
 .lp .lp-nav__link:hover { color: var(--ink); }
 .lp-nav__lang { font-size: 14px; letter-spacing: 0.04em; }
+/* Registration closed (launch checklist, 13a): the register buttons are disabled and do not darken. */
+.lp .fam-button--primary[disabled]:hover { background: var(--hearth); }
 
 /* Hero ------------------------------------------------------------------ */
 .lp-hero {

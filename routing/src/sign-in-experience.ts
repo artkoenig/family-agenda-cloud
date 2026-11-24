@@ -4,6 +4,10 @@
  * unless the browser asks for another language; the Account Center for password and passkey; no
  * MFA. The core's `logto-setup` resets signIn on every run and leaves the rest alone, so deploying
  * sets all of it again. Sign-up stays as `logto-setup` sets it: email, verified, with a password.
+ *
+ * Whether anyone may register is the `.env`'s REGISTRATION (#236): `signInMode` is set from it on
+ * every run, since `logto-setup` sets `SignInAndRegister` on each of its runs. While it is closed,
+ * an invitation link's one-time token still lets the invitee create an account (ADR-0011 of the core).
  */
 import { managementCall, type IdpManagement } from "./logto-management";
 
@@ -31,9 +35,16 @@ export const IMPRINT_PATHS = ["/sign-in", "/sign-in/password", "/sign-in/verific
 /** Logto's connector factory for Google; its connectors have the target `google`. */
 export const GOOGLE_CONNECTOR_FACTORY = "google-universal";
 
+/** Whether anyone may register at Logto (`open`), or only invitees (`closed`, REGISTRATION unset). */
+export type Registration = "open" | "closed";
+
+/** Logto's `signInMode` for the registration setting. */
+export const signInMode = (registration: Registration): string => (registration === "open" ? "SignInAndRegister" : "SignIn");
+
 /** The body of `PATCH /api/sign-in-exp`; Google among the social targets only with its connector. */
-export function signInExperience(withGoogle: boolean): Record<string, unknown> {
+export function signInExperience(withGoogle: boolean, registration: Registration): Record<string, unknown> {
   return {
+    signInMode: signInMode(registration),
     signIn: { methods: [{ identifier: "email", password: true, verificationCode: true, isPasswordPrimary: true }] },
     forgotPasswordMethods: ["EmailVerificationCode"],
     passkeySignIn: { enabled: true, showPasskeyButton: true, allowAutofill: true },
@@ -55,12 +66,12 @@ export const ACCOUNT_CENTER = { enabled: true, fields: { password: "Edit", passk
 export type SignInExperienceResult = { google: "created" | "updated" | "skipped" };
 
 /**
- * Sets the sign-in experience and the Account Center, and Google's connector first when a client is
- * given. Without one Google is left as it is. Safe to run again.
+ * Sets the sign-in experience, with registration open or closed, and the Account Center, and
+ * Google's connector first when a client is given. Without one Google is left as it is. Safe to run again.
  */
-export async function setSignInExperience(idp: IdpManagement, google: GoogleClient | null): Promise<SignInExperienceResult> {
+export async function setSignInExperience(idp: IdpManagement, google: GoogleClient | null, registration: Registration): Promise<SignInExperienceResult> {
   const result: SignInExperienceResult = { google: google === null ? "skipped" : await putGoogleConnector(idp, google) };
-  await managementCall(idp, "PATCH", "/api/sign-in-exp", signInExperience(google !== null), "setting the sign-in experience");
+  await managementCall(idp, "PATCH", "/api/sign-in-exp", signInExperience(google !== null, registration), "setting the sign-in experience");
   await managementCall(idp, "PATCH", "/api/account-center", ACCOUNT_CENTER, "setting the Account Center");
   return result;
 }

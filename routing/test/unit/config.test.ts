@@ -44,6 +44,7 @@ describe("readConfig", () => {
       receiverPort: 8081,
       idpManagement: null,
       google: null,
+      registration: "closed",
       centralSignIn: null,
       listenHost: "0.0.0.0",
       listenPort: 8080,
@@ -70,6 +71,7 @@ describe("readConfig", () => {
       IDP_MANAGEMENT_CLIENT_SECRET: "m2m-secret",
       GOOGLE_CLIENT_ID: "client.apps.googleusercontent.com",
       GOOGLE_CLIENT_SECRET: "google-secret",
+      REGISTRATION: "open",
       OIDC_ISSUER_URL: "https://auth.family-agenda.cloud/oidc/",
       CENTRAL_SIGN_IN_CLIENT_ID: "central",
       CENTRAL_SIGN_IN_CLIENT_SECRET: "central-secret",
@@ -89,6 +91,7 @@ describe("readConfig", () => {
       receiverPort: 9000,
       idpManagement: { endpoint: "http://logto:3001", clientId: "m2m", clientSecret: "m2m-secret" },
       google: { clientId: "client.apps.googleusercontent.com", clientSecret: "google-secret" },
+      registration: "open",
       centralSignIn: { issuerUrl: "https://auth.family-agenda.cloud/oidc", clientId: "central", clientSecret: "central-secret", webhookSecret: "logto-signing-key" },
     });
   });
@@ -125,6 +128,14 @@ describe("readConfig", () => {
 
   it("takes OIDC_CALLBACK_URL /sign-inside, which only begins like central sign-in's paths", () => {
     expect(readConfig({ ...minimal, OIDC_CALLBACK_URL: "https://app.example/sign-inside" }).callbackPath).toBe("/sign-inside");
+  });
+
+  it.each([["", "closed"], ["closed", "closed"], ["open", "open"]])("takes REGISTRATION %j as %s", (value, registration) => {
+    expect(readConfig({ ...minimal, REGISTRATION: value }).registration).toBe(registration);
+  });
+
+  it.each(["Open", "yes", "true", " open"])("refuses REGISTRATION %j", (value) => {
+    expect(() => readConfig({ ...minimal, REGISTRATION: value })).toThrow(new ConfigError("REGISTRATION must be open or closed (closed unless set)"));
   });
 
   it("takes empty GOOGLE_CLIENT_* as not set, as Compose passes them unset", () => {

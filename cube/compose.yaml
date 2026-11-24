@@ -155,6 +155,9 @@ x-routing: &routing
     # Logto's Google connector, which `routing sign-in-experience` sets; empty leaves Google out.
     GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    # Whether anyone may register (open) or only invitees (closed, also when empty), which
+    # `routing sign-in-experience` sets as Logto's signInMode.
+    REGISTRATION: ${REGISTRATION:-}
     # Central sign-in (/sign-in): its own Logto client, which `routing sign-in-client` registers and
     # prints; empty leaves /sign-in out. The issuer is the cores' OIDC_ISSUER_URL.
     OIDC_ISSUER_URL: https://auth.family-agenda.cloud/oidc
