@@ -93,6 +93,8 @@ describe("buildSite", () => {
     "legal/datenschutz.en.md": "# Privacy Policy\n",
     "legal/agb.de.md": "# AGB\n",
     "legal/agb.en.md": "# Terms\n",
+    "legal/widerrufsbelehrung.de.md": "# Widerrufsbelehrung\n",
+    "legal/widerrufsbelehrung.en.md": "# Withdrawal Policy\n",
     "index.html": landing(`  <footer class="lp-footer">\n  </footer>`),
     "en/index.html": landing(`  <footer class="lp-footer">\n  </footer>`),
   };
@@ -110,6 +112,8 @@ describe("buildSite", () => {
       { path: "en/privacy.html", content: legalPageHtml(LEGAL_PAGES[1]!, "en", "# Privacy Policy\n") },
       { path: "agb.html", content: legalPageHtml(LEGAL_PAGES[2]!, "de", "# AGB\n") },
       { path: "en/terms.html", content: legalPageHtml(LEGAL_PAGES[2]!, "en", "# Terms\n") },
+      { path: "widerrufsbelehrung.html", content: legalPageHtml(LEGAL_PAGES[3]!, "de", "# Widerrufsbelehrung\n") },
+      { path: "en/withdrawal.html", content: legalPageHtml(LEGAL_PAGES[3]!, "en", "# Withdrawal Policy\n") },
       { path: "index.html", content: landing(footerHtml("de", "en/")) },
       { path: "en/index.html", content: landing(footerHtml("en", "../")) },
     ]);

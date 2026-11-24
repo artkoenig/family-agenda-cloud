@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Withdrawal Policy · Family Agenda Cloud</title>
+  <meta name="theme-color" content="#faf6f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://family-agenda.cloud/en/withdrawal">
+  <link rel="alternate" hreflang="de" href="https://family-agenda.cloud/widerrufsbelehrung">
+  <link rel="alternate" hreflang="en" href="https://family-agenda.cloud/en/withdrawal">
+  <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/landing.css">
+</head>
+<body class="fam-page lp">
+  <header class="lp-nav">
+    <div class="lp-nav__inner">
+      <a class="lp-brand" href="/en/" aria-label="Family Agenda"><img src="/app-icon.svg" alt="" width="28" height="28"><span class="lp-brand__name">Family Agenda</span></a>
+      <nav class="lp-nav__links" aria-label="Page">
+        <a class="lp-nav__link lp-nav__lang" href="/widerrufsbelehrung" lang="de" hreflang="de" data-lang="de" aria-label="Deutsch" title="Deutsch">DE</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="lp-legal">
+<h1>Withdrawal Policy</h1>
+<blockquote>
+<p>This translation is for information only. Only the <a href="/widerrufsbelehrung">German version</a> is legally binding.</p>
+</blockquote>
+<h2>Right of withdrawal</h2>
+<p>You have the right to withdraw from this contract within fourteen days without giving any reason.</p>
+<p>The withdrawal period is fourteen days from the day the contract is concluded.</p>
+<p>To exercise your right of withdrawal, you must inform us ({{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}, mail: <a href="mailto:support@family-agenda.cloud">support@family-agenda.cloud</a>) of your decision to withdraw from this contract by an unequivocal statement (e.g. a letter sent by post or an email). You may use the attached model withdrawal form, but it is not obligatory. You can also exercise your right of withdrawal online at <a href="https://app.family-agenda.cloud/en/withdraw">https://app.family-agenda.cloud/en/withdraw</a> (button &quot;Vertrag widerrufen&quot; in the Admin area). If you use this online function, we will send you without delay, on a durable medium (e.g. by email), an acknowledgement of receipt stating the content of the withdrawal and the date and time it was received.</p>
+<p>To meet the withdrawal deadline, it is sufficient for you to send your communication concerning your exercise of the right of withdrawal before the withdrawal period has expired.</p>
+<h2>Effects of withdrawal</h2>
+<p>If you withdraw from this contract, we shall reimburse to you all payments received from you, including the costs of delivery (with the exception of the supplementary costs resulting from your choice of a type of delivery other than the least expensive type of standard delivery offered by us), without undue delay and in any event not later than fourteen days from the day on which we are informed about your decision to withdraw from this contract. We will carry out such reimbursement using the same means of payment as you used for the initial transaction, unless you have expressly agreed otherwise; in any event, you will not incur any fees as a result of such reimbursement.</p>
+<h2>Model withdrawal form</h2>
+<p>(Complete and return this form only if you wish to withdraw from the contract.)</p>
+<p>– To {{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}, mail: <a href="mailto:support@family-agenda.cloud">support@family-agenda.cloud</a>:</p>
+<p>– I/We (*) hereby give notice that I/We (*) withdraw from my/our (*) contract of sale of the following goods (*)/for the provision of the following service (*)</p>
+<p>– Ordered on (*)/received on (*)</p>
+<p>– Name of consumer(s)</p>
+<p>– Address of consumer(s)</p>
+<p>– Signature of consumer(s) (only if this form is notified on paper)</p>
+<p>– Date</p>
+<p>(*) Delete as appropriate.</p>
+  </main>
+
+  <footer class="lp-footer">
+    <nav class="lp-footer__contracts" aria-label="Contracts">
+      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/en/cancel"><span lang="de">Verträge hier kündigen</span> <span class="lp-footer__gloss">(cancel contracts here)</span></a>
+      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/en/withdraw"><span lang="de">Vertrag widerrufen</span> <span class="lp-footer__gloss">(withdraw from contract)</span></a>
+    </nav>
+    <span>Made with love (and too little sleep) by parents.</span>
+    <nav class="lp-footer__links" aria-label="Legal">
+      <a href="/en/imprint">Imprint</a>
+      <a href="/en/privacy">Privacy</a>
+      <a href="/en/terms">Terms</a>
+      <a href="/en/withdrawal">Withdrawal policy</a>
+      <a href="/widerrufsbelehrung" lang="de" hreflang="de" data-lang="de">Deutsch</a>
+    </nav>
+  </footer>
+
+  <script>
+    // Remembers a language picked by hand, so the landing page's first-visit choice by browser language does not override it.
+    for (const link of document.querySelectorAll("[data-lang]")) {
+      link.addEventListener("click", () => { try { localStorage.setItem("lp-lang", link.dataset.lang); } catch {} });
+    }
+  </script>
+</body>
+</html>
