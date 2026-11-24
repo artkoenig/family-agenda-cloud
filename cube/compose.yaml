@@ -264,6 +264,28 @@ services:
       timeout: 5s
       start_period: 60s
 
+  # Deletes Logto's sign-in log (its `logs` table) older than 30 days, at its start and then once a
+  # day (logto-log-retention.sh). As Logto's role `logto` over the local socket, which trusts it as
+  # it does directory-database's superuser: not as the Routing module's role, which has no access to
+  # Logto's database. Each run logs one JSON line, of level `error` when it fails.
+  logto-log-retention:
+    image: *postgres-image
+    restart: unless-stopped
+    environment:
+      PGHOST: /var/run/postgresql
+      PGUSER: logto
+      PGDATABASE: logto
+    volumes:
+      - postgres-socket:/var/run/postgresql
+      - ./logto-log-retention.sh:/logto-log-retention.sh:ro
+      - ./logto-log-retention.sql:/logto-log-retention.sql:ro
+    network_mode: none
+    entrypoint: ["bash", "/logto-log-retention.sh"]
+    # Logto's tables are there once it is healthy: it seeds its database on its first start.
+    depends_on:
+      logto:
+        condition: service_healthy
+
   # Starts each Family's due work on a core.
   scheduler:
     <<: *routing
@@ -464,6 +486,7 @@ volumes:
   caddy_data:
   caddy_config:
   postgres-data:
-  # Only Postgres and directory-database mount it: the superuser has no password and no network.
+  # Only Postgres, directory-database and logto-log-retention mount it: the superuser has no
+  # password and no network.
   postgres-socket:
   tessdata:

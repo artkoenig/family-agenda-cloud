@@ -17,6 +17,21 @@ export type GoogleClient = { clientId: string; clientSecret: string };
 export const TERMS_OF_USE_URL = "https://family-agenda.cloud/agb";
 export const PRIVACY_POLICY_URL = "https://family-agenda.cloud/datenschutz";
 
+/**
+ * The Impressum on Logto's sign-in pages (§ 5 DDG, #194, #232). Logto 1.46 has no setting for an
+ * imprint link: `termsOfUseUrl` and `privacyPolicyUrl` are its only legal links, shown where the
+ * terms are agreed to, and `supportEmail` and `supportWebsiteUrl` show on its error pages only. What
+ * it has is `customContent`, HTML per page path, which its sign-in app renders above the card, but
+ * only on desktop browsers (packages/experience/src/Layout/AppLayout of v1.46.0): not on phones, and
+ * not per language, so it links both texts. No custom footer or link exists beyond that, short of
+ * replacing the sign-in UI (`customUiAssets`).
+ */
+export const IMPRINT_CONTENT =
+  '<nav aria-label="Impressum / Imprint"><a href="https://family-agenda.cloud/impressum" lang="de">Impressum</a> · <a href="https://family-agenda.cloud/en/imprint" lang="en">Imprint</a></nav>';
+
+/** The paths of Logto's sign-in app that show `IMPRINT_CONTENT`: signing in, registering, resetting the password. */
+export const IMPRINT_PATHS = ["/sign-in", "/sign-in/password", "/sign-in/verification-code", "/register", "/register/password", "/register/verification-code", "/forgot-password", "/forgot-password/reset", "/forgot-password/verification-code"];
+
 /** Logto's connector factory for Google; its connectors have the target `google`. */
 export const GOOGLE_CONNECTOR_FACTORY = "google-universal";
 
@@ -37,6 +52,7 @@ export function signInExperience(withGoogle: boolean, registration: Registration
     agreeToTermsPolicy: "ManualRegistrationOnly",
     termsOfUseUrl: TERMS_OF_USE_URL,
     privacyPolicyUrl: PRIVACY_POLICY_URL,
+    customContent: Object.fromEntries(IMPRINT_PATHS.map((path) => [path, IMPRINT_CONTENT])),
     languageInfo: { autoDetect: true, fallbackLanguage: "de" },
     socialSignIn: { automaticAccountLinking: true },
     ...(withGoogle ? { socialSignInConnectorTargets: ["google"] } : {}),

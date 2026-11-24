@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCOUNT_CENTER, PRIVACY_POLICY_URL, signInExperience, signInMode, TERMS_OF_USE_URL } from "../../src/sign-in-experience";
+import { ACCOUNT_CENTER, IMPRINT_CONTENT, IMPRINT_PATHS, PRIVACY_POLICY_URL, signInExperience, signInMode, TERMS_OF_USE_URL } from "../../src/sign-in-experience";
 
 describe("signInExperience", () => {
   it("signs in by email with password first, or code, or passkey; no MFA", () => {
@@ -19,6 +19,25 @@ describe("signInExperience", () => {
       languageInfo: { autoDetect: true, fallbackLanguage: "de" },
     });
     expect([TERMS_OF_USE_URL, PRIVACY_POLICY_URL]).toEqual(["https://family-agenda.cloud/agb", "https://family-agenda.cloud/datenschutz"]);
+  });
+
+  it("links the Impressum in German and English above the card on every page of signing in, registering and resetting the password", () => {
+    expect(IMPRINT_CONTENT).toBe(
+      '<nav aria-label="Impressum / Imprint"><a href="https://family-agenda.cloud/impressum" lang="de">Impressum</a> · <a href="https://family-agenda.cloud/en/imprint" lang="en">Imprint</a></nav>',
+    );
+    expect(IMPRINT_PATHS).toEqual([
+      "/sign-in",
+      "/sign-in/password",
+      "/sign-in/verification-code",
+      "/register",
+      "/register/password",
+      "/register/verification-code",
+      "/forgot-password",
+      "/forgot-password/reset",
+      "/forgot-password/verification-code",
+    ]);
+    expect(signInExperience(false, "closed")).toMatchObject({ customContent: Object.fromEntries(IMPRINT_PATHS.map((path) => [path, IMPRINT_CONTENT])) });
+    expect(Object.keys(signInExperience(true, "open").customContent as object)).toEqual(IMPRINT_PATHS);
   });
 
   it("links a Google identity to the account of its email without asking; Google is a target only with its connector", () => {

@@ -256,7 +256,8 @@ describe("Central sign-in", () => {
 
     const waiting = await browser.visit("/sign-in");
     expect(waiting.body).toContain("Deine Family wird vorbereitet");
-    expect(waiting.body).not.toMatch(/Keine Family|<a |<form|<button/);
+    expect(waiting.body).not.toMatch(/Keine Family|<form|<button/);
+    expect(waiting.body.slice(waiting.body.indexOf("<main"), waiting.body.indexOf("</main>"))).not.toContain("<a ");
     expect((await browser.visit("/sign-in/waiting")).body).toContain("Deine Family wird vorbereitet");
 
     routing.logto.addMember("org_registered", "u-new");

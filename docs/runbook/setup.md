@@ -284,6 +284,29 @@ privacy policy reachable without Basic Auth; until launch Google's screen names 
 secret: change the `.env`, deploy; the run says `connector updated`. Emptying both keys leaves the connector and its
 button as they are: remove it in the console.
 
+### Logto's sign-in log
+
+Logto writes every sign-in, registration, Management API call and webhook delivery, with the request's IP address
+and user agent, to the table `logs` of its database `logto`. The privacy policy says it is deleted after 30 days
+([#235](https://github.com/artkoenig/family-agenda-cloud/issues/235)). Logto 1.46.0 deletes nothing from it itself
+and has no setting for it: no code of `packages/core` or `packages/cli` deletes from `logs` (its queries are
+`packages/core/src/queries/log.ts`), and `auditLogsRetentionDays` (`packages/core/src/utils/subscription/types.ts`)
+is a quota of Logto Cloud's plans, which nothing self-hosted deletes by.
+
+So the service `logto-log-retention` (`cube/logto-log-retention.sh` and `.sql`) deletes every row older than 30
+days, when it starts, which every deploy that changes it does, and then once a day; after a failed run it tries
+again in an hour. It runs as Logto's role `logto` over Postgres's local socket, not as the Routing module's role.
+Each run logs one JSON line: `level` `info` with the number of rows `deleted`, or `level` `error` with psql's
+message, which the `health` cron reports ([#208](https://github.com/artkoenig/family-agenda-cloud/issues/208)).
+
+- The last runs: `docker compose logs --tail 5 logto-log-retention`.
+- Check: `docker compose exec -T postgres psql -U postgres -d logto -Atc "select min(created_at) from logs"` is no
+  older than 30 days.
+- **A Logto upgrade** must check, in the new version's `packages/schemas/tables/logs.sql` and its alterations,
+  that the table is still `logs` with its `created_at`, and that the new version still deletes nothing from it
+  itself; otherwise change `cube/logto-log-retention.sql` with it. A renamed table makes every run fail with
+  `relation "logs" does not exist`.
+
 ### Checking the blob mount
 
 All six checks passed on the Cube on 2026-11-16; the results are in
