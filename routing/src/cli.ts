@@ -3,7 +3,7 @@ import type { Writable } from "node:stream";
 import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
-import { parseCreate, parseDelete, parseFamilyId, UsageError } from "./cli-arguments";
+import { parseCreate, parseDelete, parseFamilyId, parseOpenTrials, parseSetFounder, UsageError } from "./cli-arguments";
 import { familyLine } from "./cli-reports";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
@@ -15,11 +15,13 @@ import { setSignInExperience } from "./sign-in-experience";
 import { setSignInClient, setSignInClientRedirects } from "./sign-in-client";
 import { isFamilyId } from "./family-id";
 import type { Resolve } from "./pool";
-import { provisioning, ProvisioningError, type ScheduledProvisioning } from "./provisioning";
+import { setFounder } from "./founder";
+import { provisioning, ProvisioningError, type Provisioning, type ScheduledProvisioning } from "./provisioning";
 import { startReceiver } from "./receiver";
 import { startRouter } from "./router";
 import { familySchedules, openQueues, runScheduler, type FamilySchedules } from "./scheduler";
 import { resumeFamily, suspendFamily } from "./family-status";
+import { startTrial } from "./trials";
 
 export type Io = {
   /** The environment, the only source of the Routing module's settings and secrets. */
@@ -48,14 +50,25 @@ const USAGE = `Usage:
   routing suspend --family-id <id>
     Suspends the Family: its address answers 404 and its schedules are removed; its data stays.
   routing resume --family-id <id>
-    Resumes a suspended Family: it is routed to and scheduled again.
+    Resumes a suspended Family: it is routed to and scheduled again, unless it is Locked.
+  routing open-trials [--except <Family id>]...
+    Opens Trials: starts a Trial now for every Family that has none, is not deleted and never
+    had a Subscription, except those named; from then on a Family that registers starts its
+    Trial when it is created. Running it again starts the Trials of Families added since.
+  routing start-trial --family-id <id>
+    Starts the Family's Trial now; refused if it had a Trial or a Subscription.
+  routing set-founder <Family id> <Admin's email or user id> [--force]
+    Records that Admin of the Family as its founder, who registered it, through
+    IDP_MANAGEMENT_*; refuses anyone who is not an Admin now, and overwrites a founder recorded
+    before only with --force.
   routing schedule
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
     once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
     again after a delay that doubles with each failure in a row, up to a quarter of an hour.
   routing families
-    Lists every Family with its status and when its due work last ran and how it ended; for
-    due work that keeps failing, how often in a row and when it is tried next.
+    Lists every Family with its status (being_prepared, active, locked, suspended or deleted)
+    and when its due work last ran and how it ended; for due work that keeps failing, how often
+    in a row and when it is tried next.
   routing migrate
     Brings the Directory's schema up to date (every command does this first).
   routing serve
@@ -93,6 +106,9 @@ const COMMANDS: Record<string, Command> = {
   delete: (args, config, io, log) => runFamilyCommand(config, deletion(parseDelete(args)), io, log),
   suspend: (args, config, io, log) => runFamilyCommand(config, suspension(parseFamilyId(args)), io, log),
   resume: (args, config, io, log) => runFamilyCommand(config, resumption(parseFamilyId(args)), io, log),
+  "open-trials": (args, config, io) => openTrials(config, parseOpenTrials(args), io),
+  "start-trial": (args, config, io, log) => runDirectoryCommand(config, trialStart(parseFamilyId(args)), io, log),
+  "set-founder": (args, config, io, log) => founderSetting(args, config, io, log),
   serve: (_args, config, io, log) => serve(config, io, log),
   receive: (_args, config, io, log) => receive(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
@@ -179,24 +195,35 @@ async function migrate(config: Config): Promise<void> {
   }
 }
 
-/** A command that changes a Family and its schedules: what does it, what the Operator is told, what the log says. */
-type FamilyCommand = {
+/**
+ * A command that changes a Family: what does it, answering what the Operator is told after the
+ * Family id once it is done, and what the log says.
+ */
+type FamilyCommand<P = ScheduledProvisioning> = {
   familyId: string;
-  work(provisioning: ScheduledProvisioning): Promise<unknown>;
-  /** What the Operator is told after the Family id once it is done. */
-  done: string;
+  work(provisioning: P): Promise<string>;
   refused: string;
   failed: string;
 };
 
 /** Runs the command with the Directory and the Scheduler's queues; answers the exit code. */
-async function runFamilyCommand(config: Config, command: FamilyCommand, io: Io, log: Log): Promise<number> {
+function runFamilyCommand(config: Config, command: FamilyCommand, io: Io, log: Log): Promise<number> {
+  return reported(command, io, log, () =>
+    withDirectory(config, (client) => withSchedules(config, (schedules) => command.work({ ...provisioning(config, client, log, io.resolve), schedules }))),
+  );
+}
+
+/** Runs the command with the Directory only; answers the exit code. */
+function runDirectoryCommand(config: Config, command: FamilyCommand<Provisioning>, io: Io, log: Log): Promise<number> {
+  return reported(command, io, log, () => withDirectory(config, (client) => command.work(provisioning(config, client, log, io.resolve))));
+}
+
+/** Tells the Operator what the command did, or logs why it did not; answers the exit code. */
+async function reported(command: Omit<FamilyCommand, "work">, io: Io, log: Log, running: () => Promise<string>): Promise<number> {
   const { familyId } = command;
   try {
-    await withDirectory(config, (client) =>
-      withSchedules(config, (schedules) => command.work({ ...provisioning(config, client, log, io.resolve), schedules })),
-    );
-    io.stdout.write(`The Family ${familyId} ${command.done}\n`);
+    const done = await running();
+    io.stdout.write(`The Family ${familyId} ${done}\n`);
     return 0;
   } catch (error) {
     if (error instanceof ProvisioningError) {
@@ -211,27 +238,65 @@ async function runFamilyCommand(config: Config, command: FamilyCommand, io: Io, 
 
 const deletion = (input: DeleteFamilyInput): FamilyCommand => ({
   familyId: input.familyId,
-  work: (provisioning) => deleteFamily(provisioning, input),
-  done: "is deleted",
+  work: async (provisioning) => {
+    await deleteFamily(provisioning, input);
+    return "is deleted";
+  },
   refused: "Deleting the Family was refused",
   failed: "Deleting the Family did not finish; run delete again to finish it",
 });
 
 const suspension = (familyId: string): FamilyCommand => ({
   familyId,
-  work: (provisioning) => suspendFamily(provisioning, familyId),
-  done: "is suspended",
+  work: async (provisioning) => {
+    await suspendFamily(provisioning, familyId);
+    return "is suspended";
+  },
   refused: "Suspending the Family was refused",
   failed: "Suspending the Family did not finish; run suspend again to finish it",
 });
 
 const resumption = (familyId: string): FamilyCommand => ({
   familyId,
-  work: (provisioning) => resumeFamily(provisioning, familyId),
-  done: "is active again",
+  work: async (provisioning) =>
+    (await resumeFamily(provisioning, familyId)) === "locked"
+      ? "is resumed and stays Locked: it is not routed to or scheduled until it is unlocked"
+      : "is active again",
   refused: "Resuming the Family was refused",
   failed: "Resuming the Family did not finish; run resume again to finish it",
 });
+
+const trialStart = (familyId: string): FamilyCommand<Provisioning> => ({
+  familyId,
+  work: async ({ directory }) => {
+    const { startsAt, endsAt } = await startTrial(directory, familyId);
+    return `starts its Trial ${startsAt.toISOString()}; it ends ${endsAt.toISOString()}`;
+  },
+  refused: "Starting the Trial was refused",
+  failed: "Starting the Trial failed; run start-trial again",
+});
+
+/** Records the founder; needs IDP_MANAGEMENT_*. */
+function founderSetting(args: string[], config: Config, io: Io, log: Log): Promise<number> {
+  const input = parseSetFounder(args);
+  const idp = config.idpManagement;
+  if (idp === null) throw new ConfigError("set-founder needs IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET");
+  const command: FamilyCommand<Provisioning> = {
+    familyId: input.familyId,
+    work: async ({ directory }) => `has the founder ${await setFounder(directory, idp, input)}`,
+    refused: "Recording the founder was refused",
+    failed: "Recording the founder failed; run set-founder again",
+  };
+  return runDirectoryCommand(config, command, io, log);
+}
+
+/** Opens Trials and names each Family whose Trial it started. */
+async function openTrials(config: Config, except: string[], io: Io): Promise<number> {
+  const started = await withDirectory(config, (client) => directory(client).openTrials(except));
+  for (const familyId of started) io.stdout.write(`The Family ${familyId} starts its Trial\n`);
+  io.stdout.write(`Trials are open; ${started.length} started now\n`);
+  return 0;
+}
 
 async function schedule(config: Config, io: Io, log: Log): Promise<number> {
   const { clock = systemClock } = io;

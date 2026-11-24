@@ -41,7 +41,7 @@ The Router's sign-in from the landing page, with its own Logto client, which fin
 _Avoid_: Login portal, SSO hub
 
 **Directory**:
-The one list of every Family, holding per Family its Family id, status (being prepared, active, locked, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, and how its due work last ended.
+The one list of every Family, holding per Family its Family id, status (being prepared, active, locked, suspended, deleted), database and role, wrapped family key and database password, blob location (the Family's own blob folder), time zone, how its due work last ended, when its Trial started (none until Trials are open, nor for a Family the Operator creates), its founder (the Logto user who registered it), when and why it was Locked, and its Subscriptions with the Stripe events already handled.
 _Avoid_: Registry, tenant table, control database
 
 **Scheduler**:

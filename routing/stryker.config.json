@@ -16,6 +16,7 @@
     "src/family-context.ts",
     "src/family-id.ts",
     "src/family-readiness.ts",
+    "src/trial.ts",
     "src/due-work.ts",
     "src/failover.ts",
     "src/pool.ts",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCreate, parseDelete, parseFamilyId, UsageError } from "../../src/cli-arguments";
+import { parseCreate, parseDelete, parseFamilyId, parseOpenTrials, parseSetFounder, UsageError } from "../../src/cli-arguments";
 
 const familyId = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const defaultTimeZone = "Europe/Berlin";
@@ -102,5 +102,52 @@ describe("parseFamilyId", () => {
 
   it("refuses an option it does not know", () => {
     expect(usageError(() => parseFamilyId(["--family-id", familyId, "--confirm", familyId]))).toMatch(/--confirm/);
+  });
+});
+
+describe("parseOpenTrials", () => {
+  const other = "6b1f0c2e-3a4d-4e5f-8a9b-0c1d2e3f4a5b";
+
+  it("excepts no Family when none is named", () => {
+    expect(parseOpenTrials([])).toEqual([]);
+  });
+
+  it("excepts every Family that an --except names, in lower case", () => {
+    expect(parseOpenTrials(["--except", familyId.toUpperCase(), "--except", other])).toEqual([familyId, other]);
+  });
+
+  it.each([[["--except", "nope"]], [["--except", familyId, "--except", ""]]])("refuses an --except that names no Family id: %j", (args) => {
+    expect(usageError(() => parseOpenTrials(args))).toBe("--except needs a Family id, a UUID");
+  });
+
+  it("refuses an option it does not know", () => {
+    expect(usageError(() => parseOpenTrials(["--family-id", familyId]))).toMatch(/--family-id/);
+  });
+
+  it("refuses an argument that is not an option", () => {
+    expect(usageError(() => parseOpenTrials([familyId]))).toMatch(new RegExp(familyId));
+  });
+});
+
+describe("parseSetFounder", () => {
+  it("names the Family, in lower case, and the Admin as given", () => {
+    expect(parseSetFounder([familyId.toUpperCase(), "Anna@Example.org"])).toStrictEqual({ familyId, admin: "Anna@Example.org", force: false });
+  });
+
+  it("overwrites a recorded founder with --force, before or after the arguments", () => {
+    expect(parseSetFounder(["--force", familyId, "user_1"])).toStrictEqual({ familyId, admin: "user_1", force: true });
+    expect(parseSetFounder([familyId, "user_1", "--force"])).toStrictEqual({ familyId, admin: "user_1", force: true });
+  });
+
+  it.each([[[]], [["nope", "user_1"]]])("refuses %j, which names no Family id", (args) => {
+    expect(usageError(() => parseSetFounder(args))).toBe("set-founder needs the Family id, a UUID, then the Admin's email or user id");
+  });
+
+  it.each([[[familyId]], [[familyId, ""]], [[familyId, "user_1", "user_2"]]])("refuses %j, which does not name one Admin", (args) => {
+    expect(usageError(() => parseSetFounder(args))).toBe("set-founder needs the Family id, a UUID, then the Admin's email or user id");
+  });
+
+  it("refuses an option it does not know", () => {
+    expect(usageError(() => parseSetFounder([familyId, "user_1", "--confirm"]))).toMatch(/--confirm/);
   });
 });

@@ -10,6 +10,10 @@ describe("familyLine", () => {
     expect(familyLine({ familyId: a, status: "active", dueWork: null })).toBe(`${a}\tactive\tdue work never ran`);
   });
 
+  it("says a Family is locked", () => {
+    expect(familyLine({ familyId: a, status: "locked", dueWork: null })).toBe(`${a}\tlocked\tdue work never ran`);
+  });
+
   it("says when its due work ran and what it polled", () => {
     const dueWork = { ranAt, outcome: "succeeded", sources: { ran: 3, failed: 1 } } as const;
     expect(familyLine({ familyId: a, status: "suspended", dueWork })).toBe(

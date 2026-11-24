@@ -4,7 +4,8 @@ import type { AddressInfo } from "node:net";
 
 /**
  * Logto's Management API as far as the Routing module uses it: a client-credentials token,
- * listing an Organization's users a page at a time, deleting a user and an Organization, putting
+ * reading an Organization with its custom data, listing an Organization's users a page at a time
+ * with their email and organization roles, deleting a user and an Organization, putting
  * email templates, listing, creating and updating connectors, and patching the sign-in experience
  * and the Account Center. Every user and Organization is there until deleted; deleting one again
  * answers 404, and a page larger than Logto lists answers 400, as Logto does.
@@ -29,8 +30,15 @@ export type StandInLogto = {
   deletions: string[];
   /** The Organizations deleted while they had members left. */
   deletedWithMembers: string[];
-  /** Makes `userId` a user of Logto and a member of the Organization. */
-  addMember(organizationId: string, userId: string): void;
+  /**
+   * Makes `userId` a user of Logto and a member of the Organization, with the organization role
+   * `admin` unless `role` says otherwise; null is a member without a role. Its email is `<userId>@example.com`.
+   */
+  addMember(organizationId: string, userId: string, role?: string | null): void;
+  /** Sets the founder the Organization's custom data names, as a core that creates it does; null names none. */
+  setFounder(organizationId: string, userId: string | null): void;
+  /** The Organizations read so far, one entry per GET, in order. */
+  organizationReads: string[];
   /** Whether `userId` is a user of Logto. */
   hasUser(userId: string): boolean;
   /** Answers deleting this user or Organization with 503, until set to null. */
@@ -90,6 +98,9 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   const deletedWithMembers: string[] = [];
   const users = new Set<string>();
   const members = new Map<string, string[]>();
+  const roles = new Map<string, string | null>();
+  const founders = new Map<string, string>();
+  const organizationReads: string[] = [];
   let failing: number | null = null;
   let failingDeletion: string | null = null;
   let failingTokens: number | "drop" | null = null;
@@ -127,10 +138,15 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     const user = incoming.method === "DELETE" ? USER.exec(url) : null;
     const templates = incoming.method === "PUT" && url === "/api/email-templates";
     const setting = SETTING.test(url);
-    const known = templates || setting || application || organizationUsers || user || (incoming.method === "DELETE" && organization);
+    const organizationRead = incoming.method === "GET" ? organization : null;
+    const known = templates || setting || application || organizationUsers || user || organizationRead || (incoming.method === "DELETE" && organization);
     if (!known) return void outgoing.writeHead(404).end();
     if (incoming.headers.authorization !== `Bearer ${TOKEN}`) return void outgoing.writeHead(401).end();
     if (failing !== null) return void outgoing.writeHead(failing).end("refused");
+    if (organizationRead) {
+      readOrganization(decodeURIComponent(organizationRead[1]!), outgoing);
+      return;
+    }
     if (organizationUsers) {
       listUsers(decodeURIComponent(organizationUsers[1]!), new URL(url, "http://logto").searchParams, outgoing);
       return;
@@ -171,8 +187,18 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     const pageSize = Number(query.get("page_size") ?? "20");
     if (pageSize > MAX_PAGE_SIZE) return void outgoing.writeHead(400).end("guard.invalid_pagination");
     const all = membersLeft(organizationId);
-    const listed = all.slice((page - 1) * pageSize, page * pageSize).map((id) => ({ id, primaryEmail: `${id}@example.com`, organizationRoles: [] }));
+    const listed = all.slice((page - 1) * pageSize, page * pageSize).map((id) => {
+      const role = roles.get(`${organizationId}/${id}`) ?? null;
+      return { id, primaryEmail: `${id}@example.com`, organizationRoles: role === null ? [] : [{ id: `role-${role}`, name: role }] };
+    });
     outgoing.writeHead(200, { "content-type": "application/json", "total-number": String(all.length) }).end(JSON.stringify(listed));
+  }
+  function readOrganization(organizationId: string, outgoing: ServerResponse) {
+    organizationReads.push(organizationId);
+    if (deleted.includes(organizationId)) return void outgoing.writeHead(404).end();
+    const founder = founders.get(organizationId);
+    const customData = founder === undefined ? {} : { founderUserId: founder };
+    outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ id: organizationId, name: `Family ${organizationId}`, customData }));
   }
   function deleteUser(userId: string, outgoing: ServerResponse) {
     if (userId === failingDeletion) return void outgoing.writeHead(503).end("refused");
@@ -294,10 +320,16 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     deletedUsers,
     deletions,
     deletedWithMembers,
-    addMember(organizationId, userId) {
+    addMember(organizationId, userId, role = "admin") {
       users.add(userId);
       members.set(organizationId, [...(members.get(organizationId) ?? []), userId]);
+      roles.set(`${organizationId}/${userId}`, role);
     },
+    setFounder(organizationId, userId) {
+      if (userId === null) founders.delete(organizationId);
+      else founders.set(organizationId, userId);
+    },
+    organizationReads,
     hasUser: (userId) => users.has(userId),
     failDeleting(id) {
       failingDeletion = id;

@@ -3,6 +3,7 @@ import type { Directory, DirectoryEntry } from "./directory";
 import { familyUrl, sealedContext, unwrappedFamily, type Family } from "./family-context";
 import { ensureFamilyDatabase, familyDatabaseLeftBehind, familyDatabaseNames } from "./family-databases";
 import { blobLocationOf } from "./family-id";
+import { founderOf } from "./founder";
 import { ProvisioningError, withFamilyLock, type Provisioning } from "./provisioning";
 import type { FamilySchedules } from "./scheduler";
 import { drawDatabasePassword, drawFamilyKey, wrapperFor } from "./secrets";
@@ -43,6 +44,11 @@ async function creating(provisioning: Provisioning & { schedules: FamilySchedule
     log.info("The Family is active already", { familyId });
     return familyAddress(config, familyId);
   }
+  if (existing?.status === "locked") {
+    // A Locked Family keeps no schedules: it was created to the end before it was locked.
+    log.info("The Family is active already, and locked", { familyId });
+    return familyAddress(config, familyId);
+  }
   const family = existing ? resumedFamily(config, existing, input) : newFamily(config, input);
   const wrapper = wrapperFor(config.operatorKey, familyId);
 
@@ -58,8 +64,11 @@ async function creating(provisioning: Provisioning & { schedules: FamilySchedule
     organizationId: input.organizationId,
     wrappedFamilyKey: wrapper.wrap("family-key", family.familyKey),
     wrappedDatabasePassword: wrapper.wrap("database-password", family.databasePassword),
+    // A Family that registered starts its Trial, once Trials are open; one the Operator creates does not.
+    trialIfOpen: input.familyIdFrom === "registration",
   });
   log.info("The Family is in the Directory, being prepared", { familyId });
+  await noteFounder(provisioning, familyId);
 
   // The core that opens the Family first prepares its database and records its Organization.
   await core.openFamily(sealedContext(config, family));
@@ -72,6 +81,19 @@ async function creating(provisioning: Provisioning & { schedules: FamilySchedule
   await directory.activate(familyId);
   log.info("The Family is active", { familyId });
   return familyAddress(config, familyId);
+}
+
+/**
+ * Records the founder the Family's Organization names. Logto failing to answer does not stop the
+ * creation: the founder is read again the first time it is needed.
+ */
+async function noteFounder(provisioning: Provisioning, familyId: string): Promise<void> {
+  try {
+    const founder = await founderOf(provisioning, familyId);
+    provisioning.log.info(founder ? "The Family's founder is recorded" : "The Family's Organization names no founder", { familyId });
+  } catch (error) {
+    provisioning.log.info("Reading the Family's founder from Logto failed; it is read again when it is first needed", { familyId, error });
+  }
 }
 
 /** The entry of the Family to finish, refusing a new Family while another is half-made and an entry of another Organization. */

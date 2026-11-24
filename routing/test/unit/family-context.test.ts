@@ -36,6 +36,11 @@ const entry: DirectoryEntry = {
   wrappedDatabasePassword: wrapper.wrap("database-password", "the database password"),
   createdAt: new Date("2026-05-01T10:00:00.000Z"),
   deletedAt: null,
+  trialStartsAt: null,
+  trialEndsAt: null,
+  registeredBy: null,
+  lockedAt: null,
+  lockReason: null,
 };
 
 const family: Family = {

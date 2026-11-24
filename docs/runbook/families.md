@@ -92,6 +92,62 @@ The Family 190ca3a1-78b7-45d7-b735-e8cd59b04509 is active again
 
 Both may be run again; they say the same and change nothing. A deleted Family cannot be resumed.
 
+A Locked Family can be suspended too. Resumed, it stays Locked: its address still answers `404` and its due work does not
+run until it is unlocked.
+
+```
+The Family 190ca3a1-78b7-45d7-b735-e8cd59b04509 is resumed and stays Locked: it is not routed to or scheduled until it is unlocked
+```
+
+## Open Trials
+
+Until Trials are open, no Family has a Trial and none is Locked when one ends. Open them once, at launch:
+
+```
+routing open-trials [--except <Family id>]...
+```
+
+```
+The Family 17968e51-4cd4-4cb8-b073-725596d492a2 starts its Trial
+Trials are open; 1 started now
+```
+
+It starts a Trial now for every Family that has none, is not deleted and never had a Subscription, except those named
+with `--except` (the Operator's own Families, for instance). From then on a Family that registers starts its Trial when
+it is created; one the Operator creates with `routing create` gets none. Running it again starts only the Trials of
+Families added since, leaving out those named with `--except` again, and keeps when Trials were first opened.
+
+To give one Family its Trial, such as one the Operator created:
+
+```
+routing start-trial --family-id <id>
+```
+
+```
+The Family 190ca3a1-78b7-45d7-b735-e8cd59b04509 starts its Trial 2026-11-24T09:00:00.000Z; it ends 2026-12-08T09:00:00.000Z
+```
+
+A Trial lasts 14 days and is had once: it is refused for a Family that had its Trial or a Subscription, even an ended
+one, and for a deleted Family.
+
+## The founder of a Family
+
+The founder is the Logto user who registered the Family, whom a Subscription is ordered for. The Directory reads it from
+the Family's Organization (`customData.founderUserId`) when the Family is created, or the first time it is needed for a
+Family created before. If the Organization names none, or the wrong person, record it by hand; it needs
+`IDP_MANAGEMENT_*`:
+
+```
+routing set-founder <Family id> <Admin's email or user id> [--force]
+```
+
+```
+The Family 190ca3a1-78b7-45d7-b735-e8cd59b04509 has the founder user_7f3k2
+```
+
+Only a person who is an Admin of the Family now can be its founder. A founder recorded before is overwritten only with
+`--force`.
+
 ## Delete a Family
 
 Cannot be undone. `--confirm` must repeat the Family id; with anything else nothing is deleted
@@ -178,7 +234,7 @@ routing families
 ```
 
 One line per Family, the columns separated by tabs: the Family id, its status (`being_prepared`, `active`,
-`suspended`, `deleted`), then when its due work last ran and how it ended.
+`locked`, `suspended`, `deleted`; `locked` is an active Family that is Locked, a suspended one shows `suspended`), then when its due work last ran and how it ended.
 
 ```
 17968e51-4cd4-4cb8-b073-725596d492a2	active	due work never ran
@@ -196,4 +252,4 @@ Times are UTC. Due work runs once a minute for every active Family, so:
   That is the Family's own matter, such as a wrong password of a mailbox or a calendar that is gone.
 - `failed:` on one Family alone points at that Family (see [A new core version](#a-new-core-version)); on all of
   them, at the cores or Postgres: `docker compose ps`.
-- A suspended or deleted Family keeps the line of its last run.
+- A suspended, Locked or deleted Family keeps the line of its last run.

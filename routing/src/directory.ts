@@ -1,8 +1,37 @@
 import type pg from "pg";
 import type { SourcesPolled } from "./core";
+import { trialEndsAt } from "./trial";
 
-/** Only an active Family is routed to and scheduled. */
-export type FamilyStatus = "being_prepared" | "active" | "suspended" | "deleted";
+/**
+ * Only an active Family is routed to and scheduled. A Family is `locked` while it is active and
+ * the Directory holds a lock of it: the Directory keeps the status `active` and the lock beside it,
+ * so that a suspension wins over the lock and a resumption finds it again.
+ */
+export type FamilyStatus = "being_prepared" | "active" | "locked" | "suspended" | "deleted";
+
+/** Why a Family is locked: its Trial ended without a Subscription, its Subscription ended, or it is not paid. */
+export type LockReason = "trial_ended" | "subscription_ended" | "unpaid";
+
+/** The statuses of a Subscription that is running; any other ended it, or never started it. */
+const RUNNING_SUBSCRIPTION = ["trialing", "active", "past_due", "unpaid"];
+
+/** A Family's Subscription, as Stripe last told of it. */
+export type Subscription = {
+  subscriptionId: string;
+  familyId: string;
+  customerId: string | null;
+  /** Who holds the Subscription: the Admin who ordered it. */
+  holder: string;
+  billing: "monthly" | "yearly" | null;
+  /** Stripe's status of the Subscription, such as `active` or `canceled`. */
+  status: string;
+  orderedAt: Date | null;
+  trialEnd: Date | null;
+  currentPeriodEnd: Date | null;
+  cancelAt: Date | null;
+  endedAt: Date | null;
+  confirmationSentAt: Date | null;
+};
 
 /** A Family's entry in the Directory. Its family key and database password are kept wrapped only. */
 export type DirectoryEntry = {
@@ -22,6 +51,15 @@ export type DirectoryEntry = {
   createdAt: Date;
   /** When deleting the Family finished; null while it is not deleted, or not to the end. */
   deletedAt: Date | null;
+  /** When the Family's one Trial started; null while it has none. */
+  trialStartsAt: Date | null;
+  /** When the Family's Trial ends, exactly 14 days after it started; null while it has none. */
+  trialEndsAt: Date | null;
+  /** The Logto user id of the Admin who registered the Family, its founder; null while it is not known. */
+  registeredBy: string | null;
+  /** Since when the Family is locked, whatever its status; null while it is not. */
+  lockedAt: Date | null;
+  lockReason: LockReason | null;
 };
 
 /**
@@ -48,10 +86,15 @@ export type DueWorkOutcome =
 /** What the Operator sees of a Family: its status, and how its due work last ran, if it ever did. */
 export type FamilyOverview = { familyId: string; status: FamilyStatus; dueWork: DueWorkRun | null };
 
-export type NewDirectoryEntry = Omit<DirectoryEntry, "status" | "createdAt" | "deletedAt"> & {
+export type NewDirectoryEntry = Omit<
+  DirectoryEntry,
+  "status" | "createdAt" | "deletedAt" | "trialStartsAt" | "trialEndsAt" | "registeredBy" | "lockedAt" | "lockReason"
+> & {
   organizationId: string;
   wrappedFamilyKey: string;
   wrappedDatabasePassword: string;
+  /** Whether the Family's Trial starts when it is created, if Trials are open by then: a Family that registered. */
+  trialIfOpen: boolean;
 };
 
 /** The schema of the Directory, one statement per version; a version once released never changes. */
@@ -92,6 +135,38 @@ const MIGRATIONS = [
      DROP COLUMN preparation_error`,
   // The Family's Logto Organization, named by the core's family.created (#90).
   "ALTER TABLE family ADD COLUMN IF NOT EXISTS organization_id text UNIQUE",
+  // A Family's one Trial, its founder, and its lock, which leaves its status as it is (#225).
+  `ALTER TABLE family
+     ADD COLUMN trial_starts_at timestamptz,
+     ADD COLUMN registered_by text,
+     ADD COLUMN locked_at timestamptz,
+     ADD COLUMN lock_reason text CHECK (lock_reason IN ('trial_ended', 'subscription_ended', 'unpaid'))`,
+  // The Routing module's settings, in one row: since when Trials are open (#225).
+  `CREATE TABLE setting (
+     id boolean PRIMARY KEY DEFAULT true CHECK (id),
+     trials_opened_at timestamptz
+   )`,
+  // Each Family's Subscriptions, as Stripe tells of them (#225).
+  `CREATE TABLE subscription (
+     subscription_id text PRIMARY KEY,
+     family_id uuid NOT NULL REFERENCES family,
+     customer_id text,
+     holder text NOT NULL,
+     billing text CHECK (billing IN ('monthly', 'yearly')),
+     status text NOT NULL,
+     ordered_at timestamptz,
+     trial_end timestamptz,
+     current_period_end timestamptz,
+     cancel_at timestamptz,
+     ended_at timestamptz,
+     confirmation_sent_at timestamptz
+   )`,
+  "CREATE INDEX subscription_family_id ON subscription (family_id)",
+  // The Stripe events received, so that one delivered again is handled once (#225).
+  `CREATE TABLE stripe_event (
+     event_id text PRIMARY KEY,
+     received_at timestamptz NOT NULL DEFAULT now()
+   )`,
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */
@@ -106,7 +181,10 @@ export type Directory = {
   findByOrganization(organizationId: string): Promise<DirectoryEntry | null>;
   /** The Family ids of the Families still being prepared, oldest first. */
   beingPrepared(): Promise<string[]>;
-  /** Writes a new entry as being prepared; leaves an existing entry of that Family as it is. */
+  /**
+   * Writes a new entry as being prepared, with its Trial started at its creation if it asks for one
+   * and Trials are open; leaves an existing entry of that Family as it is.
+   */
   add(entry: NewDirectoryEntry): Promise<void>;
   /** Marks the Family active. */
   activate(familyId: string): Promise<void>;
@@ -128,6 +206,31 @@ export type Directory = {
   lastDueWork(familyId: string): Promise<DueWorkRun | null>;
   /** Every Family, oldest first. */
   overview(): Promise<FamilyOverview[]>;
+  /**
+   * Notes that Trials are open, unless they were before, and starts a Trial now for every Family
+   * that has none, is not deleted, never had a Subscription and is not one of `except`. Answers the
+   * Families whose Trial it started. A Family added at the same time gets its Trial either way.
+   */
+  openTrials(except: string[]): Promise<string[]>;
+  /**
+   * Starts the Family's Trial now, if it has none, is not deleted and never had a Subscription;
+   * answers when it started, or null if it did not.
+   */
+  startTrial(familyId: string): Promise<Date | null>;
+  /** The Family's running Subscription, the latest ordered; null when it has none. */
+  subscriptionOf(familyId: string): Promise<Subscription | null>;
+  /**
+   * Records the founder, unless one is recorded and `overwrite` is false; answers the founder the
+   * Family has now, undefined when there is no such Family.
+   */
+  recordFounder(familyId: string, userId: string, overwrite: boolean): Promise<string | null | undefined>;
+  /**
+   * Locks an active or suspended Family unless it is locked, keeping when and why it was first
+   * locked; leaves any other Family as it is. Answers the status it has now.
+   */
+  lock(familyId: string, reason: LockReason, at: Date): Promise<FamilyStatus | undefined>;
+  /** Unlocks an active or suspended Family; answers the status it has now. */
+  unlock(familyId: string): Promise<FamilyStatus | undefined>;
 };
 
 /** Brings the Directory's schema up to date. */
@@ -152,9 +255,14 @@ export async function migrateDirectory(client: pg.ClientBase): Promise<void> {
   }
 }
 
-type Row = {
+/** A Family's status as the family table holds it, with its lock beside it. */
+type StoredStatus = { status: Exclude<FamilyStatus, "locked">; locked_at: Date | null };
+
+/** The status a Family has: an active Family is locked while the Directory holds a lock of it. */
+const statusOf = ({ status, locked_at }: StoredStatus): FamilyStatus => (status === "active" && locked_at ? "locked" : status);
+
+type Row = StoredStatus & {
   family_id: string;
-  status: FamilyStatus;
   database_name: string;
   database_role: string;
   blob_location: string;
@@ -164,11 +272,13 @@ type Row = {
   wrapped_database_password: string | null;
   created_at: Date;
   deleted_at: Date | null;
+  trial_starts_at: Date | null;
+  registered_by: string | null;
+  lock_reason: LockReason | null;
 };
 
-type OverviewRow = {
+type OverviewRow = StoredStatus & {
   family_id: string;
-  status: FamilyStatus;
   due_work_ran_at: Date | null;
   due_work_outcome: "succeeded" | "failed" | null;
   due_work_sources_ran: number | null;
@@ -203,19 +313,77 @@ function dueWorkRun(row: OverviewRow): DueWorkRun | null {
 }
 
 /** Changes the Family's status from `from` to `to`, and no other; answers the status it has now. */
-async function changeStatus(client: Pick<pg.ClientBase, "query">, familyId: string, from: FamilyStatus, to: FamilyStatus) {
-  const { rows } = await client.query<{ status: FamilyStatus }>(
-    "UPDATE family SET status = CASE WHEN status = $2 THEN $3 ELSE status END WHERE family_id = $1 RETURNING status",
-    [familyId, from, to],
-  );
-  return rows[0]?.status;
+async function changeStatus(client: Pick<pg.ClientBase, "query">, familyId: string, from: StoredStatus["status"], to: StoredStatus["status"]) {
+  return statusAfter(client, "UPDATE family SET status = CASE WHEN status = $2 THEN $3 ELSE status END WHERE family_id = $1 RETURNING status, locked_at", [
+    familyId,
+    from,
+    to,
+  ]);
+}
+
+/** Runs the statement, which returns the status and lock of the Family it changed; answers the status it has now. */
+async function statusAfter(client: Pick<pg.ClientBase, "query">, statement: string, values: unknown[]): Promise<FamilyStatus | undefined> {
+  const { rows } = await client.query<StoredStatus>(statement, values);
+  const row = rows[0];
+  return row && statusOf(row);
+}
+
+/** Only an active or suspended Family is locked or unlocked. */
+const LOCKABLE = "status IN ('active', 'suspended')";
+
+/** A Family that never had a Subscription; `f` is the Family. */
+const NEVER_SUBSCRIBED = "NOT EXISTS (SELECT 1 FROM subscription s WHERE s.family_id = f.family_id)";
+
+type SubscriptionRow = {
+  subscription_id: string;
+  family_id: string;
+  customer_id: string | null;
+  holder: string;
+  billing: "monthly" | "yearly" | null;
+  status: string;
+  ordered_at: Date | null;
+  trial_end: Date | null;
+  current_period_end: Date | null;
+  cancel_at: Date | null;
+  ended_at: Date | null;
+  confirmation_sent_at: Date | null;
+};
+
+function subscriptionOf(row: SubscriptionRow): Subscription {
+  return {
+    subscriptionId: row.subscription_id,
+    familyId: row.family_id,
+    customerId: row.customer_id,
+    holder: row.holder,
+    billing: row.billing,
+    status: row.status,
+    orderedAt: row.ordered_at,
+    trialEnd: row.trial_end,
+    currentPeriodEnd: row.current_period_end,
+    cancelAt: row.cancel_at,
+    endedAt: row.ended_at,
+    confirmationSentAt: row.confirmation_sent_at,
+  };
+}
+
+/** Runs `work` in a transaction on the client: committed if it ends, rolled back if it throws. */
+async function inTransaction<T>(client: Pick<pg.ClientBase, "query">, work: () => Promise<T>): Promise<T> {
+  await client.query("BEGIN");
+  try {
+    const result = await work();
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
 }
 
 /** The entry a row of the family table holds. */
 function entryOf(row: Row): DirectoryEntry {
   return {
     familyId: row.family_id,
-    status: row.status,
+    status: statusOf(row),
     databaseName: row.database_name,
     databaseRole: row.database_role,
     blobLocation: row.blob_location,
@@ -225,6 +393,11 @@ function entryOf(row: Row): DirectoryEntry {
     wrappedDatabasePassword: row.wrapped_database_password,
     createdAt: row.created_at,
     deletedAt: row.deleted_at,
+    trialStartsAt: row.trial_starts_at,
+    trialEndsAt: row.trial_starts_at && trialEndsAt(row.trial_starts_at),
+    registeredBy: row.registered_by,
+    lockedAt: row.locked_at,
+    lockReason: row.lock_reason,
   };
 }
 
@@ -248,8 +421,10 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
     },
     async add(entry) {
       await client.query(
-        `INSERT INTO family (family_id, status, database_name, database_role, blob_location, time_zone, organization_id, wrapped_family_key, wrapped_database_password)
-         VALUES ($1, 'being_prepared', $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO family (family_id, status, database_name, database_role, blob_location, time_zone, organization_id, wrapped_family_key, wrapped_database_password,
+           trial_starts_at)
+         VALUES ($1, 'being_prepared', $2, $3, $4, $5, $6, $7, $8,
+           CASE WHEN $9::boolean THEN (SELECT now() FROM setting WHERE trials_opened_at IS NOT NULL) END)
          ON CONFLICT (family_id) DO NOTHING`,
         [
           entry.familyId,
@@ -260,6 +435,7 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
           entry.organizationId,
           entry.wrappedFamilyKey,
           entry.wrappedDatabasePassword,
+          entry.trialIfOpen,
         ],
       );
     },
@@ -289,7 +465,7 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
              THEN date_trunc('minute', $2::timestamptz) + least($7::integer * power(2, due_work_failures), $8::integer) * interval '1 minute'
            END
          WHERE family_id = $1
-         RETURNING family_id, status, ${DUE_WORK_COLUMNS}`,
+         RETURNING family_id, status, locked_at, ${DUE_WORK_COLUMNS}`,
         [
           familyId,
           run.ranAt,
@@ -305,15 +481,74 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
       return row ? dueWorkRun(row) : null;
     },
     async lastDueWork(familyId) {
-      const { rows } = await client.query<OverviewRow>(`SELECT family_id, status, ${DUE_WORK_COLUMNS} FROM family WHERE family_id = $1`, [familyId]);
+      const { rows } = await client.query<OverviewRow>(`SELECT family_id, status, locked_at, ${DUE_WORK_COLUMNS} FROM family WHERE family_id = $1`, [familyId]);
       const row = rows[0];
       return row ? dueWorkRun(row) : null;
     },
     async overview() {
       const { rows } = await client.query<OverviewRow>(
-        `SELECT family_id, status, ${DUE_WORK_COLUMNS} FROM family ORDER BY created_at, family_id`,
+        `SELECT family_id, status, locked_at, ${DUE_WORK_COLUMNS} FROM family ORDER BY created_at, family_id`,
       );
-      return rows.map((row) => ({ familyId: row.family_id, status: row.status, dueWork: dueWorkRun(row) }));
+      return rows.map((row) => ({ familyId: row.family_id, status: statusOf(row), dueWork: dueWorkRun(row) }));
     },
+    openTrials: (except) =>
+      inTransaction(client, async () => {
+        // Keeps out a Family being added until the Trials are open, so that it gets its Trial either way.
+        await client.query("LOCK TABLE family IN SHARE ROW EXCLUSIVE MODE");
+        await client.query(
+          `INSERT INTO setting (id, trials_opened_at) VALUES (true, now())
+           ON CONFLICT (id) DO UPDATE SET trials_opened_at = coalesce(setting.trials_opened_at, excluded.trials_opened_at)`,
+        );
+        const { rows } = await client.query<{ family_id: string }>(
+          `UPDATE family f SET trial_starts_at = now()
+           WHERE trial_starts_at IS NULL AND status <> 'deleted' AND ${NEVER_SUBSCRIBED} AND NOT (family_id = ANY($1::uuid[]))
+           RETURNING family_id`,
+          [except],
+        );
+        return rows.map(({ family_id }) => family_id).sort();
+      }),
+    async startTrial(familyId) {
+      const { rows } = await client.query<{ trial_starts_at: Date }>(
+        `UPDATE family f SET trial_starts_at = now()
+         WHERE family_id = $1 AND trial_starts_at IS NULL AND status <> 'deleted' AND ${NEVER_SUBSCRIBED}
+         RETURNING trial_starts_at`,
+        [familyId],
+      );
+      return rows[0]?.trial_starts_at ?? null;
+    },
+    async subscriptionOf(familyId) {
+      const { rows } = await client.query<SubscriptionRow>(
+        `SELECT * FROM subscription WHERE family_id = $1 AND status = ANY($2::text[])
+         ORDER BY ordered_at DESC NULLS LAST, subscription_id LIMIT 1`,
+        [familyId, RUNNING_SUBSCRIPTION],
+      );
+      const row = rows[0];
+      return row ? subscriptionOf(row) : null;
+    },
+    async recordFounder(familyId, userId, overwrite) {
+      const { rows } = await client.query<{ registered_by: string | null }>(
+        "UPDATE family SET registered_by = CASE WHEN $3 OR registered_by IS NULL THEN $2 ELSE registered_by END WHERE family_id = $1 RETURNING registered_by",
+        [familyId, userId, overwrite],
+      );
+      return rows[0]?.registered_by;
+    },
+    lock: (familyId, reason, at) =>
+      statusAfter(
+        client,
+        `UPDATE family SET
+           locked_at = CASE WHEN ${LOCKABLE} THEN coalesce(locked_at, $3) ELSE locked_at END,
+           lock_reason = CASE WHEN ${LOCKABLE} AND locked_at IS NULL THEN $2 ELSE lock_reason END
+         WHERE family_id = $1 RETURNING status, locked_at`,
+        [familyId, reason, at],
+      ),
+    unlock: (familyId) =>
+      statusAfter(
+        client,
+        `UPDATE family SET
+           locked_at = CASE WHEN ${LOCKABLE} THEN NULL ELSE locked_at END,
+           lock_reason = CASE WHEN ${LOCKABLE} THEN NULL ELSE lock_reason END
+         WHERE family_id = $1 RETURNING status, locked_at`,
+        [familyId],
+      ),
   };
 }
