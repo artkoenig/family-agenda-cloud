@@ -134,7 +134,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
    | `OPERATOR_ALERT_ADDRESS` | where the [health check](#the-health-check)'s digest mail of errors goes | the Operator's own address, not one at `family-agenda.cloud` |
    | `HEALTH_HEARTBEAT_URL` | the ping URL of the Cube's check at healthchecks.io | [The health check](#the-health-check) |
-   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` | the SMTP server and login the health check sends through; `smtp.ionos.de`, `465` and `no-reply@family-agenda.cloud` unless set | as in `cube/.env.example` |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` | the SMTP server and login the mail sender and the health check send through; `smtp.ionos.de`, `465` and `no-reply@family-agenda.cloud` unless set | as in `cube/.env.example` |
    | `SMTP_PASSWORD` | the password of the mailbox `no-reply@family-agenda.cloud` | [step 5](#5-mailbox), the password manager |
 
    Without the `OPERATOR_KEY` no family key and no Family database password in the Directory can be unwrapped

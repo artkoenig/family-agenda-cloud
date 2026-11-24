@@ -87,6 +87,7 @@ export const RULES: Readonly<Record<string, Rule>> = {
   router: jsonLevel(),
   scheduler: jsonLevel(),
   receiver: jsonLevel(),
+  "mail-sender": jsonLevel(),
   logto,
   // One JSON line per run (cube/logto-log-retention.sh).
   "logto-log-retention": jsonLevel(),
