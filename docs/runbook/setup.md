@@ -72,7 +72,11 @@ Bucket names are global; record the chosen names in the ticket.
 Not set up yet: the domain contract includes no Mail Basic mailbox, it has to be booked as its own product.
 
 IONOS Mail Basic 1, mailbox `no-reply@family-agenda.cloud`. Store the password in the password manager.
-Add the mailbox to the Operator's mail client (bounces are read by hand).
+Add the mailbox to the Operator's mail client (bounces are read by hand, once a week: [The mail
+outbox](families.md#bounces)). Put the password into the `.env` as `SMTP_PASSWORD`: the `mail-sender` service sends the
+Routing module's mails with it ([#233](https://github.com/artkoenig/family-agenda-cloud/issues/233)), and Logto's
+SMTP connector gets it from the setup ([Setting up Logto](#setting-up-logto), step 3). Another mail server is
+`SMTP_HOST`, `SMTP_PORT` and `SMTP_USER` in the `.env` ([families.md](families.md#another-mail-server-scaleway-tem)).
 
 Support alias: in the IONOS mail settings, set up the alias (forwarding) `support@family-agenda.cloud` to the
 Operator's mailbox. Central sign-in's pages name it to a person who cannot get into their Family

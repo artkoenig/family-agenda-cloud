@@ -1,7 +1,8 @@
 # Families runbook
 
 The Operator's day-to-day work with the Families of the hosted service: creating, suspending, resuming and deleting
-them, a new core version, an Admin's lost password, and whether a Family's due work runs. Setting the Cube up is in the
+them, a new core version, an Admin's lost password, whether a Family's due work runs, and the mails the Routing
+module sends. Setting the Cube up is in the
 [setup runbook](setup.md).
 
 Every command is run on the Cube, in `/opt/family-agenda`, in the Router's container:
@@ -197,3 +198,79 @@ Times are UTC. Due work runs once a minute for every active Family, so:
 - `failed:` on one Family alone points at that Family (see [A new core version](#a-new-core-version)); on all of
   them, at the cores or Postgres: `docker compose ps`.
 - A suspended or deleted Family keeps the line of its last run.
+
+## The mail outbox
+
+The mails the Routing module sends wait in the outbox, the table `mail_outbox` of the Directory
+([#233](https://github.com/artkoenig/family-agenda-cloud/issues/233)). Whatever writes a mail puts it in with the
+change it tells of, in one transaction; the `mail-sender` service sends it through the mailbox of
+[step 5 of the setup](setup.md#5-mailbox), and is the one service that holds the mailbox's password (`SMTP_PASSWORD`
+of the `.env`). It sends at most 300 mails in any hour, below IONOS's 500 together with Logto's codes. A mail the
+mail server does not take is tried again after 1, 2, 4 … minutes, an hour at most, until it goes; on its fifth failure
+in a row the sender logs `A mail keeps failing to be sent; it is still tried` as an error, once per mail. A mail sent
+30 days ago is deleted by the daily sweep.
+
+The sender's log names a mail by its id, type (such as `confirmation`) and Family id, and the failure by its SMTP
+code (`reason`, such as `EENVELOPE 550`): never its address, subject or text.
+
+```bash
+docker compose logs --tail 50 mail-sender
+```
+
+### What is waiting
+
+```
+routing outbox
+```
+
+One line per mail not sent yet, the oldest first, the columns separated by tabs: its id, type and Family id (`-` for
+a mail about no Family), when it was put in, and either when it is due or how many attempts failed, when the next is
+and the last error, its addresses replaced by `address`.
+
+```
+12	confirmation	190ca3a1-78b7-45d7-b735-e8cd59b04509	queued 2026-11-16T11:56:09.121Z	not tried yet, due 2026-11-16T11:56:09.121Z
+13	confirmation	17968e51-4cd4-4cb8-b073-725596d492a2	queued 2026-11-16T11:57:02.004Z	5 failed attempts, next try 2026-11-16T12:13:40.551Z	last error: Can't send mail - all recipients were rejected: 550 <address>: Mailbox unavailable
+```
+
+`routing outbox` prints nothing when every mail is sent. Many lines not tried yet, with due times minutes old, mean
+the sender is not running (`docker compose ps mail-sender`) or the hour's 300 are used up; failed attempts on every
+mail point at the mailbox (password, IONOS's limit, `ESOCKET` or `ETIMEDOUT`: the mail server not reached), on one
+mail alone at its recipient.
+
+Only when the person a mail was for asks about it, look at its address, by its id:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d directory -Atc "select mail_to, sent_at from mail_outbox where id = 13"
+```
+
+Do not copy addresses, subjects or texts off the Cube; the [rule on logs](#two-rules-until-launch) holds for them too.
+
+### Bounces
+
+A mail the mail server took but could not deliver comes back to `no-reply@family-agenda.cloud` as a bounce (a
+delivery status notification). **Once a week**, read the bounces in that mailbox in the Operator's mail client and
+delete them; the privacy policy promises they are deleted once read, within 30 days at most. A bounce for an address
+that does not exist needs nothing more: the Family's Admin entered it. Bounces for many recipients at once, or IONOS's
+notice of a limit, mean the mailbox's reputation or limit is the matter: see the next section.
+
+### Another mail server: Scaleway TEM
+
+The mailbox is IONOS Mail, which has no bounce webhooks and a limit of its own
+([docs/research/eu-transactional-mail.md](../research/eu-transactional-mail.md)). To send through Scaleway's
+Transactional Email instead:
+
+1. Before the switch, the privacy policy (`site/legal/datenschutz.de.md` and `.en.md`, "E-Mail-Versand" and the
+   processors) must name Scaleway SAS as the mail's processor, with its address and data location, and a DPA with
+   Scaleway must be in place. Deploy it first.
+2. Set up the domain `family-agenda.cloud` in Scaleway TEM (its SPF, DKIM and MX records at IONOS SE, as Scaleway
+   lists them), and create an IAM API key that may send mail. Scaleway sends 10,000 mails a month unless
+   its support raises the limit.
+3. In the `.env`: `SMTP_HOST=smtp.tem.scaleway.com`, `SMTP_PORT=465`, `SMTP_USER=<the project id>`,
+   `SMTP_PASSWORD=<the API key's secret>`. The From stays `no-reply@family-agenda.cloud`.
+4. Logto's codes go through the same server: run the core's setup again ([Setting up Logto](setup.md#setting-up-logto),
+   step 3) with the same `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` and `SMTP_PASSWORD`, then `scripts/deploy.sh`.
+5. Check: `docker compose logs --tail 20 mail-sender` shows `The mail sender is running`; the next mail put in is
+   `A mail was sent`, and `routing outbox` empties.
+
+To go back, the same steps with IONOS's values, which are the defaults: remove the `SMTP_HOST`, `SMTP_PORT` and
+`SMTP_USER` lines.

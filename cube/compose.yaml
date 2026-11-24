@@ -10,8 +10,8 @@
 #   pool       the Routing module (Router, Scheduler, receiver) and the cores: the cores' Context
 #              interface, and the cores' family.created to the receiver.
 #   directory  Postgres, the Routing module and the cores, which open their Family's database.
-#   outbound   the cores, the Egress Proxies, the blob mount and Logto, which reach the internet; the
-#              cores reach Logto's Management API here.
+#   outbound   the cores, the Egress Proxies, the blob mount, Logto and the mail sender, which reach
+#              the internet; the cores reach Logto's Management API here.
 #   plugin-<id>         the cores and that plugin.
 #   plugin-<id>-egress  that plugin and its Egress Proxy alone.
 # The plugins and the Egress Proxies share a network with the cores, so they can reach the cores'
@@ -315,6 +315,25 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 20s
+
+  # Sends the mails of the Routing module's outbox in the Directory through the mail server (#233):
+  # the one service given the mailbox's password, and the Directory's alone of the Routing module's
+  # keys. SMTP with implicit TLS; the IONOS mailbox unless the .env names another (docs/runbook/setup.md, step 5).
+  mail-sender:
+    <<: *routing
+    command: ["routing", "send-mail"]
+    environment:
+      DIRECTORY_DATABASE_URL: postgres://routing@postgres:5432/directory
+      DIRECTORY_DATABASE_PASSWORD: ${DIRECTORY_DATABASE_PASSWORD:?}
+      SMTP_HOST: ${SMTP_HOST:-smtp.ionos.de}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-no-reply@family-agenda.cloud}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?}
+    volumes: []
+    depends_on:
+      directory-database:
+        condition: service_completed_successfully
+    networks: [directory, outbound]
 
   # The pool: as many cores as CORE_REPLICAS of the .env says, two unless it does. Scaling it is
   # that number changed and `docker compose up -d --wait core` (docs/runbook/setup.md).
