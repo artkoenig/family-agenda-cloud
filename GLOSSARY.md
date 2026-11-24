@@ -90,6 +90,10 @@ _Avoid_: Shared secret, Ticket key
 The bearer token, shared by the Routing module and the cores, that a call to a core's trigger port must carry.
 _Avoid_: API key, operations secret
 
+**Export**:
+The file an Admin downloads with all of the Family's Agendas, Items and stored files, without the Sources' credentials, to take the data elsewhere.
+_Avoid_: Backup (the Operator's copies), dump, download
+
 ### Billing
 
 **Tariff**:
@@ -105,7 +109,7 @@ The free 14 days a Family has from its registration; it ends without cost and ne
 _Avoid_: Test phase, free plan
 
 **Locked**:
-A Family whose Trial ended without an order, or whose Subscription ended, was withdrawn or went unpaid: kept but not served, its Admins can only order, download a backup or delete it, and it is deleted 30 days after it was locked. Unlike a suspended Family, which the Operator stops by hand, an order unlocks it.
+A Family whose Trial ended without an order, or whose Subscription ended, was withdrawn or went unpaid: kept but not served, its Admins can only order, download an Export or delete it, and it is deleted 30 days after it was locked. Unlike a suspended Family, which the Operator stops by hand, an order unlocks it.
 _Avoid_: Expired, suspended (the Operator's), inactive
 
 **Cancellation**:
