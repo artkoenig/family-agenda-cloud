@@ -17,20 +17,27 @@ export type GoogleClient = { clientId: string; clientSecret: string };
 export const TERMS_OF_USE_URL = "https://family-agenda.cloud/agb";
 export const PRIVACY_POLICY_URL = "https://family-agenda.cloud/datenschutz";
 
-/**
- * The Impressum on Logto's sign-in pages (§ 5 DDG, #194, #232). Logto 1.46 has no setting for an
- * imprint link: `termsOfUseUrl` and `privacyPolicyUrl` are its only legal links, shown where the
- * terms are agreed to, and `supportEmail` and `supportWebsiteUrl` show on its error pages only. What
- * it has is `customContent`, HTML per page path, which its sign-in app renders above the card, but
- * only on desktop browsers (packages/experience/src/Layout/AppLayout of v1.46.0): not on phones, and
- * not per language, so it links both texts. No custom footer or link exists beyond that, short of
- * replacing the sign-in UI (`customUiAssets`).
- */
-export const IMPRINT_CONTENT =
-  '<nav aria-label="Impressum / Imprint"><a href="https://family-agenda.cloud/impressum" lang="de">Impressum</a> · <a href="https://family-agenda.cloud/en/imprint" lang="en">Imprint</a></nav>';
+const HOME_LINK_STYLE = [
+  ".fa-home{display:flex;width:min(540px,calc(100vw - 40px));margin-bottom:8px;font:var(--font-body-2)}",
+  ".fa-home a{padding:12px 4px;color:var(--color-type-primary);text-decoration:underline;text-underline-offset:3px}",
+  "html:lang(de) .fa-home:lang(en),html:not(:lang(de)) .fa-home:lang(de){display:none}",
+].join("");
 
-/** The paths of Logto's sign-in app that show `IMPRINT_CONTENT`: signing in, registering, resetting the password. */
-export const IMPRINT_PATHS = ["/sign-in", "/sign-in/password", "/sign-in/verification-code", "/register", "/register/password", "/register/verification-code", "/forgot-password", "/forgot-password/reset", "/forgot-password/verification-code"];
+/**
+ * The way back to the landing page on Logto's sign-in pages. Logto 1.46 has no setting for it; what it
+ * has is `customContent`, HTML per page path, which its sign-in app renders above the card, but only
+ * on desktop browsers (packages/experience/src/Layout/AppLayout of v1.46.0), not on phones. It is not
+ * per language, so it holds the link in both, and shows the language the app sets on `<html lang>`
+ * (English unless that is German). The color is the app's own variable, which follows its light and
+ * dark theme. The Impressum is not linked here: the landing page and the legal pages link it.
+ */
+export const HOME_LINK =
+  `<style>${HOME_LINK_STYLE}</style>` +
+  '<nav class="fa-home" lang="de" aria-label="Family Agenda"><a href="https://family-agenda.cloud/">← Zur Startseite</a></nav>' +
+  '<nav class="fa-home" lang="en" aria-label="Family Agenda"><a href="https://family-agenda.cloud/en/">← Back to home page</a></nav>';
+
+/** The paths of Logto's sign-in app that show `HOME_LINK`: signing in, registering, resetting the password. */
+export const HOME_LINK_PATHS = ["/sign-in", "/sign-in/password", "/sign-in/verification-code", "/register", "/register/password", "/register/verification-code", "/forgot-password", "/forgot-password/reset", "/forgot-password/verification-code"];
 
 /** Logto's connector factory for Google; its connectors have the target `google`. */
 export const GOOGLE_CONNECTOR_FACTORY = "google-universal";
@@ -52,7 +59,7 @@ export function signInExperience(withGoogle: boolean, registration: Registration
     agreeToTermsPolicy: "ManualRegistrationOnly",
     termsOfUseUrl: TERMS_OF_USE_URL,
     privacyPolicyUrl: PRIVACY_POLICY_URL,
-    customContent: Object.fromEntries(IMPRINT_PATHS.map((path) => [path, IMPRINT_CONTENT])),
+    customContent: Object.fromEntries(HOME_LINK_PATHS.map((path) => [path, HOME_LINK])),
     languageInfo: { autoDetect: true, fallbackLanguage: "de" },
     socialSignIn: { automaticAccountLinking: true },
     ...(withGoogle ? { socialSignInConnectorTargets: ["google"] } : {}),
