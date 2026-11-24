@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Impressum · Family Agenda Cloud</title>
+  <meta name="theme-color" content="#faf6f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://family-agenda.cloud/impressum">
+  <link rel="alternate" hreflang="de" href="https://family-agenda.cloud/impressum">
+  <link rel="alternate" hreflang="en" href="https://family-agenda.cloud/en/imprint">
+  <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/design.css">
+  <link rel="stylesheet" href="/landing.css">
+</head>
+<body class="fam-page lp">
+  <header class="lp-nav">
+    <div class="lp-nav__inner">
+      <a class="lp-brand" href="/" aria-label="Family Agenda"><img src="/app-icon.svg" alt="" width="28" height="28"><span class="lp-brand__name">Family Agenda</span></a>
+      <nav class="lp-nav__links" aria-label="Seite">
+        <a class="lp-nav__link lp-nav__lang" href="/en/imprint" lang="en" hreflang="en" data-lang="en" aria-label="English" title="English">EN</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="lp-legal">
+<h1>Impressum</h1>
+<p>{{NAME}}<br>Family Agenda<br>{{POSTFLEX_ADDRESS}}</p>
+<p><strong>Kontakt</strong><br>E-Mail: <a href="mailto:support@family-agenda.cloud">support@family-agenda.cloud</a><br>Antwort in der Regel innerhalb von zwei Werktagen.</p>
+<p><strong>Umsatzsteuer-Identifikationsnummer</strong> gemäß § 27a Umsatzsteuergesetz: {{UST_IDNR}}</p>
+<p><strong>Verbraucherstreitbeilegung</strong><br>Wir sind weder bereit noch verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.</p>
+  </main>
+
+  <footer class="lp-footer">
+    <nav class="lp-footer__contracts" aria-label="Verträge">
+      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/cancel">Verträge hier kündigen</a>
+      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/withdraw">Vertrag widerrufen</a>
+    </nav>
+    <span>Mit Liebe (und zu wenig Schlaf) von Eltern gemacht.</span>
+    <nav class="lp-footer__links" aria-label="Rechtliches">
+      <a href="/impressum">Impressum</a>
+      <a href="/datenschutz">Datenschutz</a>
+      <a href="/agb">AGB</a>
+      <a href="/widerrufsbelehrung">Widerrufsbelehrung</a>
+      <a href="/en/imprint" lang="en" hreflang="en" data-lang="en">English</a>
+    </nav>
+  </footer>
+
+  <script>
+    // Remembers a language picked by hand, so the landing page's first-visit choice by browser language does not override it.
+    for (const link of document.querySelectorAll("[data-lang]")) {
+      link.addEventListener("click", () => { try { localStorage.setItem("lp-lang", link.dataset.lang); } catch {} });
+    }
+  </script>
+</body>
+</html>

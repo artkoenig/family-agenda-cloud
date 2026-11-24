@@ -8,6 +8,7 @@
   },
   "scripts": {
     "routing": "node --import tsx src/main.ts",
+    "legal-pages": "node --import tsx src/build-legal-pages.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "depcruise": "depcruise src test",
@@ -17,6 +18,7 @@
     "crap": "vitest run --coverage --coverage.provider=v8 --coverage.reporter=json && crap-typescript --exclude .stryker-tmp/** --format text --threshold 8"
   },
   "dependencies": {
+    "marked": "18.2.0",
     "pg": "8.23.1",
     "pg-boss": "12.38.2",
     "tsx": "^4.23.15"

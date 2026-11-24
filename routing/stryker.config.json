@@ -27,7 +27,9 @@
     "src/landing.ts",
     "src/id-token.ts",
     "src/sign-in-cookie.ts",
-    "src/post-register.ts"
+    "src/post-register.ts",
+    "src/legal-texts.ts",
+    "src/legal-pages.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,
