@@ -27,7 +27,7 @@ describe("writeSite and siteDirectory", () => {
     const site = join(temporary(), "site");
     for (const path of ["legal", "index.html", "en/index.html"]) cpSync(join(siteDirectory(), path), join(site, path), { recursive: true });
 
-    expect(writeSite(site)).toEqual(["impressum.html", "en/imprint.html"]);
+    expect(writeSite(site)).toEqual(["impressum.html", "en/imprint.html", "datenschutz.html", "en/privacy.html"]);
     expect(writeSite(site)).toEqual([]);
 
     writeFileSync(join(site, "en/imprint.html"), "stale");
