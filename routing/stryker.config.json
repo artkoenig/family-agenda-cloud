@@ -35,7 +35,11 @@
     "src/contract-pages.ts",
     "src/contract-mails.ts",
     "src/checkout-texts.ts",
-    "src/confirmation-mail.ts"
+    "src/confirmation-mail.ts",
+    "src/health-rules.ts",
+    "src/health-mask.ts",
+    "src/health-check.ts",
+    "src/health-mail.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,
