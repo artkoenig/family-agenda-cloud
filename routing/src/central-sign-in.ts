@@ -1,8 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { CentralSignIn } from "./config";
+import { clearCookie, cookiesOf, setCookie } from "./cookies";
 import { signInClaims, type SignInClaims } from "./id-token";
 import { landingOf, type FindByOrganization, type Landing } from "./landing";
 import type { PostRegisterAgain } from "./post-register";
+import { wayBackOf } from "./routing-pages";
+import { clearSessionCookie, sessionCookie } from "./routing-session";
 import { signInCallbackUrl, signOutRedirectUrl } from "./sign-in-client";
 import { openCookie, sealCookie } from "./sign-in-cookie";
 import { INVITATION_PATH, languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
@@ -28,6 +31,10 @@ import { INVITATION_PATH, languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, t
  * made has the core run PostRegister for them again, and they wait for the Family it makes. The
  * silent sign-ins of the waiting page send none: the next sign-in of the person tries again.
  *
+ * The callback also sets the session of the Routing module's own pages (`routing-session.ts`),
+ * which Abmelden clears. Such a page that finds none sends the browser to `/sign-in?back=<its
+ * path>`: a person whose Family is there then comes back to the page instead of the Family.
+ *
  * A claim that is stale, because the person left the Organization between the ID token and the
  * callback, still sends them to the Family, whose core refuses them: accepted, no special case.
  */
@@ -43,7 +50,8 @@ const TRANSACTION_LIFETIME_MS = 10 * 60_000;
 const WAITING_COOKIE = "__Host-sign-in-waiting";
 const WAITING_LIFETIME_MS = 60 * 60_000;
 
-type Transaction = { state: string; verifier: string; nonce: string; silent: boolean };
+/** `back`: the Routing module's page to come back to, instead of the Family. */
+type Transaction = { state: string; verifier: string; nonce: string; silent: boolean; back?: string };
 /** `since`: when the person began to wait, in ms; a cookie sealed before #173 has none. */
 type Waiting = { organizationId: string | null; since?: number };
 
@@ -88,7 +96,7 @@ type Route = (context: Context, query: URLSearchParams) => SignInAnswer | Promis
 const REGISTER_PATH = "/sign-in/register";
 
 const ROUTES: Record<string, Route> = {
-  "/sign-in": (context) => toLogto(context, false),
+  "/sign-in": (context, query) => toLogto(context, false, {}, wayBackOf(query.get("back"))),
   "/sign-in/again": (context) => toLogto(context, true),
   [REGISTER_PATH]: (context) => toLogto(context, false, { first_screen: "register" }),
   [INVITATION_PATH]: (context, query) => toLogto(context, false, invitationOf(query)),
@@ -117,9 +125,18 @@ const NO_STORE = { "cache-control": "no-store" };
 
 const random = (): string => randomBytes(32).toString("base64url");
 
-/** Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`, with the `extra` parameters. */
-function toLogto({ setup, now }: Context, silent: boolean, extra: Record<string, string> = {}): SignInAnswer {
-  const transaction: Transaction = { state: random(), verifier: random(), nonce: random(), silent };
+/**
+ * Any sign-in Logto still knows is recent enough (a year): asking for one makes Logto say when it
+ * was, as the ID token's `auth_time`.
+ */
+const MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+
+/**
+ * Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`, with the `extra`
+ * parameters; the person comes back to the page `back`, if any.
+ */
+function toLogto({ setup, now }: Context, silent: boolean, extra: Record<string, string> = {}, back?: string): SignInAnswer {
+  const transaction: Transaction = { state: random(), verifier: random(), nonce: random(), silent, ...(back === undefined ? {} : { back }) };
   const authorization = new URL(`${setup.client.issuerUrl}/auth`);
   authorization.search = new URLSearchParams({
     client_id: setup.client.clientId,
@@ -130,6 +147,7 @@ function toLogto({ setup, now }: Context, silent: boolean, extra: Record<string,
     nonce: transaction.nonce,
     code_challenge: createHash("sha256").update(transaction.verifier).digest("base64url"),
     code_challenge_method: "S256",
+    max_age: String(MAX_AGE_SECONDS),
     ...(silent ? { prompt: "none" } : {}),
     ...extra,
   }).toString();
@@ -146,7 +164,15 @@ async function callback(context: Context, query: URLSearchParams): Promise<SignI
   if (!claims) return page(context, "failed", 502, [cleared]);
   await postRegisterAgainIfNoOrganization(context, ended.transaction, claims);
   const since = waitingSince(context, ended.transaction);
-  return land(context, claims.organizations, [cleared], { since, cookie: waitingCookie(context, claims.organizations, since) });
+  const cookies = [cleared, sessionCookie(context.setup.operatorKey, claims, context.now)];
+  const answer = await land(context, claims.organizations, cookies, { since, cookie: waitingCookie(context, claims.organizations, since) });
+  return cameBack(answer, ended.transaction.back);
+}
+
+/** The answer, but back at the page the person came from if they would go into their Family. */
+function cameBack(answer: SignInAnswer, back: string | undefined): SignInAnswer {
+  if (back === undefined || answer.landing?.page !== "family") return answer;
+  return { ...answer, headers: { ...answer.headers, location: back } };
 }
 
 type EndedSignIn = { transaction: Transaction; code: string };
@@ -180,12 +206,12 @@ async function postRegisterAgainIfNoOrganization({ setup }: Context, transaction
 
 /**
  * Abmelden: sends the browser to Logto's end session endpoint with the Router's client, back to the
- * landing page, and clears central sign-in's cookies. No id_token_hint: the Router keeps no token.
+ * landing page, and clears central sign-in's cookies and the session. No id_token_hint: the Router keeps no token.
  */
 function signOut({ setup }: Context): SignInAnswer {
   const endSession = new URL(`${setup.client.issuerUrl}/session/end`);
   endSession.search = new URLSearchParams({ client_id: setup.client.clientId, post_logout_redirect_uri: signOutRedirectUrl(setup.publicUrl) }).toString();
-  return redirect(endSession.toString(), [clearCookie(TRANSACTION_COOKIE), clearCookie(WAITING_COOKIE)]);
+  return redirect(endSession.toString(), [clearCookie(TRANSACTION_COOKIE), clearCookie(WAITING_COOKIE), clearSessionCookie()]);
 }
 
 /** What the waiting page asks: lands the person by the claim of the callback, or signs in again if it claimed none. */
@@ -251,22 +277,6 @@ function page({ language }: Context, kind: SignInPage, status: number, cookies: 
 
 function redirect(location: string, cookies: string[]): SignInAnswer {
   return { status: 302, headers: { ...NO_STORE, location, "set-cookie": cookies }, body: "" };
-}
-
-const setCookie = (name: string, value: string, lifetimeMs: number): string =>
-  `${name}=${value}; Path=/; Max-Age=${String(lifetimeMs / 1000)}; Secure; HttpOnly; SameSite=Lax`;
-
-const clearCookie = (name: string): string => `${name}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`;
-
-/** The browser's cookies by name; the first of a name, as browsers send the most specific first. */
-function cookiesOf(header: string | undefined): Map<string, string> {
-  const cookies = new Map<string, string>();
-  for (const pair of (header ?? "").split(";")) {
-    const separator = pair.indexOf("=");
-    const name = pair.slice(0, separator).trim();
-    if (separator > 0 && !cookies.has(name)) cookies.set(name, pair.slice(separator + 1).trim());
-  }
-  return cookies;
 }
 
 /**

@@ -12,23 +12,23 @@ import { isOrganizationId } from "./family-id";
 /** What the token must say: who issued it, for which client, and the nonce of the sign-in it ends. */
 export type ExpectedToken = { issuer: string; clientId: string; nonce: string };
 
-type Payload = { iss?: unknown; aud?: unknown; sub?: unknown; email?: unknown; email_verified?: unknown; nonce?: unknown; exp?: unknown; organizations?: unknown };
+type Payload = { iss?: unknown; aud?: unknown; sub?: unknown; email?: unknown; email_verified?: unknown; nonce?: unknown; auth_time?: unknown; exp?: unknown; organizations?: unknown };
 
 /**
  * What the ID token says of the person: their Logto user id (`sub`), their email if Logto
- * verified it (null otherwise), and the Organization ids they are a member of, none if the token
- * has no such claim.
+ * verified it (null otherwise), the Organization ids they are a member of, none if the token
+ * has no such claim, and when they signed in at Logto (`auth_time`, in seconds; null if it says none).
  */
-export type SignInClaims = { userId: string; email: string | null; organizations: string[] };
+export type SignInClaims = { userId: string; email: string | null; organizations: string[]; authTime: number | null };
 
 /** The claims of the ID token; undefined if it is not a token for this sign-in. */
 export function signInClaims(idToken: string, expected: ExpectedToken, now: Date = new Date()): SignInClaims | undefined {
   const payload = payloadOf(idToken);
   if (!payload || !isForThisSignIn(payload, expected, now)) return undefined;
-  const { sub, organizations = [] } = payload;
+  const { sub, organizations = [], auth_time: authTime } = payload;
   if (typeof sub !== "string" || sub === "") return undefined;
   if (!Array.isArray(organizations) || !organizations.every((id) => typeof id === "string" && isOrganizationId(id))) return undefined;
-  return { userId: sub, email: verifiedEmail(payload), organizations: organizations as string[] };
+  return { userId: sub, email: verifiedEmail(payload), organizations: organizations as string[], authTime: typeof authTime === "number" ? authTime : null };
 }
 
 const verifiedEmail = ({ email, email_verified: verified }: Payload): string | null => (typeof email === "string" && email !== "" && verified === true ? email : null);

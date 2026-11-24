@@ -11,6 +11,7 @@ import { createLog } from "../../src/log";
 import { startReceiver, type Receiver } from "../../src/receiver";
 import { startRouter, type Router } from "../../src/router";
 import { familySchedules, openQueues, SCHEDULER_RUNNING } from "../../src/scheduler";
+import type { StripePort } from "../../src/stripe";
 import { startStandInLogto, type StandInLogto } from "./stand-in-logto";
 import { poolOf, resolveStandIns, startStandInCore, type StandInCore } from "./stand-in-core";
 
@@ -30,9 +31,9 @@ export type TestRouting = {
   /**
    * Starts the Router as `routing serve` would, on a free port of localhost, with these changes to
    * the environment. It logs into the same log as the command line and is stopped by close().
-   * Central sign-in goes by `now`, the system's time unless given.
+   * Central sign-in and the order go by `now`, the system's time unless given; `stripe` answers Stripe.
    */
-  startRouter(env?: Record<string, string | undefined>, now?: () => Date): Promise<Router>;
+  startRouter(env?: Record<string, string | undefined>, now?: () => Date, stripe?: StripePort): Promise<Router>;
   /**
    * Starts the receiver as `routing receive` would, on a free port of localhost, with these
    * changes to the environment; it logs into the same log and is stopped by close().
@@ -198,8 +199,8 @@ export async function setUpRouting(): Promise<TestRouting> {
       });
       return { exitCode, stdout, stderr };
     },
-    async startRouter(overrides = {}, now) {
-      const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()), resolveStandIns, now);
+    async startRouter(overrides = {}, now, stripe) {
+      const router = await startRouter(readConfig({ ...withOverrides(overrides), PORT: "0", LISTEN_HOST: "127.0.0.1" }), createLog(logSink()), resolveStandIns, now, stripe && (() => stripe));
       routers.push(router);
       return router;
     },

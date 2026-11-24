@@ -55,6 +55,26 @@ export async function userLocale(idp: IdpManagement, userId: string): Promise<st
   return typeof profile?.locale === "string" && profile.locale !== "" ? profile.locale : null;
 }
 
+/** A person as Logto keeps them: what they entered or their sign-in gave it, null where it has none. */
+export type LogtoPerson = { name: string | null; email: string | null; locale: string | null };
+
+/** The person, read through GET /api/users/:id; undefined when Logto has no such user. */
+export async function person(idp: IdpManagement, userId: string): Promise<LogtoPerson | undefined> {
+  const response = await managementFetch(idp, `/api/users/${encodeURIComponent(userId)}`, { method: "GET" });
+  if (response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`Logto's Management API answered reading the user with ${response.status}`);
+  const { name, primaryEmail, profile } = (await response.json()) as { name?: unknown; primaryEmail?: unknown; profile?: { locale?: unknown } | null };
+  return { name: textOf(name), email: textOf(primaryEmail), locale: textOf(profile?.locale) };
+}
+
+/** The text, or null for none but white space. */
+const textOf = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
+
+/** Sets the person's name at Logto. */
+export async function setName(idp: IdpManagement, userId: string, name: string): Promise<void> {
+  await managementCall(idp, "PATCH", `/api/users/${encodeURIComponent(userId)}`, { name }, "setting the user's name");
+}
+
 /** The language of the person's mails: German for a German locale at Logto or none, else English (`mailLanguageOf`). */
 export async function recipientLanguage(idp: IdpManagement, userId: string): Promise<Language> {
   return mailLanguageOf(await userLocale(idp, userId));

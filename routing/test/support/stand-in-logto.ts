@@ -49,6 +49,9 @@ export type StandInLogto = {
    * Makes `userId` a user of Logto with this `profile.locale`, or with none for null, as
    * GET /api/users/:id answers it. Logto 1.46.0 sets none at sign-up.
    */
+  /** Sets the person's name; none unless set. */
+  setName(userId: string, name: string): void;
+  nameOf(userId: string): string | undefined;
   setLocale(userId: string, locale: string | null): void;
   /** Answers deleting this user or Organization with 503, until set to null. */
   failDeleting(id: string | null): void;
@@ -107,6 +110,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   const deletions: string[] = [];
   const deletedWithMembers: string[] = [];
   const users = new Set<string>();
+  const names = new Map<string, string>();
   const locales = new Map<string, string | null>();
   const members = new Map<string, string[]>();
   const roles = new Map<string, string | null>();
@@ -150,11 +154,12 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     const organizationUsers = incoming.method === "GET" ? ORGANIZATION_USERS.exec(url) : null;
     const user = incoming.method === "DELETE" ? USER.exec(url) : null;
     const userRead = incoming.method === "GET" ? USER.exec(url) : null;
+    const userPatch = incoming.method === "PATCH" ? USER.exec(url) : null;
     const templates = incoming.method === "PUT" && url === "/api/email-templates";
     const setting = SETTING.test(url);
     const organizationRead = incoming.method === "GET" ? organization : null;
     const invitationCall = ["GET /api/users?", "GET /api/organization-invitations?", "POST /api/one-time-tokens"].some((call) => `${incoming.method} ${url}`.startsWith(call)) || USER_ORGANIZATIONS.test(url);
-    const known = invitationCall || templates || setting || application || organizationUsers || user || userRead || organizationRead || (incoming.method === "DELETE" && organization);
+    const known = invitationCall || templates || setting || application || organizationUsers || user || userRead || userPatch || organizationRead || (incoming.method === "DELETE" && organization);
     if (!known) return void outgoing.writeHead(404).end();
     if (incoming.headers.authorization !== `Bearer ${TOKEN}`) return void outgoing.writeHead(401).end();
     if (failing !== null) return void outgoing.writeHead(failing).end("refused");
@@ -172,6 +177,13 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     }
     if (user) {
       deleteUser(decodeURIComponent(user[1]!), outgoing);
+      return;
+    }
+    if (userPatch) {
+      void readJson(incoming).then((body) => {
+        names.set(decodeURIComponent(userPatch[1]!), (body as { name: string }).name);
+        outgoing.writeHead(200, { "content-type": "application/json" }).end("{}");
+      });
       return;
     }
     if (userRead) {
@@ -249,7 +261,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   function readUser(userId: string, outgoing: ServerResponse) {
     if (!users.has(userId)) return void outgoing.writeHead(404).end();
     const locale = locales.get(userId) ?? null;
-    const user = { id: userId, primaryEmail: `${userId}@example.com`, profile: locale === null ? {} : { locale } };
+    const user = { id: userId, name: names.get(userId) ?? null, primaryEmail: `${userId}@example.com`, profile: locale === null ? {} : { locale } };
     outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(user));
   }
   function answerSetting(method: string, url: string, body: unknown, outgoing: ServerResponse) {
@@ -333,7 +345,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     }
     const now = Math.floor(Date.now() / 1000);
     const email = grant.email ? { email: emailOf(grant.userId), email_verified: true } : {};
-    const claims = { iss: issuer, aud: clientId, sub: grant.userId, ...email, nonce: grant.nonce, iat: now, exp: now + 3600, organizations: grant.organizations };
+    const claims = { iss: issuer, aud: clientId, sub: grant.userId, ...email, nonce: grant.nonce, iat: now, exp: now + 3600, auth_time: now, organizations: grant.organizations };
     const idToken = [{ alg: "ES384", typ: "JWT" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".c3RhbmQtaW4";
     outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: "opaque", token_type: "Bearer", expires_in: 3600, id_token: idToken, scope: "openid" }));
   }
@@ -379,6 +391,11 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     },
     oneTimeTokens,
     hasUser: (userId) => users.has(userId),
+    setName(userId, name) {
+      users.add(userId);
+      names.set(userId, name);
+    },
+    nameOf: (userId) => names.get(userId),
     setLocale(userId, locale) {
       users.add(userId);
       locales.set(userId, locale);

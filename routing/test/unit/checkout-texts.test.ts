@@ -75,20 +75,18 @@ describe("checkoutTexts", () => {
 describe("firstPayment", () => {
   const now = new Date("2026-03-10T08:00:00Z");
 
-  it("is at the Trial's end, the Session's trial_end, when that is 48 hours away or more", () => {
-    const trialEndsAt = new Date("2026-03-12T08:00:00Z");
+  it("is at the Trial's end, the Session's billing_cycle_anchor, when that is a minute away or more", () => {
+    const trialEndsAt = new Date("2026-03-10T08:01:00Z");
 
-    expect(firstPayment({ case: "trial", trialEndsAt }, now)).toEqual({ trialEnd: trialEndsAt, dueAt: trialEndsAt });
+    expect(firstPayment({ case: "trial", trialEndsAt }, now)).toEqual({ billingCycleAnchor: trialEndsAt, dueAt: trialEndsAt });
   });
 
-  it("is 48 hours from now when the Trial ends sooner, or has ended", () => {
-    const inTwoDays = new Date("2026-03-12T08:00:00Z");
-
-    expect(firstPayment({ case: "trial", trialEndsAt: new Date("2026-03-12T07:59:59.999Z") }, now)).toEqual({ trialEnd: inTwoDays, dueAt: inTwoDays });
-    expect(firstPayment({ case: "trial", trialEndsAt: new Date("2026-03-01T08:00:00Z") }, now)).toEqual({ trialEnd: inTwoDays, dueAt: inTwoDays });
+  it("is now, with no billing_cycle_anchor, when the Trial ends sooner, or has ended", () => {
+    expect(firstPayment({ case: "trial", trialEndsAt: new Date("2026-03-10T08:00:59.999Z") }, now)).toEqual({ billingCycleAnchor: null, dueAt: now });
+    expect(firstPayment({ case: "trial", trialEndsAt: new Date("2026-03-01T08:00:00Z") }, now)).toEqual({ billingCycleAnchor: null, dueAt: now });
   });
 
-  it("is now, with no trial_end, for a Locked Family", () => {
-    expect(firstPayment({ case: "locked" }, now)).toEqual({ trialEnd: null, dueAt: now });
+  it("is now, with no billing_cycle_anchor, for a Locked Family", () => {
+    expect(firstPayment({ case: "locked" }, now)).toEqual({ billingCycleAnchor: null, dueAt: now });
   });
 });

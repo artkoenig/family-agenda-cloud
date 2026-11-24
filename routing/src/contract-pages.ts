@@ -37,7 +37,7 @@ export const END_DATE_FIELD = "end";
 export const UNDERSTOOD_FIELD = "understood";
 
 /** A German button label and, on English pages, what it means. */
-type Button = { label: string; note: string | null };
+export type Button = { label: string; note: string | null };
 
 type Words = {
   cancel: {
@@ -253,11 +253,11 @@ function fields(rows: readonly (readonly [string, string])[]): string {
   return `<dl class="fields">\n${rows.map(([label, value]) => `<div><dt>${label}</dt> <dd>${value}</dd></div>`).join("\n")}\n</dl>`;
 }
 
-function paragraphs(lines: readonly string[]): string {
+export function paragraphs(lines: readonly string[]): string {
   return lines.map((line) => `<p>${escape(line)}</p>`).join("\n");
 }
 
-function submit({ label, note }: Button): string {
+export function submit({ label, note }: Button): string {
   const meaning = note === null ? "" : ` <span class="note">${escape(note)}</span>`;
   return `<p class="action"><button class="fam-button fam-button--primary" type="submit">${escape(label)}</button>${meaning}</p>`;
 }
@@ -266,8 +266,8 @@ function printButton(label: string): string {
   return `<p class="action no-print"><button class="fam-button fam-button--secondary" type="button" onclick="window.print()">${escape(label)}</button></p>`;
 }
 
-/** The whole HTML document: the title, the body and the legal footer. */
-function page(language: Language, title: string, body: string): string {
+/** The whole HTML document: the title, the body and the legal footer; `style` adds a page's own rules. */
+export function page(language: Language, title: string, body: string, style = ""): string {
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -277,7 +277,7 @@ function page(language: Language, title: string, body: string): string {
 <title>${escape(title)} · Family Agenda</title>
 <link rel="stylesheet" href="${DESIGN_PATH}/tokens.css">
 <link rel="stylesheet" href="${DESIGN_PATH}/design.css">
-<style>${STYLE}</style>
+<style>${STYLE}${style}</style>
 </head>
 <body class="fam-page">
 <main class="card">

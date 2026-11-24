@@ -2,7 +2,7 @@
  * The words on Stripe's hosted Checkout (#215): the § 312j summary above the submit button and
  * the consent to the AGB, in the Checkout's locale, which follows the Admin's Logto locale
  * (`mailLanguageOf`). The Checkout Session's creation spreads `checkoutTexts` into its create
- * params, and takes its `trial_end` from `firstPayment`. No I/O.
+ * params, and takes its `billing_cycle_anchor` from `firstPayment`. No I/O.
  */
 import { amountOf, dateOf, PRICE_CENTS, type Billing, type Language } from "./contract-wording";
 
@@ -19,20 +19,19 @@ export const CUSTOM_TEXT_LIMIT = 1200;
 /** The Family the Admin orders for: in its Trial, which ends at `trialEndsAt`, or Locked. */
 export type OrderingFamily = { case: "trial"; trialEndsAt: Date } | { case: "locked" };
 
-/** The Session's `trial_end`, null for none, and when the first payment falls due. */
-export type FirstPayment = { trialEnd: Date | null; dueAt: Date };
+/** The Session's `billing_cycle_anchor`, null for none, and when the first payment falls due. */
+export type FirstPayment = { billingCycleAnchor: Date | null; dueAt: Date };
 
-/** Stripe takes a `trial_end` no sooner than 48 hours after the Session's creation. */
-const MINIMUM_TRIAL_MS = 48 * 60 * 60 * 1000;
+/** Stripe takes a `billing_cycle_anchor` only in the future, as of when the Session reaches it. */
+const ANCHOR_LEEWAY_MS = 60_000;
 
 /**
- * When an order made `now` is first paid: at the end of the Trial, but no sooner than in 48 hours;
- * at once for a Locked Family, whose Session has no `trial_end`.
+ * When an order made `now` is first paid: at the end of the Trial; at once, with no
+ * `billing_cycle_anchor`, for a Locked Family or one whose Trial is as good as over.
  */
 export function firstPayment(family: OrderingFamily, now: Date): FirstPayment {
-  if (family.case === "locked") return { trialEnd: null, dueAt: now };
-  const trialEnd = new Date(Math.max(family.trialEndsAt.getTime(), now.getTime() + MINIMUM_TRIAL_MS));
-  return { trialEnd, dueAt: trialEnd };
+  if (family.case === "locked" || family.trialEndsAt.getTime() - now.getTime() < ANCHOR_LEEWAY_MS) return { billingCycleAnchor: null, dueAt: now };
+  return { billingCycleAnchor: family.trialEndsAt, dueAt: family.trialEndsAt };
 }
 
 /** The lines of the summary both billings share: first the AI sentence, then the offer, and last the right of withdrawal. */

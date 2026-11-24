@@ -17,7 +17,12 @@ describe("signInClaims", () => {
   });
 
   it("answers the person's user id and verified email", () => {
-    expect(signInClaims(idToken(valid), expected, now)).toEqual({ userId: "u-1", email: "u-1@family.test", organizations: ["org_a"] });
+    expect(signInClaims(idToken(valid), expected, now)).toEqual({ userId: "u-1", email: "u-1@family.test", organizations: ["org_a"], authTime: null });
+  });
+
+  it("says when the person signed in, if the token does", () => {
+    expect(signInClaims(idToken({ ...valid, auth_time: 1_790_000_000 }), expected, now)?.authTime).toBe(1_790_000_000);
+    expect(signInClaims(idToken({ ...valid, auth_time: "yesterday" }), expected, now)?.authTime).toBeNull();
   });
 
   it.each([
