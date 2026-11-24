@@ -1,0 +1,12 @@
+# The health check of the Cube (health-check.sh), which family-agenda-health.timer starts every
+# 5 minutes. scripts/deploy.sh installs both into /etc/systemd/system.
+[Unit]
+Description=Family Agenda health check: error alert mail and heartbeat
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/family-agenda/health/health-check.sh
+# A run that hangs (the SMTP server, a docker that does not answer) ends before the next one is due.
+TimeoutStartSec=4min
