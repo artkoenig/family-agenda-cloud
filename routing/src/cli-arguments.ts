@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import type { CreateFamilyInput } from "./create-family";
 import type { DeleteFamilyInput } from "./delete-family";
 import type { SetFounderInput } from "./founder";
+import type { InviteInput } from "./invite";
 import { isFamilyId, isOrganizationId } from "./family-id";
 
 /**
@@ -96,4 +97,16 @@ export function parseSetFounder(args: string[]): SetFounderInput {
     throw new UsageError("set-founder needs the Family id, a UUID, then the Admin's email or user id");
   }
   return { familyId, admin, force: values.force === true };
+}
+
+const EMAIL = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
+/** What `invite <email> [--language de|en]` is asked for: German unless it says otherwise. */
+export function parseInvite(args: string[]): InviteInput {
+  const { values, positionals } = parsed(() => parseArgs({ args, options: { language: { type: "string" } }, allowPositionals: true, strict: true }));
+  const [email = "", ...rest] = positionals;
+  if (!EMAIL.test(email) || rest.length > 0) throw new UsageError("invite needs the email of the person to invite");
+  const { language = "de" } = values;
+  if (language !== "de" && language !== "en") throw new UsageError("--language needs de or en");
+  return { email: email.toLowerCase(), language };
 }

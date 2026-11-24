@@ -1,6 +1,6 @@
 # Families runbook
 
-The Operator's day-to-day work with the Families of the hosted service: creating, suspending, resuming and deleting
+The Operator's day-to-day work with the Families of the hosted service: creating, inviting, suspending, resuming and deleting
 them, a new core version, an Admin's lost password, whether a Family's due work runs, and the mails the Routing
 module sends. Setting the Cube up is in the
 [setup runbook](setup.md).
@@ -69,6 +69,27 @@ If it fails part-way (`Creating the Family failed; run create again with --famil
 Family id, and `routing families` lists the Family as `being_prepared` unless it failed before the Family was
 entered into the Directory. Run the same command again with
 `--family-id <that id>`; it finishes what is missing and prints the address. Running it once more does no harm.
+
+## Invite a Family
+
+While registration is closed, a person registers a Family of their own through an invitation:
+
+```
+routing invite <email> [--language de|en]
+```
+
+It puts a mail, German unless `--language en`, into [the outbox](#the-mail-outbox), and prints its id there. The
+mail's link, `https://app.family-agenda.cloud/sign-in/invitation`, carries a one-time token of Logto's: it lets that
+address create an account with `signInMode: SignIn`. It works once and for 7 days. The Family is then created as for
+anyone who registers; `routing families` lists it. Logto's terms dialog links to the landing page: while that has
+Basic Auth, send its login along separately.
+
+- `The person already is in a Family`, `The person has an Admin's invitation`: refused, as the core would make them no
+  Family of their own. A pending invitation can be withdrawn by an Admin of that Family; one once accepted
+  stands in the way for good.
+- The person cancelled the terms dialog or the link expired: run it again. An account without a Family is no obstacle;
+  signing in makes the Family.
+- The link is in the outbox's mail, so as good as a password for that address for 7 days: do not copy it off the Cube.
 
 ## Suspend and resume a Family
 
@@ -226,7 +247,8 @@ sets a password or sends a reset; the Family is not touched.
 
 An invitee who cancels the terms dialog on opening the invitation link uses up its one-time token: Logto shows
 "Invalid link" and creates no account. Nothing is wrong with the Family; an Admin of it invites the person again on
-the Admins page, and the new link works once.
+the Admins page, and the new link works once. For an [Operator's invitation](#invite-a-family) the Operator runs
+`routing invite` again.
 
 ## When a Family's due work last ran
 

@@ -287,6 +287,41 @@ describe("Central sign-in", () => {
     expect(new URL(visit.path).searchParams.get("first_screen")).toBe("register");
   });
 
+  it("passes an invitation link's one-time token and email on to Logto, and nothing else of it", async () => {
+    routing.logto.signInAs(null);
+
+    const visit = await browserFor(router).visit("/sign-in/invitation?one_time_token=tok&login_hint=anna%2Bx%40example.com&prompt=none&state=theirs");
+
+    expect(visit).toMatchObject({ status: 200, body: "<h1>Logto sign-in</h1>" });
+    const { searchParams } = new URL(visit.path);
+    expect(searchParams.get("one_time_token")).toBe("tok");
+    expect(searchParams.get("login_hint")).toBe("anna+x@example.com");
+    expect(searchParams.get("state")).not.toBe("theirs");
+    expect(searchParams.has("prompt")).toBe(false);
+    // With it, Logto leaves the token unused.
+    expect(searchParams.has("first_screen")).toBe(false);
+  });
+
+  it("opens the plain sign-in for an invitation link that lost its token", async () => {
+    routing.logto.signInAs(null);
+
+    const { searchParams } = new URL((await browserFor(router).visit("/sign-in/invitation")).path);
+
+    expect(searchParams.has("one_time_token")).toBe(false);
+    expect(searchParams.has("login_hint")).toBe(false);
+  });
+
+  it("lands an invited person in their Family once it is active", async () => {
+    signInMemberOf("u-invited");
+    const browser = browserFor(router);
+
+    expect((await browser.visit("/sign-in/invitation?one_time_token=tok&login_hint=u-invited%40family.test")).body).toContain("Deine Familie wird vorbereitet");
+
+    routing.logto.addMember("org_invited", "u-invited");
+    const familyId = await createFamily("org_invited");
+    expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
+  });
+
   it("lets a person who just registered wait for their Family, and lands them once it is active", async () => {
     signInMemberOf("u-registered");
     const browser = browserFor(router);

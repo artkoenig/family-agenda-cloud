@@ -39,6 +39,10 @@ export type StandInLogto = {
   setFounder(organizationId: string, userId: string | null): void;
   /** The Organizations read so far, one entry per GET, in order. */
   organizationReads: string[];
+  /** Lists an invitation of an Admin's for `email` with this status. */
+  addInvitation(email: string, status: string): void;
+  /** The bodies of every POST /api/one-time-tokens, in order; each answers the token `one-time-<n>`. */
+  oneTimeTokens: unknown[];
   /** Whether `userId` is a user of Logto. */
   hasUser(userId: string): boolean;
   /**
@@ -85,6 +89,7 @@ const CLIENT_SECRET = "routing-m2m-secret";
 const TOKEN = "stand-in-management-token";
 const ORGANIZATION = /^\/api\/organizations\/([^/]+)$/;
 const ORGANIZATION_USERS = /^\/api\/organizations\/([^/]+)\/users(\?.*)?$/;
+const USER_ORGANIZATIONS = /^\/api\/users\/([^/]+)\/organizations$/;
 const USER = /^\/api\/users\/([^/]+)$/;
 /** The largest page Logto lists. */
 const MAX_PAGE_SIZE = 100;
@@ -107,6 +112,8 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   const roles = new Map<string, string | null>();
   const founders = new Map<string, string>();
   const organizationReads: string[] = [];
+  const invitations: { invitee: string; status: string }[] = [];
+  const oneTimeTokens: unknown[] = [];
   let failing: number | null = null;
   let failingDeletion: string | null = null;
   let failingTokens: number | "drop" | null = null;
@@ -146,10 +153,15 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     const templates = incoming.method === "PUT" && url === "/api/email-templates";
     const setting = SETTING.test(url);
     const organizationRead = incoming.method === "GET" ? organization : null;
-    const known = templates || setting || application || organizationUsers || user || userRead || organizationRead || (incoming.method === "DELETE" && organization);
+    const invitationCall = ["GET /api/users?", "GET /api/organization-invitations?", "POST /api/one-time-tokens"].some((call) => `${incoming.method} ${url}`.startsWith(call)) || USER_ORGANIZATIONS.test(url);
+    const known = invitationCall || templates || setting || application || organizationUsers || user || userRead || organizationRead || (incoming.method === "DELETE" && organization);
     if (!known) return void outgoing.writeHead(404).end();
     if (incoming.headers.authorization !== `Bearer ${TOKEN}`) return void outgoing.writeHead(401).end();
     if (failing !== null) return void outgoing.writeHead(failing).end("refused");
+    if (invitationCall) {
+      answerInvitationCall(new URL(url, "http://logto"), incoming, outgoing);
+      return;
+    }
     if (organizationRead) {
       readOrganization(decodeURIComponent(organizationRead[1]!), outgoing);
       return;
@@ -192,6 +204,21 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     members.delete(organizationId);
     outgoing.writeHead(204).end();
   });
+  /** What `routing invite` asks of Logto: an exact, lower-case email, as Logto keeps it. */
+  function answerInvitationCall({ pathname, searchParams }: URL, incoming: IncomingMessage, outgoing: ServerResponse) {
+    const json = (value: unknown) => outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(value));
+    const ofUser = USER_ORGANIZATIONS.exec(pathname);
+    if (ofUser) return void json(organizationsOf(decodeURIComponent(ofUser[1]!)).map((id) => ({ id })));
+    if (pathname === "/api/organization-invitations") return void json(invitations.filter(({ invitee }) => invitee === searchParams.get("invitee")));
+    if (pathname === "/api/users") {
+      const exact = searchParams.get("mode.primaryEmail") === "exact";
+      return void json([...users].filter((id) => !exact || `${id}@example.com` === searchParams.get("search.primaryEmail")).map((id) => ({ id })));
+    }
+    void readJson(incoming).then((body) => {
+      oneTimeTokens.push(body);
+      json({ token: `one-time-${oneTimeTokens.length}` });
+    });
+  }
   function listUsers(organizationId: string, query: URLSearchParams, outgoing: ServerResponse) {
     if (deleted.includes(organizationId)) return void outgoing.writeHead(404).end();
     const page = Number(query.get("page") ?? "1");
@@ -347,6 +374,10 @@ export async function startStandInLogto(): Promise<StandInLogto> {
       else founders.set(organizationId, userId);
     },
     organizationReads,
+    addInvitation(email, status) {
+      invitations.push({ invitee: email, status });
+    },
+    oneTimeTokens,
     hasUser: (userId) => users.has(userId),
     setLocale(userId, locale) {
       users.add(userId);

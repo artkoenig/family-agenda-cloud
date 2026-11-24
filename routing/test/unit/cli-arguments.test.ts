@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCreate, parseDelete, parseFamilyId, parseOpenTrials, parseSetFounder, UsageError } from "../../src/cli-arguments";
+import { parseCreate, parseDelete, parseFamilyId, parseInvite, parseOpenTrials, parseSetFounder, UsageError } from "../../src/cli-arguments";
 
 const familyId = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const defaultTimeZone = "Europe/Berlin";
@@ -149,5 +149,28 @@ describe("parseSetFounder", () => {
 
   it("refuses an option it does not know", () => {
     expect(usageError(() => parseSetFounder([familyId, "user_1", "--confirm"]))).toMatch(/--confirm/);
+  });
+});
+
+describe("parseInvite", () => {
+  it("names the person by email, in lower case, and German unless asked for", () => {
+    expect(parseInvite(["Anna.B@Example.org"])).toStrictEqual({ email: "anna.b@example.org", language: "de" });
+    expect(parseInvite(["anna@example.org", "--language", "de"])).toStrictEqual({ email: "anna@example.org", language: "de" });
+    expect(parseInvite(["--language", "en", "anna@example.org"])).toStrictEqual({ email: "anna@example.org", language: "en" });
+  });
+
+  it.each([[[]], [["anna"]], [["anna@example"]], [["a b@example.org"]], [["a@b@example.org"]], [["anna@example.org x"]], [["x anna@example.org"]], [["anna@example.org", "bert@example.org"]], [["@example.org"]], [["anna@.org"]], [["anna@example."]], [["anna@exa mple.org"]], [["anna@example.o rg"]]])(
+    "refuses %j, which does not name one email",
+    (args) => {
+      expect(usageError(() => parseInvite(args))).toBe("invite needs the email of the person to invite");
+    },
+  );
+
+  it.each([["fr"], [""]])("refuses the language %j", (language) => {
+    expect(usageError(() => parseInvite(["anna@example.org", "--language", language]))).toBe("--language needs de or en");
+  });
+
+  it("refuses an option it does not know", () => {
+    expect(usageError(() => parseInvite(["anna@example.org", "--force"]))).toMatch(/--force/);
   });
 });

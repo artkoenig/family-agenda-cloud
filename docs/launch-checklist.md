@@ -8,11 +8,11 @@ Stages:
 
 - **(a) Own Family** — production serves only the maintainer's Family (the canary of
   [#65](https://github.com/artkoenig/family-agenda-cloud/issues/65)). Nothing legal needed.
-- **(b) About 5 invited Families** — each gets the Basic Auth login of the landing page and registers itself, like
-  anyone later ([#131](https://github.com/artkoenig/family-agenda-cloud/issues/131)), at
-  `https://app.family-agenda.cloud/sign-in/register`, while registration is `open` (`REGISTRATION` in the `.env`,
-  `docs/runbook/setup.md`, "Opening and closing registration"); each is told in writing that it is a trial.
-  Registration is `closed` again once they have registered, and at the latest for gate 13a.
+- **(b) About 5 invited Families** — each is invited with `routing invite` (`docs/runbook/families.md`, "Invite a Family")
+  and registers itself through the mail's link, while registration stays `closed`; the mail tells it in writing that
+  it is a trial. It also gets the Basic Auth login of the landing page, where the terms and the privacy policy are.
+  This replaces registering while registration is `open`, as
+  [#131](https://github.com/artkoenig/family-agenda-cloud/issues/131) had it.
 - **(c) Registration opens** — self-registration and billing live. This is "launch readiness".
 
 ## Stage (a) — own Family
