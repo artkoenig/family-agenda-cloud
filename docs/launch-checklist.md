@@ -8,7 +8,11 @@ Stages:
 
 - **(a) Own Family** — production serves only the maintainer's Family (the canary of
   [#65](https://github.com/artkoenig/family-agenda-cloud/issues/65)). Nothing legal needed.
-- **(b) About 5 invited Families** — created by hand, no self-registration, each told in writing that it is a trial.
+- **(b) About 5 invited Families** — each gets the Basic Auth login of the landing page and registers itself, like
+  anyone later ([#131](https://github.com/artkoenig/family-agenda-cloud/issues/131)), at
+  `https://app.family-agenda.cloud/sign-in/register`, while registration is `open` (`REGISTRATION` in the `.env`,
+  `docs/runbook/setup.md`, "Opening and closing registration"); each is told in writing that it is a trial.
+  Registration is `closed` again once they have registered, and at the latest for gate 13a.
 - **(c) Registration opens** — self-registration and billing live. This is "launch readiness".
 
 ## Stage (a) — own Family
@@ -115,10 +119,65 @@ Numbered after the last gate so that gates 10 to 14, which issues cite by number
 
 ### 13. Entry point
 
-- **Threshold:** landing page, registration, billing and legal texts from
-  [#32](https://github.com/artkoenig/family-agenda-cloud/issues/32) are live.
+The site goes public in two switches ([#205](https://github.com/artkoenig/family-agenda-cloud/issues/205)): first the
+landing page with its prices and legal pages (13a), then registration (13b). The landing page, registration, billing
+and legal texts are those of [#179](https://github.com/artkoenig/family-agenda-cloud/issues/179).
+
+### 13a. Site public
+
+- **Waits for:**
+  - the USt-IdNr issued: the Impressum goes public only with it;
+  - the legal pages live in German and English (Impressum, Datenschutz, AGB, Widerruf, the `/kuendigen` text;
+    [#218](https://github.com/artkoenig/family-agenda-cloud/issues/218),
+    [#220](https://github.com/artkoenig/family-agenda-cloud/issues/220)–[#222](https://github.com/artkoenig/family-agenda-cloud/issues/222));
+  - the core's legal footer ([family-agenda#505](https://github.com/artkoenig/family-agenda/issues/505)) set on the
+    cores, and the Routing pages' footer ([#232](https://github.com/artkoenig/family-agenda-cloud/issues/232));
+  - Logto's sign-in log kept 30 days ([#235](https://github.com/artkoenig/family-agenda-cloud/issues/235)).
+
+  Nothing from billing is needed for 13a.
 - **Before the site goes public:** the Operator fills `{{NAME}}`, `{{POSTFLEX_ADDRESS}}`, `{{UST_IDNR}}`, `{{STAND}}`
   and `{{AUFSICHTSBEHOERDE}}` in `site/legal/*.md` and runs `pnpm legal-pages` in `routing/`; no `{{` is left in `site/`.
+- **The switch:**
+  1. Set `IMPRINT_URL`, `PRIVACY_URL` and `TERMS_URL` on the cores in `cube/compose.yaml`, with the core release that
+     has [family-agenda#505](https://github.com/artkoenig/family-agenda/issues/505).
+  2. Remove the apex's `noindex` header and Basic Auth from `cube/Caddyfile` (the "Until launch" comment; the logo
+     exception goes with them), and `LANDING_BASIC_AUTH_*` from `cube/compose.yaml` and `cube/.env.example` (and from
+     the Cube's `.env`). The `noindex` of `app.` and `auth.` stays until the Operator decides.
+  3. Registration stays `closed` (`REGISTRATION` in the `.env`).
+  4. `scripts/deploy.sh`; it must say `Registration is closed`.
+- **Threshold:** `https://family-agenda.cloud` and `/en/` answer without Basic Auth and without `X-Robots-Tag`; the
+  prices and every legal page, German and English, can be seen and hold no `{{`; every register button reads
+  "Registrierung öffnet bald" or "Registration opens soon" and links nowhere; "Anmelden" signs an invited Family in;
+  Logto is on `signInMode: SignIn`, so nobody can register at `https://auth.family-agenda.cloud` without an
+  invitation, while an Admin's invitation link still creates the invitee's account and signs them in (checked once
+  on the Cube with an address of the Operator's).
+- **Measured:** — **Date:** — **Proof:**
+
+### 13b. Registration open
+
+- **Waits for:**
+  - Google's OAuth client "In production", with home page, privacy and AGB links (`docs/runbook/setup.md`, "Google
+    sign-in"); brand verification only if Google asks for it;
+  - Stripe live activation; if `support_phone` turns out to be mandatory,
+    [#193](https://github.com/artkoenig/family-agenda-cloud/issues/193) is reopened;
+  - a live test with the Operator's own second Family (`routing start-trial`,
+    [#225](https://github.com/artkoenig/family-agenda-cloud/issues/225)): Trial → real order (4,99 €) → § 312f mail →
+    `/cancel` → `/withdraw` with refund → `/delete`, checking that the Locked and the deletion mails arrive;
+  - the Cap CAPTCHA and the mail limit live, and the sign-up stop runbook step tested
+    ([#234](https://github.com/artkoenig/family-agenda-cloud/issues/234),
+    [family-agenda#507](https://github.com/artkoenig/family-agenda/issues/507));
+  - gates 10–12 and 14 met.
+- **The switch:**
+  1. `routing open-trials` ([#225](https://github.com/artkoenig/family-agenda-cloud/issues/225)), so that the pilot
+     Families' Trial starts on the 13b date.
+  2. `REGISTRATION=open` in the `.env`.
+  3. The register buttons link again: revert the commit "Close the register buttons until registration opens"
+     (`site/index.html`, `site/en/index.html`).
+  4. `scripts/deploy.sh`; it must say `Registration is open`.
+  5. The alert above 20 new Families a day is active ([#234](https://github.com/artkoenig/family-agenda-cloud/issues/234)).
+- **Threshold:** every register button links to `https://app.family-agenda.cloud/sign-in/register`, and a new address
+  registers there and gets its Family; Logto is on `signInMode: SignInAndRegister`; the 20-a-day alert is active.
+- **13b date:** —
 - **Measured:** — **Date:** — **Proof:**
 
 ### 14. Content Security Policy

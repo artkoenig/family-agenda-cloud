@@ -39,6 +39,11 @@ export type StandInLogto = {
   emailTemplatePuts: unknown[];
   /** Every connector, as Logto lists them; POST adds one, PATCH replaces its config. */
   connectors: { id: string; connectorId: string; config: unknown }[];
+  /**
+   * The sign-in experience as Logto holds it; PATCH /api/sign-in-exp merges into it. Set a field
+   * here to stand for another writer, such as the core's `logto-setup`.
+   */
+  signInExperience: Record<string, unknown>;
   /** Every call to the connectors, the sign-in experience and the Account Center, in order. */
   settingCalls: { method: string; path: string; body: unknown }[];
   /** Answers every Management API call with this status, until set to null. */
@@ -79,6 +84,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   const emailTemplatePuts: unknown[] = [];
   const connectors: StandInLogto["connectors"] = [];
   const settingCalls: StandInLogto["settingCalls"] = [];
+  const signInExperience: Record<string, unknown> = {};
   const deletedUsers: string[] = [];
   const deletions: string[] = [];
   const deletedWithMembers: string[] = [];
@@ -189,6 +195,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     if (url.startsWith("/api/connectors/") && (method !== "PATCH" || !connector)) return void outgoing.writeHead(404).end();
     if (connector) connector.config = (body as { config: unknown }).config;
     if (method !== "PATCH") return void outgoing.writeHead(404).end();
+    if (url === "/api/sign-in-exp") return void json(Object.assign(signInExperience, body));
     json(connector ?? body);
   }
   /** As Logto 1.x does: an application's JSON has no secret, which only its `/secrets` lists. */
@@ -297,6 +304,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     },
     emailTemplatePuts,
     connectors,
+    signInExperience,
     settingCalls,
     failWith(status) {
       failing = status;

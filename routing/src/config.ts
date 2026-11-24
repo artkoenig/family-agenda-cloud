@@ -1,5 +1,5 @@
 import type { IdpManagement } from "./logto-management";
-import type { GoogleClient } from "./sign-in-experience";
+import type { GoogleClient, Registration } from "./sign-in-experience";
 
 /**
  * The Routing module's settings, from the environment only. The Operator key, the Context key and
@@ -57,6 +57,11 @@ export type Config = {
    */
   google: GoogleClient | null;
   /**
+   * Whether anyone may register at Logto (REGISTRATION=open) or only invitees (closed, also when
+   * unset or empty), which `sign-in-experience` sets as Logto's `signInMode` (#236).
+   */
+  registration: Registration;
+  /**
    * Central sign-in (#154), the Router's own OIDC client at Logto (OIDC_ISSUER_URL,
    * CENTRAL_SIGN_IN_CLIENT_ID and _SECRET, which `sign-in-client` prints), and the key Logto
    * signs its PostRegister with (IDP_WEBHOOK_SECRET, the cores'), as central sign-in sends one
@@ -107,6 +112,7 @@ export function readConfig(env: Env): Config {
     receiverPort: port(env, "RECEIVER_PORT", "8081"),
     idpManagement: idpManagement(env),
     google: google(env),
+    registration: registration(env),
     centralSignIn: centralSignIn(env),
     ...listenSettings(env),
   };
@@ -151,6 +157,13 @@ function google(env: Env): GoogleClient | null {
   if (!clientId && !clientSecret) return null;
   if (!clientId || !clientSecret) throw new ConfigError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set both, or none");
   return { clientId, clientSecret };
+}
+
+/** REGISTRATION: `open` or `closed`; closed unless set, so that registration opens only on purpose. */
+function registration(env: Env): Registration {
+  const value = env.REGISTRATION || "closed";
+  if (value !== "open" && value !== "closed") throw new ConfigError("REGISTRATION must be open or closed (closed unless set)");
+  return value;
 }
 
 /**

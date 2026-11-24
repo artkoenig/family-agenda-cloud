@@ -11,6 +11,7 @@ afterEach(async () => {
 });
 
 const GOOGLE = { GOOGLE_CLIENT_ID: "client.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "google-secret" };
+const CLOSED = "Registration is closed: only invitation links create accounts (REGISTRATION is not open)\n";
 const calls = () => routing.logto.settingCalls.map(({ method, path }) => `${method} ${path}`);
 
 describe("sign-in-experience", () => {
@@ -18,18 +19,18 @@ describe("sign-in-experience", () => {
     const result = await routing.run(["sign-in-experience"]);
     expect(result, result.stderr).toMatchObject({
       exitCode: 0,
-      stdout: "Logto's sign-in experience is set, without Google: GOOGLE_CLIENT_ID and _SECRET are not set\n",
+      stdout: `Logto's sign-in experience is set, without Google: GOOGLE_CLIENT_ID and _SECRET are not set\n${CLOSED}`,
     });
     expect(calls()).toEqual(["PATCH /api/sign-in-exp", "PATCH /api/account-center"]);
     const [signIn, accountCenter] = routing.logto.settingCalls;
-    expect(signIn!.body).toEqual(signInExperience(false));
+    expect(signIn!.body).toEqual(signInExperience(false, "closed"));
     expect(signIn!.body).not.toHaveProperty("socialSignInConnectorTargets");
     expect(accountCenter!.body).toEqual(ACCOUNT_CENTER);
   });
 
   it("creates the Google connector before naming it a social target", async () => {
     const result = await routing.run(["sign-in-experience"], GOOGLE);
-    expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: "Logto's sign-in experience is set, with Google (connector created)\n" });
+    expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: `Logto's sign-in experience is set, with Google (connector created)\n${CLOSED}` });
     expect(calls()).toEqual(["GET /api/connectors", "POST /api/connectors", "PATCH /api/sign-in-exp", "PATCH /api/account-center"]);
     expect(routing.logto.connectors).toEqual([
       {
@@ -44,10 +45,47 @@ describe("sign-in-experience", () => {
   it("updates the Google connector when run again, creating no second one", async () => {
     await routing.run(["sign-in-experience"], GOOGLE);
     const result = await routing.run(["sign-in-experience"], { ...GOOGLE, GOOGLE_CLIENT_SECRET: "rotated" });
-    expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: "Logto's sign-in experience is set, with Google (connector updated)\n" });
+    expect(result, result.stderr).toMatchObject({ exitCode: 0, stdout: `Logto's sign-in experience is set, with Google (connector updated)\n${CLOSED}` });
     expect(calls().slice(4)).toEqual(["GET /api/connectors", "PATCH /api/connectors/connector-1", "PATCH /api/sign-in-exp", "PATCH /api/account-center"]);
     expect(routing.logto.connectors).toHaveLength(1);
     expect(routing.logto.connectors[0]!.config).toMatchObject({ clientSecret: "rotated" });
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["empty, as Compose passes it unset", ""],
+    ["closed", "closed"],
+  ])("with REGISTRATION %s lets Logto only sign in, and says registration is closed", async (_case, REGISTRATION) => {
+    // An invitee still registers: the invitation link's one-time token lets Logto create the account under
+    // `SignIn` (ADR-0011 of the core). The core hands the token on with registration closed (its
+    // apps/api/test/http/sign-up-link.test.ts); that Logto honours it is checked on the Cube (launch checklist, 13a).
+    const result = await routing.run(["sign-in-experience"], { REGISTRATION });
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(result.stdout.endsWith(`\n${CLOSED}`), result.stdout).toBe(true);
+    expect(routing.logto.signInExperience).toMatchObject({ signInMode: "SignIn" });
+  });
+
+  it("with REGISTRATION=open lets anyone register, and says so", async () => {
+    const result = await routing.run(["sign-in-experience"], { REGISTRATION: "open" });
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(result.stdout.endsWith("\nRegistration is open: anyone can register (REGISTRATION=open)\n"), result.stdout).toBe(true);
+    expect(routing.logto.signInExperience).toMatchObject({ signInMode: "SignInAndRegister" });
+  });
+
+  it("closes registration again after the core's logto-setup opened it", async () => {
+    // What logto-setup's every run sets when registration is set up (tools/logto-setup/src/setup.ts of the core).
+    routing.logto.signInExperience.signInMode = "SignInAndRegister";
+
+    expect(await routing.run(["sign-in-experience"])).toMatchObject({ exitCode: 0 });
+
+    expect(routing.logto.signInExperience).toMatchObject({ signInMode: "SignIn" });
+  });
+
+  it("is a configuration error with REGISTRATION neither open nor closed, and changes nothing", async () => {
+    const result = await routing.run(["sign-in-experience"], { REGISTRATION: "yes" });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("REGISTRATION must be open or closed");
+    expect(routing.logto.settingCalls).toEqual([]);
   });
 
   it("lets Logto send the browser back to the landing page after Abmelden, and changes nothing when run again", async () => {

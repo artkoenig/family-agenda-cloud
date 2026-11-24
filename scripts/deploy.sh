@@ -34,7 +34,8 @@ rsync -rlt --delete -e "$RSYNC_SSH" \
 
 # --wait returns once every service is running or healthy and the one-shot directory-database
 # has finished. Then Logto gets Family Agenda's mails (routing mail-templates) and its sign-in
-# screen (routing sign-in-experience), which the core's logto-setup resets on every run.
+# screen (routing sign-in-experience), which the core's logto-setup resets on every run, with
+# registration open or closed as the .env's REGISTRATION says.
 cube_ssh "cd $CUBE_DIR && docker compose pull -q --ignore-buildable && docker compose build -q \
 	&& docker compose up -d --wait --remove-orphans \
 	&& docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile \

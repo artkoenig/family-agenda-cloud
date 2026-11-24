@@ -71,7 +71,8 @@ const USAGE = `Usage:
   routing sign-in-experience
     Sets Logto's sign-in screen through IDP_MANAGEMENT_*: email with password or code, passkey,
     Google (with GOOGLE_CLIENT_ID and _SECRET, else left out), terms and privacy at sign-up,
-    German unless the browser asks otherwise, and the Account Center. Also lets central
+    German unless the browser asks otherwise, and the Account Center; registration open with
+    REGISTRATION=open, else closed to all but invitees. Also lets central
     sign-in's client return to <PUBLIC_URL>/ after Abmelden, if there is that client. Deploying
     runs it, since the core's logto-setup resets the sign-in methods.
   routing sign-in-client
@@ -298,13 +299,18 @@ async function signInClient(config: Config, io: Io, log: Log): Promise<number> {
  */
 async function signInExperience(config: Config, io: Io, log: Log): Promise<number> {
   if (config.idpManagement === null) throw new ConfigError("sign-in-experience needs IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET");
-  const { google } = await setSignInExperience(config.idpManagement, config.google);
+  const { google } = await setSignInExperience(config.idpManagement, config.google, config.registration);
   const client = await setSignInClientRedirects(config.idpManagement, config.publicUrl);
   log.info(client ? "Central sign-in's client returns to the landing page after Abmelden" : "There is no central sign-in client at Logto to return after Abmelden");
   io.stdout.write(
     google === "skipped"
       ? "Logto's sign-in experience is set, without Google: GOOGLE_CLIENT_ID and _SECRET are not set\n"
       : `Logto's sign-in experience is set, with Google (connector ${google})\n`,
+  );
+  io.stdout.write(
+    config.registration === "open"
+      ? "Registration is open: anyone can register (REGISTRATION=open)\n"
+      : "Registration is closed: only invitation links create accounts (REGISTRATION is not open)\n",
   );
   return 0;
 }

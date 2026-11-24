@@ -125,6 +125,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Logto's Traditional Web application "Family Agenda" the cores sign in with; redirect URI `https://app.family-agenda.cloud/sso/callback` | `pending` at first; the core's `logto-setup` prints them |
    | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events`; the Router signs a lost PostRegister it sends again with it | `pending` at first; the core's `logto-setup` prints it |
    | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the Google OAuth client of Logto's Google connector; optional, empty leaves Google off the sign-in screen | empty at first; [Google sign-in](#google-sign-in) |
+   | `REGISTRATION` | whether anyone may register at Logto: `open` or `closed`, closed unless set | `closed`; [Opening and closing registration](#opening-and-closing-registration) |
    | `LLM_API_KEY` | the AI Model Hub token every core extracts with | [step 6](#6-ai-model-hub-token) |
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
 
@@ -201,7 +202,8 @@ console listens on the Cube's loopback alone.
    `IDP_MANAGEMENT_*`. It creates the Traditional Web application "Family Agenda" with that redirect URI, the
    PostRegister webhook to the Router (`/idp/events`, passed on to a core), the Organization role `admin`, the SMTP
    connector, and opens registration: email and password, the email verified by a code before the account exists.
-   It must say `Registration open`.
+   It must say `Registration open`. The deploy after it closes registration again unless `REGISTRATION=open`
+   ([Opening and closing registration](#opening-and-closing-registration)).
 4. Put the printed `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `IDP_WEBHOOK_SECRET` into the `.env`; the other printed
    values are in `cube/compose.yaml` already and must match it (`OIDC_ISSUER_URL=https://auth.family-agenda.cloud/oidc`,
    `IDP_MANAGEMENT_ENDPOINT=http://logto:3001`).
@@ -226,8 +228,22 @@ email and password, email and code, or passkey; a forgotten password is reset by
 browser's language, German otherwise. The Account Center at `https://auth.family-agenda.cloud/account` changes the
 password and passkeys and shows the email. MFA is off. It also sets central sign-in's post-logout redirect URI, so
 that Abmelden returns to the landing page ([#173](https://github.com/artkoenig/family-agenda-cloud/issues/173)). To run it alone:
-`docker compose exec -T router routing sign-in-experience`; it ends with `Logto's sign-in experience is set`, and says
-whether with Google.
+`docker compose exec -T router routing sign-in-experience`; it says `Logto's sign-in experience is set`, whether with
+Google, and then whether registration is open or closed.
+
+#### Opening and closing registration
+
+Whether anyone may register is one key of the `.env`, `REGISTRATION` ([#236](https://github.com/artkoenig/family-agenda-cloud/issues/236)):
+`open` lets anyone register, `closed` (or unset) lets Logto only sign in. `routing sign-in-experience` sets Logto's
+`signInMode` from it on every deploy: `SignInAndRegister` when open, `SignIn` when closed. The core's setup sets
+`SignInAndRegister` on each of its runs (it says `Registration open`), so a value set by hand in the Logto console
+lasts only until the next setup and deploy; the deploy after it leaves Logto as the `.env` says. To open or close:
+change `REGISTRATION` in the `.env` and `scripts/deploy.sh`; it must say `Registration is open` or `Registration is closed`.
+
+While registration is closed, an Admin's invitation still works: its link carries a one-time token that lets the
+invitee create an account and sign in even with `signInMode: SignIn`
+([ADR-0011 of the core](https://github.com/artkoenig/family-agenda/blob/main/docs/adr/0011-invitation-links-carry-a-one-time-token.md)).
+When registration opens and closes is the [launch checklist](../launch-checklist.md)'s, gates 13a and 13b.
 
 The mails Logto sends are Family Agenda's own, German and English, not the SMTP connector's plain English texts:
 `scripts/deploy.sh` puts them into Logto with `routing mail-templates` (`routing/src/mail-templates.ts`) as email
@@ -237,7 +253,7 @@ is `site/mail-logo.png`, served at `https://family-agenda.cloud/mail-logo.png`.
 `scripts/logto-setup-wizard.sh` walks steps 1 to 5 and the deploy; it reads the secrets hidden and writes them
 straight into the Cube's `.env`.
 
-Check: until the landing page links to it ([#130](https://github.com/artkoenig/family-agenda-cloud/issues/130)),
+Check, with registration open: until the landing page links to it ([#130](https://github.com/artkoenig/family-agenda-cloud/issues/130)),
 register at the address the wizard prints last (`https://auth.family-agenda.cloud/oidc/auth?client_id=<OIDC_CLIENT_ID>&…&first_screen=register`)
 with an address of the Operator's; the code mail arrives, and after it the new Family's address answers. The
 callback may then show an error, since the sign-in started at Logto; `routing families` lists the Family anyway. The console shows the delivery under **Webhooks → Family Agenda**. Logto
