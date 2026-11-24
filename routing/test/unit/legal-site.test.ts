@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { expectedSiteFiles, siteDirectory, writeSite } from "../../src/legal-site";
+import { confirmationLegalTexts, expectedSiteFiles, siteDirectory, writeSite } from "../../src/legal-site";
 
 describe("the committed site/", () => {
   it("is up to date with site/legal/ and the footer: run `pnpm legal-pages` after changing them", () => {
@@ -58,5 +58,15 @@ describe("writeSite and siteDirectory", () => {
     mkdirSync(join(root, "site"));
 
     expect(() => siteDirectory(root)).toThrow("No site/legal/ above the Routing module");
+  });
+
+  it("finds site/legal/ in the image's layout, next to src/, and reads the German AGB and Widerrufsbelehrung there", () => {
+    const app = temporary();
+    mkdirSync(join(app, "src"));
+    mkdirSync(join(app, "site/legal"), { recursive: true });
+    writeFileSync(join(app, "site/legal/agb.de.md"), "# AGB\n");
+    writeFileSync(join(app, "site/legal/widerrufsbelehrung.de.md"), "# Widerrufsbelehrung\n");
+
+    expect(confirmationLegalTexts(siteDirectory(join(app, "src")))).toEqual({ agb: "# AGB\n", withdrawal: "# Widerrufsbelehrung\n" });
   });
 });

@@ -12,6 +12,10 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 COPY tsconfig.json ./
 COPY src ./src
+# The legal texts the contract confirmation mail embeds, read when it is sent (legal-site.ts finds
+# them at /app/site/legal). They live in site/legal/ outside routing/, so they come from a second
+# build context: `--build-context legal=site/legal`, or `additional_contexts` in cube/compose.yaml.
+COPY --from=legal . ./site/legal
 
 # `routing <command>` from anywhere, such as `docker compose exec router routing families`.
 RUN printf '#!/bin/sh\ncd /app && exec node --import tsx src/main.ts "$@"\n' > /usr/local/bin/routing \

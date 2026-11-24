@@ -60,7 +60,7 @@ export type FamilyDeletedMailValues = {
 export type FamilyDeletedNoticeValues = { recipient: Person; familyName: string; deletedAt: Date; by: { admin: string } | "automatic" };
 
 /** Lines of a paragraph; a null line is one this case leaves out. */
-type Paragraph = readonly (string | null)[];
+export type Paragraph = readonly (string | null)[];
 
 /** A date and a time, formatted. */
 type When = { date: string; time: string };
@@ -276,6 +276,9 @@ export function familyDeletedNoticeMail(language: Language, values: FamilyDelete
   const deleted = by === "automatic" ? words.automatic(familyName, date) : words.notice.byAdmin(by.admin, familyName, date);
   return mail(language, values.recipient, words.notice.subject(familyName), [[`${deleted} ${words.notice.gone}`]], imprint);
 }
+
+/** A mail to `recipient` from its paragraphs, between the greeting and the standard footer, as the other contract mails are (confirmation-mail.ts). */
+export const contractMail = mail;
 
 function whenOf(instant: Date, language: Language): When {
   return { date: dateOf(instant, language), time: timeOf(instant, language) };

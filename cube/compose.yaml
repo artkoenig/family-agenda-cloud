@@ -124,7 +124,11 @@ x-core: &core
 # The Routing module's image, built from routing/; the Router, the Scheduler, the receiver and the
 # Operator's commands (`docker compose exec router routing <command>`) run it.
 x-routing: &routing
-  build: ./routing
+  build:
+    context: ./routing
+    # The legal texts the contract confirmation mail embeds (routing/Dockerfile).
+    additional_contexts:
+      legal: ./site/legal
   image: family-agenda-routing:local
   restart: unless-stopped
   environment:

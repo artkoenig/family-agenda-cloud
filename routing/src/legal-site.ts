@@ -1,10 +1,14 @@
 /**
  * The files of site/ that legal-pages.ts builds, on disk: `pnpm legal-pages` writes them
- * (build-legal-pages.ts), and a test checks that the committed ones are up to date.
+ * (build-legal-pages.ts), and a test checks that the committed ones are up to date. Also the legal
+ * texts the contract confirmation mail embeds (confirmation-mail.ts), read when it is sent: in the
+ * repository from site/legal/, in the Routing module's image from its copy in /app/site/legal/
+ * (Dockerfile).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ConfirmationLegalTexts } from "./confirmation-mail";
 import { buildSite, type SiteFile } from "./legal-pages";
 
 /**
@@ -32,4 +36,10 @@ export function writeSite(site: string): string[] {
   });
   for (const { path, content } of changed) writeFileSync(join(site, path), content);
   return changed.map(({ path }) => path);
+}
+
+/** The German AGB and Widerrufsbelehrung as Markdown, as they are now, for the confirmation mail. */
+export function confirmationLegalTexts(site = siteDirectory()): ConfirmationLegalTexts {
+  const read = (name: string) => readFileSync(join(site, "legal", `${name}.de.md`), "utf8");
+  return { agb: read("agb"), withdrawal: read("widerrufsbelehrung") };
 }
