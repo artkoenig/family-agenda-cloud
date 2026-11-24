@@ -2,6 +2,7 @@
  * Logto's Management API, signed in as the machine-to-machine application the cores use
  * (IDP_MANAGEMENT_*).
  */
+import { mailLanguageOf, type Language } from "./contract-wording";
 
 /** Where Logto's Management API is and how to sign in to it. */
 export type IdpManagement = { endpoint: string; clientId: string; clientSecret: string };
@@ -37,4 +38,24 @@ export async function managementCall(idp: IdpManagement, method: string, path: s
   });
   if (!response.ok) throw new Error(`Logto's Management API answered ${doing} with ${response.status}: ${await response.text()}`);
   return response;
+}
+
+/**
+ * The person's locale as Logto keeps it: the user's `profile.locale` (Logto's `UserProfile`, the
+ * OIDC `locale` claim), read through GET /api/users/:id; null when it has none.
+ *
+ * Logto 1.46.0 sets none of its own: neither sign-up (the experience flow's new user has no
+ * profile) nor a social sign-in (it syncs name, avatar, email and phone) writes `profile.locale`,
+ * and nothing of Family Agenda's writes it either. Until something does, every person has none,
+ * and every mail goes out in English (#233).
+ */
+export async function userLocale(idp: IdpManagement, userId: string): Promise<string | null> {
+  const response = await managementCall(idp, "GET", `/api/users/${encodeURIComponent(userId)}`, undefined, "reading the user's locale");
+  const { profile } = (await response.json()) as { profile?: { locale?: unknown } | null };
+  return typeof profile?.locale === "string" && profile.locale !== "" ? profile.locale : null;
+}
+
+/** The language of the person's mails: German for a German locale at Logto, else English (`mailLanguageOf`). */
+export async function recipientLanguage(idp: IdpManagement, userId: string): Promise<Language> {
+  return mailLanguageOf(await userLocale(idp, userId));
 }
