@@ -38,6 +38,7 @@
     "src/checkout-texts.ts",
     "src/confirmation-mail.ts",
     "src/invitation-mail.ts",
+    "src/mail-card.ts",
     "src/outbox-policy.ts",
     "src/health-rules.ts",
     "src/health-mask.ts",

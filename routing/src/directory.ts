@@ -190,6 +190,8 @@ const MIGRATIONS = [
    );
    CREATE INDEX IF NOT EXISTS mail_outbox_waiting ON mail_outbox (next_attempt_at, id) WHERE sent_at IS NULL;
    CREATE INDEX IF NOT EXISTS mail_outbox_sent ON mail_outbox (sent_at) WHERE sent_at IS NOT NULL`,
+  // A mail's HTML, next to its plain text in body; null for a mail of plain text alone.
+  "ALTER TABLE mail_outbox ADD COLUMN IF NOT EXISTS body_html text",
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */

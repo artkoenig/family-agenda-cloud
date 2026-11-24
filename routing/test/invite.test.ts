@@ -11,7 +11,7 @@ afterEach(async () => {
 
 const CENTRAL_SIGN_IN = { OIDC_ISSUER_URL: "https://auth.family-agenda.test/oidc", CENTRAL_SIGN_IN_CLIENT_ID: "client", CENTRAL_SIGN_IN_CLIENT_SECRET: "secret" };
 const invite = (args: string[], env: Record<string, string | undefined> = {}) => routing.run(["invite", ...args], { PUBLIC_URL: "https://app.family-agenda.test", ...CENTRAL_SIGN_IN, ...env });
-const mails = () => routing.directory("SELECT id, type, family_id, mail_to, subject, body FROM mail_outbox ORDER BY id");
+const mails = () => routing.directory("SELECT id, type, family_id, mail_to, subject, body, body_html FROM mail_outbox ORDER BY id");
 
 async function expectRefused(result: Promise<{ exitCode: number; stderr: string }>, reason: string) {
   const { exitCode, stderr } = await result;
@@ -32,6 +32,7 @@ describe("invite", () => {
     expect(routing.logto.oneTimeTokens).toEqual([{ email: "anna+x@example.com", expiresIn: 604_800 }]);
     expect(mail).toMatchObject({ type: "family-invitation", family_id: null, mail_to: "anna+x@example.com", subject: "Einladung zum Testbetrieb von Family Agenda" });
     expect(String(mail!.body)).toContain("\nhttps://app.family-agenda.test/sign-in/invitation?one_time_token=one-time-1&login_hint=anna%2Bx%40example.com\n");
+    expect(String(mail!.body_html)).toContain('href="https://app.family-agenda.test/sign-in/invitation?one_time_token=one-time-1&amp;login_hint=anna%2Bx%40example.com"');
     expect(result.stdout + result.stderr).not.toMatch(/one-time-1|@/);
   });
 

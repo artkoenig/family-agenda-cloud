@@ -32,6 +32,8 @@ export type ReceivedMail = {
   to: string;
   subject: string;
   text: string;
+  /** Its HTML; null for a mail of plain text alone. */
+  html: string | null;
   /** The charset its text is sent in. */
   charset: string;
 };
@@ -95,6 +97,7 @@ export async function startStandInSmtp(): Promise<StandInSmtp> {
           to: addressOf(mail.to),
           subject: mail.subject ?? "",
           text: mail.text ?? "",
+          html: mail.html || null,
           charset: (mail.headers.get("content-type") as { params?: { charset?: string } } | undefined)?.params?.charset ?? "",
         });
         callback();
