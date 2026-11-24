@@ -102,7 +102,7 @@ const WORDS: Record<Language, Words> = {
   de: {
     greeting: (name) => `Guten Tag ${name},`,
     cancellation: {
-      subject: "Eingang Ihrer Kündigung – Family Agenda",
+      subject: "Eingangsbestätigung Ihrer Kündigung – Family Agenda",
       received: ({ date, time }) => `Ihre Kündigung ist am ${date} um ${time} bei uns eingegangen.`,
       content: (contract, end) => `Inhalt: Ordentliche Kündigung des Vertrags ${contract}, zum ${end}.`,
       ends: (end) => `Der Vertrag endet am ${end}.`,
@@ -124,7 +124,7 @@ const WORDS: Record<Language, Words> = {
         `Die Widerrufsfrist von 14 Tagen ist am ${periodEnd} abgelaufen. Wir behandeln Ihre Erklärung deshalb als ordentliche Kündigung zum frühestmöglichen Zeitpunkt: Der Vertrag endet am ${end}.`,
     },
     untilTheEnd: (ends, end, deletedOn) => ({
-      untilThen: `${ends} Bis dahin können alle wie gewohnt weiterarbeiten.`,
+      untilThen: `${ends} Bis dahin können alle Family Agenda wie gewohnt nutzen.`,
       locked: `Ab dem ${end} ist Ihre Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am ${deletedOn} löschen wir die Familie mit allen Daten.`,
       undo: `Sie können die Kündigung bis zum ${end} im Admin-Bereich zurücknehmen.`,
     }),
@@ -133,7 +133,7 @@ const WORDS: Record<Language, Words> = {
     deleted: {
       subject: "Ihre Familie wurde gelöscht – Family Agenda",
       byRecipient: (familyName, { date, time }) => `Sie haben die Familie ${familyName} am ${date} um ${time} gelöscht.`,
-      backups: (goneOn) => `Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen sind am ${goneOn} entfernt.`,
+      backups: (goneOn) => `Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am ${goneOn} entfernt.`,
       subscription: (end) => `Ihr Abonnement ist zum ${end} gekündigt.`,
       yearlyRefund: (refund) => `Den nicht genutzten Teil, ${refund}, erstatten wir auf Ihr Zahlungsmittel.`,
       thanks: "Danke, dass Sie Family Agenda genutzt haben.",
@@ -143,7 +143,7 @@ const WORDS: Record<Language, Words> = {
       byAdmin: (admin, familyName, date) => `${admin} hat die Familie ${familyName} am ${date} gelöscht.`,
       gone: "Ihr Zugang und alle Daten der Familie sind damit gelöscht.",
     },
-    automatic: (familyName, date) => `Wie angekündigt haben wir die Familie ${familyName} 30 Tage nach der Sperre am ${date} gelöscht.`,
+    automatic: (familyName, date) => `Wie angekündigt haben wir die Familie ${familyName} am ${date}, 30 Tage nach der Sperre, gelöscht.`,
     footer: [
       "-- ",
       "Family Agenda · {{NAME}} · {{POSTFLEX_ADDRESS}}",

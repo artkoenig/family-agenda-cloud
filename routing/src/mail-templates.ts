@@ -162,7 +162,7 @@ const CODE_MAILS: Record<Exclude<TemplateType, "OrganizationInvitation">, Record
 
 const INVITATION: Record<Language, Mail> = {
   de: {
-    subject: "Einladung: verwalte eine Family Agenda",
+    subject: "Einladung: Verwalte eine Family Agenda mit",
     heading: "Du bist eingeladen",
     intro: "Du wurdest eingeladen, eine Family Agenda als Admin zu verwalten. Nimm die Einladung an, um dich anzumelden oder dein Konto anzulegen:",
     shows: "link",

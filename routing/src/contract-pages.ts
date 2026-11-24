@@ -107,7 +107,7 @@ const WORDS: Record<Language, Words> = {
     print: "Drucken / als PDF speichern",
     delete: {
       title: "Familie löschen",
-      intro: (familyName) => `Wenn Sie die Familie ${familyName} löschen, ist sie sofort weg, für alle Mitglieder. Das lässt sich nicht rückgängig machen.`,
+      intro: (familyName) => `Wenn Sie die Familie ${familyName} löschen, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.`,
       when: "Was wann gelöscht wird:",
       stages: [
         "sofort: alle Agenden, Einträge, Quellen und ihre Zugangsdaten, gespeicherte Dateien und die Konten aller Admins",

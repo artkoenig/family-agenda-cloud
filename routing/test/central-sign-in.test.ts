@@ -122,7 +122,7 @@ describe("Central sign-in", () => {
 
     const waiting = await browser.visit("/sign-in");
     expect(waiting).toMatchObject({ status: 200, path: "/sign-in/callback" });
-    expect(waiting.body).toContain("Deine Family wird vorbereitet");
+    expect(waiting.body).toContain("Deine Familie wird vorbereitet");
     expect(waiting.body).toContain('<meta http-equiv="refresh" content="5;url=/sign-in/waiting">');
     expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 200, path: "/sign-in/waiting" });
 
@@ -178,7 +178,7 @@ describe("Central sign-in", () => {
     signInMemberOf("u-1", "org_preparing");
     const browser = browserFor(router);
 
-    expect((await browser.visit("/sign-in")).body).toContain("Deine Family wird vorbereitet");
+    expect((await browser.visit("/sign-in")).body).toContain("Deine Familie wird vorbereitet");
     await setStatus(familyId, "active");
 
     expect(await browser.visit("/sign-in/waiting")).toMatchObject({ status: 302, path: `/${familyId}/` });
@@ -192,7 +192,7 @@ describe("Central sign-in", () => {
     const visit = await browserFor(router).visit("/sign-in");
 
     expect(visit).toMatchObject({ status: 200, path: "/sign-in/callback" });
-    expect(visit.body).toContain("Family nicht verfügbar");
+    expect(visit.body).toContain("Familie nicht verfügbar");
     expect(visit.body).not.toContain(familyId);
   });
 
@@ -246,7 +246,7 @@ describe("Central sign-in", () => {
     await browser.visit("/sign-in");
     await setStatus(familyId, "suspended");
 
-    expect((await browser.visit("/sign-in/waiting")).body).toContain("Family nicht verfügbar");
+    expect((await browser.visit("/sign-in/waiting")).body).toContain("Familie nicht verfügbar");
     expect(browser.jar.has("__Host-sign-in-waiting")).toBe(false);
   });
 
@@ -255,10 +255,10 @@ describe("Central sign-in", () => {
     const browser = browserFor(router);
 
     const waiting = await browser.visit("/sign-in");
-    expect(waiting.body).toContain("Deine Family wird vorbereitet");
+    expect(waiting.body).toContain("Deine Familie wird vorbereitet");
     expect(waiting.body).not.toMatch(/Keine Family|<form|<button/);
     expect(waiting.body.slice(waiting.body.indexOf("<main"), waiting.body.indexOf("</main>"))).not.toContain("<a ");
-    expect((await browser.visit("/sign-in/waiting")).body).toContain("Deine Family wird vorbereitet");
+    expect((await browser.visit("/sign-in/waiting")).body).toContain("Deine Familie wird vorbereitet");
 
     routing.logto.addMember("org_registered", "u-new");
     const familyId = await createFamily("org_registered");
@@ -291,7 +291,7 @@ describe("Central sign-in", () => {
     signInMemberOf("u-registered");
     const browser = browserFor(router);
 
-    expect((await browser.visit("/sign-in/register")).body).toContain("Deine Family wird vorbereitet");
+    expect((await browser.visit("/sign-in/register")).body).toContain("Deine Familie wird vorbereitet");
 
     routing.logto.addMember("org_registered", "u-registered");
     const familyId = await createFamily("org_registered");
@@ -330,7 +330,7 @@ describe("Central sign-in", () => {
     const browser = browserFor(router);
     browser.jar.set("__Host-sign-in-waiting", Buffer.from(JSON.stringify({ organizationId: "org_victim" })).toString("base64url"));
 
-    expect((await browser.visit("/sign-in/waiting")).body).toContain("Deine Family wird vorbereitet");
+    expect((await browser.visit("/sign-in/waiting")).body).toContain("Deine Familie wird vorbereitet");
   });
 
   it("refuses a callback whose state is not the one it sent", async () => {
@@ -451,7 +451,7 @@ describe("Central sign-in of a person whose PostRegister the core missed", () =>
     signInMemberOf("u-lost");
     const browser = browserFor(router);
 
-    expect((await browser.visit("/sign-in")).body).toContain("Deine Family wird vorbereitet");
+    expect((await browser.visit("/sign-in")).body).toContain("Deine Familie wird vorbereitet");
 
     expect(postRegisters()).toEqual([
       { body: expect.objectContaining({ event: "PostRegister", user: { id: "u-lost", primaryEmail: emailOf("u-lost") } }) as unknown, signed: true },
@@ -488,7 +488,7 @@ describe("Central sign-in of a person whose PostRegister the core missed", () =>
     const visit = await browserFor(router).visit("/sign-in");
 
     expect(visit).toMatchObject({ status: 200, path: "/sign-in/callback" });
-    expect(visit.body).toContain("Deine Family wird vorbereitet");
+    expect(visit.body).toContain("Deine Familie wird vorbereitet");
     expect(routing.log()).toContain("Sending PostRegister again failed");
     await routing.core.comeBack();
 

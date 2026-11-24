@@ -201,7 +201,7 @@ describe("the /delete page", () => {
   const deleteLines = {
     de: [
       "Familie löschen",
-      "Wenn Sie die Familie Muster löschen, ist sie sofort weg, für alle Mitglieder. Das lässt sich nicht rückgängig machen.",
+      "Wenn Sie die Familie Muster löschen, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.",
       "Was wann gelöscht wird:",
       "sofort: alle Agenden, Einträge, Quellen und ihre Zugangsdaten, gespeicherte Dateien und die Konten aller Admins",
       "nach spätestens 14 Tagen: die letzten Kopien in unseren Sicherungen",
