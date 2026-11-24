@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 /**
  * Logto's Management API as far as the Routing module uses it: a client-credentials token,
  * reading an Organization with its custom data, listing an Organization's users a page at a time
- * with their email and organization roles, deleting a user and an Organization, putting
+ * with their email and organization roles, reading a user's locale, deleting a user and an Organization, putting
  * email templates, listing, creating and updating connectors, and patching the sign-in experience
  * and the Account Center. Every user and Organization is there until deleted; deleting one again
  * answers 404, and a page larger than Logto lists answers 400, as Logto does.
@@ -41,6 +41,11 @@ export type StandInLogto = {
   organizationReads: string[];
   /** Whether `userId` is a user of Logto. */
   hasUser(userId: string): boolean;
+  /**
+   * Makes `userId` a user of Logto with this `profile.locale`, or with none for null, as
+   * GET /api/users/:id answers it. Logto 1.46.0 sets none at sign-up.
+   */
+  setLocale(userId: string, locale: string | null): void;
   /** Answers deleting this user or Organization with 503, until set to null. */
   failDeleting(id: string | null): void;
   /** The bodies of every PUT /api/email-templates, in order. */
@@ -97,6 +102,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   const deletions: string[] = [];
   const deletedWithMembers: string[] = [];
   const users = new Set<string>();
+  const locales = new Map<string, string | null>();
   const members = new Map<string, string[]>();
   const roles = new Map<string, string | null>();
   const founders = new Map<string, string>();
@@ -136,10 +142,11 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     const organization = ORGANIZATION.exec(url);
     const organizationUsers = incoming.method === "GET" ? ORGANIZATION_USERS.exec(url) : null;
     const user = incoming.method === "DELETE" ? USER.exec(url) : null;
+    const userRead = incoming.method === "GET" ? USER.exec(url) : null;
     const templates = incoming.method === "PUT" && url === "/api/email-templates";
     const setting = SETTING.test(url);
     const organizationRead = incoming.method === "GET" ? organization : null;
-    const known = templates || setting || application || organizationUsers || user || organizationRead || (incoming.method === "DELETE" && organization);
+    const known = templates || setting || application || organizationUsers || user || userRead || organizationRead || (incoming.method === "DELETE" && organization);
     if (!known) return void outgoing.writeHead(404).end();
     if (incoming.headers.authorization !== `Bearer ${TOKEN}`) return void outgoing.writeHead(401).end();
     if (failing !== null) return void outgoing.writeHead(failing).end("refused");
@@ -153,6 +160,10 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     }
     if (user) {
       deleteUser(decodeURIComponent(user[1]!), outgoing);
+      return;
+    }
+    if (userRead) {
+      readUser(decodeURIComponent(userRead[1]!), outgoing);
       return;
     }
     if (templates) {
@@ -207,6 +218,12 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     deletedUsers.push(userId);
     deletions.push(userId);
     outgoing.writeHead(204).end();
+  }
+  function readUser(userId: string, outgoing: ServerResponse) {
+    if (!users.has(userId)) return void outgoing.writeHead(404).end();
+    const locale = locales.get(userId) ?? null;
+    const user = { id: userId, primaryEmail: `${userId}@example.com`, profile: locale === null ? {} : { locale } };
+    outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(user));
   }
   function answerSetting(method: string, url: string, body: unknown, outgoing: ServerResponse) {
     const json = (value: unknown) => outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(value));
@@ -331,6 +348,10 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     },
     organizationReads,
     hasUser: (userId) => users.has(userId),
+    setLocale(userId, locale) {
+      users.add(userId);
+      locales.set(userId, locale);
+    },
     failDeleting(id) {
       failingDeletion = id;
     },

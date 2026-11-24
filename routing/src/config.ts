@@ -88,14 +88,39 @@ export class ConfigError extends Error {}
 
 type Env = Record<string, string | undefined>;
 
-export function readConfig(env: Env): Config {
-  const directoryDatabaseUrl = new URL(required(env, "DIRECTORY_DATABASE_URL"));
-  if (directoryDatabaseUrl.password) {
+/** The Directory's database, as every command opens it. */
+export type DirectorySettings = Pick<Config, "directoryDatabaseUrl" | "directoryDatabasePassword">;
+
+/** The mail server the outbox sends through: SMTP with implicit TLS, as no-reply's mailbox. */
+export type SmtpSettings = { host: string; port: number; user: string; password: string };
+
+/**
+ * The settings of `routing send-mail`, the outbox's sender (#233): the Directory and the mail
+ * server alone. It is the one service given SMTP_PASSWORD, and needs no other secret.
+ */
+export type MailConfig = DirectorySettings & { smtp: SmtpSettings };
+
+export function readMailConfig(env: Env): MailConfig {
+  const { directoryDatabaseUrl, directoryDatabasePassword } = directorySettings(env);
+  return {
+    directoryDatabaseUrl,
+    directoryDatabasePassword,
+    smtp: { host: required(env, "SMTP_HOST"), port: port(env, "SMTP_PORT", required(env, "SMTP_PORT")), user: required(env, "SMTP_USER"), password: required(env, "SMTP_PASSWORD") },
+  };
+}
+
+function directorySettings(env: Env): DirectorySettings & { directoryAddress: URL } {
+  const directoryAddress = new URL(required(env, "DIRECTORY_DATABASE_URL"));
+  if (directoryAddress.password) {
     throw new ConfigError("DIRECTORY_DATABASE_URL must not contain a password; set DIRECTORY_DATABASE_PASSWORD");
   }
+  return { directoryAddress, directoryDatabaseUrl: directoryAddress.toString(), directoryDatabasePassword: required(env, "DIRECTORY_DATABASE_PASSWORD") };
+}
+
+export function readConfig(env: Env): Config {
+  const { directoryAddress: directoryDatabaseUrl, ...directory } = directorySettings(env);
   return {
-    directoryDatabaseUrl: directoryDatabaseUrl.toString(),
-    directoryDatabasePassword: required(env, "DIRECTORY_DATABASE_PASSWORD"),
+    ...directory,
     operatorKey: key(env, "OPERATOR_KEY"),
     contextKey: secret(env, "CONTEXT_KEY"),
     coreUrl: poolAddress(env, "CORE_URL"),
@@ -192,7 +217,7 @@ function port(env: Env, name: string, fallback: string): number {
 }
 
 /** How to open the Directory's database. */
-export function directoryConnection(config: Config): { host: string; port: number; user: string; database: string; password: string } {
+export function directoryConnection(config: DirectorySettings): { host: string; port: number; user: string; database: string; password: string } {
   const url = new URL(config.directoryDatabaseUrl);
   return {
     host: url.hostname,

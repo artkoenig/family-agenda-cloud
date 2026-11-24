@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 /** The Directory's schema version now. */
-const LATEST = 13;
+const LATEST = 14;
 
 /** The columns of a Family that #225 added. */
 const TRIAL_COLUMNS = ["lock_reason", "locked_at", "registered_by", "trial_starts_at"];
@@ -125,6 +125,41 @@ describe("A Directory from before Trials, Locked Families and Subscriptions", ()
     await routing.directory("INSERT INTO setting DEFAULT VALUES");
     await expect(routing.directory("INSERT INTO setting (id) VALUES (false)")).rejects.toThrow(/check constraint/);
     await expect(routing.directory("INSERT INTO setting DEFAULT VALUES")).rejects.toThrow(/duplicate key/);
+  });
+});
+
+describe("A Directory without the mail outbox", () => {
+  it("migrates: the outbox is added, empty, and its Families are as they were", async () => {
+    await routing.run(["create", "--organization-id", ORG]);
+    const before = await routing.run(["families"]);
+    await routing.directory("DROP TABLE mail_outbox");
+    await routing.directory("DELETE FROM directory_migration WHERE version = $1", [LATEST]);
+
+    expect(await routing.run(["migrate"])).toMatchObject({ exitCode: 0 });
+
+    expect(await routing.directory("SELECT count(*)::int AS mails FROM mail_outbox")).toEqual([{ mails: 0 }]);
+    expect(
+      (await routing.directory("SELECT column_name FROM information_schema.columns WHERE table_name = 'mail_outbox' ORDER BY ordinal_position")).map(
+        ({ column_name }) => column_name,
+      ),
+    ).toEqual([
+      "id",
+      "type",
+      "family_id",
+      "mail_from",
+      "reply_to",
+      "mail_to",
+      "subject",
+      "body",
+      "created_at",
+      "attempts",
+      "next_attempt_at",
+      "claimed_until",
+      "last_error",
+      "sent_at",
+    ]);
+    expect(await routing.directory("SELECT max(version) AS version FROM directory_migration")).toEqual([{ version: LATEST }]);
+    expect(await routing.run(["families"])).toMatchObject({ exitCode: 0, stdout: before.stdout });
   });
 });
 

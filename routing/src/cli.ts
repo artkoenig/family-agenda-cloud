@@ -2,15 +2,17 @@ import { randomUUID } from "node:crypto";
 import type { Writable } from "node:stream";
 import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
-import { ConfigError, directoryConnection, readConfig, type Config } from "./config";
+import { ConfigError, directoryConnection, readConfig, readMailConfig, type Config, type DirectorySettings } from "./config";
 import { parseCreate, parseDelete, parseFamilyId, parseOpenTrials, parseSetFounder, UsageError } from "./cli-arguments";
-import { familyLine } from "./cli-reports";
+import { familyLine, waitingMailLine } from "./cli-reports";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { coreClient } from "./core";
 import { directory, migrateDirectory } from "./directory";
 import { createLog, type Log } from "./log";
+import { runMailSender, smtpTransport } from "./mail-sender";
 import { mailTemplates, putMailTemplates } from "./mail-templates";
+import { outbox } from "./outbox";
 import { setSignInExperience } from "./sign-in-experience";
 import { setSignInClient, setSignInClientRedirects } from "./sign-in-client";
 import { isFamilyId } from "./family-id";
@@ -36,6 +38,8 @@ export type Io = {
   clock?: Clock;
   /** Finds the cores the pool's name stands for; the system's name resolution unless a test stands in for it. */
   resolve?: Resolve;
+  /** The certificate send-mail trusts the mail server by, in place of the system's; a test's server's. */
+  smtpCa?: string;
 };
 
 const USAGE = `Usage:
@@ -65,6 +69,14 @@ const USAGE = `Usage:
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
     once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
     again after a delay that doubles with each failure in a row, up to a quarter of an hour.
+  routing send-mail
+    Runs the outbox's sender until SIGTERM or SIGINT: sends the mails in the outbox through
+    SMTP_HOST:SMTP_PORT (implicit TLS) as SMTP_USER, at most 300 in any hour, tries a mail that
+    failed again after a delay that doubles up to an hour, and deletes mails sent 30 days ago.
+    It needs DIRECTORY_DATABASE_* and SMTP_* alone.
+  routing outbox
+    Lists every mail not sent yet: its id, type and Family, and how often it failed and why.
+    No address, subject or text.
   routing families
     Lists every Family with its status (being_prepared, active, locked, suspended or deleted)
     and when its due work last ran and how it ended; for due work that keeps failing, how often
@@ -113,6 +125,7 @@ const COMMANDS: Record<string, Command> = {
   receive: (_args, config, io, log) => receive(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
   families: (_args, config, io) => families(config, io),
+  outbox: (_args, config, io) => listOutbox(config, io),
   "mail-templates": (_args, config, io) => putTemplates(config, io),
   "sign-in-experience": (_args, config, io, log) => signInExperience(config, io, log),
   "sign-in-client": (_args, config, io, log) => signInClient(config, io, log),
@@ -124,6 +137,8 @@ export async function run(args: string[], io: Io): Promise<number> {
   try {
     const [command, ...rest] = args;
     if (!command) throw new UsageError("No command given");
+    // The mail sender runs with the Directory and the mail server alone: no key of the Routing module's.
+    if (command === "send-mail") return await sendMail(io, log);
     const commandNamed = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
     if (!commandNamed) throw new UsageError(`Unknown command ${command}`);
     return await commandNamed(rest, readConfig(io.env), io, log);
@@ -310,6 +325,24 @@ async function schedule(config: Config, io: Io, log: Log): Promise<number> {
   return 0;
 }
 
+async function sendMail(io: Io, log: Log): Promise<number> {
+  const config = readMailConfig(io.env);
+  const stop = new AbortController();
+  void (io.until ?? stopSignal()).then(() => {
+    stop.abort();
+  });
+  const transport = smtpTransport(config.smtp, io.smtpCa);
+  await withDirectory(config, (client) => runMailSender({ client, transport, log, clock: io.clock ?? systemClock, signal: stop.signal }));
+  return 0;
+}
+
+/** One line per mail not sent yet; no address, subject or text. */
+async function listOutbox(config: Config, io: Io): Promise<number> {
+  const waiting = await withDirectory(config, (client) => outbox(client).waiting());
+  for (const mail of waiting) io.stdout.write(`${waitingMailLine(mail)}\n`);
+  return 0;
+}
+
 /** One line per Family: its Family id, its status, and when its due work last ran and how it ended. */
 async function families(config: Config, io: Io): Promise<number> {
   const overview = await withDirectory(config, (client) => directory(client).overview());
@@ -338,7 +371,7 @@ async function withSchedules<T>(config: Config, work: (schedules: FamilySchedule
 }
 
 /** Opens the Directory, brings its schema up to date and runs `work` with it. */
-async function withDirectory<T>(config: Config, work: (client: pg.Client) => Promise<T>): Promise<T> {
+async function withDirectory<T>(config: DirectorySettings, work: (client: pg.Client) => Promise<T>): Promise<T> {
   const client = new pg.Client(directoryConnection(config));
   await client.connect();
   try {
