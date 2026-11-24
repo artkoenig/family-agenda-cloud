@@ -15,9 +15,10 @@ import {
 } from "../../src/contract-wording";
 
 describe("mailLanguageOf", () => {
-  it("writes German for a German Logto locale, English for any other or none", () => {
+  it("writes German for a German Logto locale or none, English for any other", () => {
     expect(["de", "de-DE", "DE-at", "de_CH"].map(mailLanguageOf)).toEqual(["de", "de", "de", "de"]);
-    expect(["en", "en-US", "fr", "deu", "", null, undefined].map(mailLanguageOf)).toEqual(["en", "en", "en", "en", "en", "en", "en"]);
+    expect(["", null, undefined].map(mailLanguageOf)).toEqual(["de", "de", "de"]);
+    expect(["en", "en-US", "fr", "deu"].map(mailLanguageOf)).toEqual(["en", "en", "en", "en"]);
   });
 });
 

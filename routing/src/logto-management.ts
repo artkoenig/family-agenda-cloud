@@ -47,7 +47,7 @@ export async function managementCall(idp: IdpManagement, method: string, path: s
  * Logto 1.46.0 sets none of its own: neither sign-up (the experience flow's new user has no
  * profile) nor a social sign-in (it syncs name, avatar, email and phone) writes `profile.locale`,
  * and nothing of Family Agenda's writes it either. Until something does, every person has none,
- * and every mail goes out in English (#233).
+ * and every mail goes out in German (#243).
  */
 export async function userLocale(idp: IdpManagement, userId: string): Promise<string | null> {
   const response = await managementCall(idp, "GET", `/api/users/${encodeURIComponent(userId)}`, undefined, "reading the user's locale");
@@ -55,7 +55,7 @@ export async function userLocale(idp: IdpManagement, userId: string): Promise<st
   return typeof profile?.locale === "string" && profile.locale !== "" ? profile.locale : null;
 }
 
-/** The language of the person's mails: German for a German locale at Logto, else English (`mailLanguageOf`). */
+/** The language of the person's mails: German for a German locale at Logto or none, else English (`mailLanguageOf`). */
 export async function recipientLanguage(idp: IdpManagement, userId: string): Promise<Language> {
   return mailLanguageOf(await userLocale(idp, userId));
 }

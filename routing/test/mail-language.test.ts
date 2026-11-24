@@ -22,13 +22,13 @@ describe("A mail's language", () => {
     expect(await recipientLanguage(idp, "user-de-plain")).toBe("de");
   });
 
-  it("is English for a person whose locale is English, or who has none, as Logto 1.46.0 keeps none from sign-up", async () => {
+  it("is English for a person whose locale is English, and German for one who has none, as Logto 1.46.0 keeps none from sign-up", async () => {
     logto.setLocale("user-en", "en-GB");
     logto.setLocale("user-none", null);
 
     expect(await recipientLanguage(idp, "user-en")).toBe("en");
     expect(await userLocale(idp, "user-none")).toBeNull();
-    expect(await recipientLanguage(idp, "user-none")).toBe("en");
+    expect(await recipientLanguage(idp, "user-none")).toBe("de");
   });
 
   it("is not guessed for a person Logto does not know", async () => {
