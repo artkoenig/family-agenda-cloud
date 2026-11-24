@@ -91,6 +91,8 @@ describe("buildSite", () => {
     "legal/impressum.en.md": "# Imprint\n",
     "legal/datenschutz.de.md": "# Datenschutzerklärung\n",
     "legal/datenschutz.en.md": "# Privacy Policy\n",
+    "legal/agb.de.md": "# AGB\n",
+    "legal/agb.en.md": "# Terms\n",
     "index.html": landing(`  <footer class="lp-footer">\n  </footer>`),
     "en/index.html": landing(`  <footer class="lp-footer">\n  </footer>`),
   };
@@ -106,6 +108,8 @@ describe("buildSite", () => {
       { path: "en/imprint.html", content: legalPageHtml(LEGAL_PAGES[0]!, "en", "# Imprint\n") },
       { path: "datenschutz.html", content: legalPageHtml(LEGAL_PAGES[1]!, "de", "# Datenschutzerklärung\n") },
       { path: "en/privacy.html", content: legalPageHtml(LEGAL_PAGES[1]!, "en", "# Privacy Policy\n") },
+      { path: "agb.html", content: legalPageHtml(LEGAL_PAGES[2]!, "de", "# AGB\n") },
+      { path: "en/terms.html", content: legalPageHtml(LEGAL_PAGES[2]!, "en", "# Terms\n") },
       { path: "index.html", content: landing(footerHtml("de", "en/")) },
       { path: "en/index.html", content: landing(footerHtml("en", "../")) },
     ]);

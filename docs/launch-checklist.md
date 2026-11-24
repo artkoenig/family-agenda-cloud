@@ -117,6 +117,8 @@ Numbered after the last gate so that gates 10 to 14, which issues cite by number
 
 - **Threshold:** landing page, registration, billing and legal texts from
   [#32](https://github.com/artkoenig/family-agenda-cloud/issues/32) are live.
+- **Before the site goes public:** the Operator fills `{{NAME}}`, `{{POSTFLEX_ADDRESS}}`, `{{UST_IDNR}}`, `{{STAND}}`
+  and `{{AUFSICHTSBEHOERDE}}` in `site/legal/*.md` and runs `pnpm legal-pages` in `routing/`; no `{{` is left in `site/`.
 - **Measured:** — **Date:** — **Proof:**
 
 ### 14. Content Security Policy
