@@ -89,7 +89,9 @@ Numbered after the last gate so that gates 10 to 14, which issues cite by number
   `health` timer reaches the Operator's private address through healthchecks.io, **each within 15 minutes**
   ([ADR 0003](adr/0003-error-alerts-come-from-journald-and-a-host-timer-not-a-log-service.md)).
 - **How:** the checks of [The health check](runbook/setup.md#the-health-check) in the setup runbook.
-- **Measured:** — **Date:** — **Proof:**
+- **Measured:** error on purpose to mail: 5 minutes; stopped timer to mail: 10 minutes **Date:** 2026-11-24 **Proof:**
+  error written 13:27:42 UTC, mail sent 13:32:33, received 13:32; last ping and timer stopped 13:45:17 UTC, the DOWN
+  mail of healthchecks.io received 13:55 (arrival times as the Operator read them, to the minute)
 
 ## Stage (c) — registration opens
 

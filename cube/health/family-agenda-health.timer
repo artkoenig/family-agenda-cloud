@@ -1,5 +1,5 @@
 # Starts the health check every 5 minutes, and after a boot. healthchecks.io expects its ping every
-# 5 minutes, with a grace of 15 (docs/runbook/setup.md, "The health check").
+# 5 minutes, with a grace of 5 (docs/runbook/setup.md, "The health check").
 [Unit]
 Description=Family Agenda health check every 5 minutes
 
