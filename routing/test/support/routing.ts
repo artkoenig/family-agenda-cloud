@@ -15,7 +15,7 @@ import { poolOf, resolveStandIns, startStandInCore, type StandInCore } from "./s
 export type RunResult = { exitCode: number; stdout: string; stderr: string };
 
 /** How a command runs that runs until stopped: on a clock the test moves, until `until` settles. */
-export type RunOptions = { clock?: TestClock; until?: Promise<unknown> };
+export type RunOptions = { clock?: TestClock; until?: Promise<unknown>; smtpCa?: string };
 
 export type TestRouting = {
   /** The environment the Routing module runs with: its Directory, keys and the stand-in core. */

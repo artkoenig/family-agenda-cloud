@@ -92,6 +92,26 @@ const MIGRATIONS = [
      DROP COLUMN preparation_error`,
   // The Family's Logto Organization, named by the core's family.created (#90).
   "ALTER TABLE family ADD COLUMN IF NOT EXISTS organization_id text UNIQUE",
+  // The mail outbox: mails the Routing module sends, kept until sent and 30 days after (#233). A
+  // mail need not be about a Family. claimed_until is when a sender's claim on a mail runs out.
+  `CREATE TABLE IF NOT EXISTS mail_outbox (
+     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+     type text NOT NULL CHECK (type ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'),
+     family_id uuid,
+     mail_from text NOT NULL,
+     reply_to text NOT NULL,
+     mail_to text NOT NULL,
+     subject text NOT NULL,
+     body text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     attempts integer NOT NULL DEFAULT 0,
+     next_attempt_at timestamptz NOT NULL DEFAULT now(),
+     claimed_until timestamptz,
+     last_error text,
+     sent_at timestamptz
+   );
+   CREATE INDEX IF NOT EXISTS mail_outbox_waiting ON mail_outbox (next_attempt_at, id) WHERE sent_at IS NULL;
+   CREATE INDEX IF NOT EXISTS mail_outbox_sent ON mail_outbox (sent_at) WHERE sent_at IS NOT NULL`,
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */

@@ -35,7 +35,8 @@
     "src/contract-pages.ts",
     "src/contract-mails.ts",
     "src/checkout-texts.ts",
-    "src/confirmation-mail.ts"
+    "src/confirmation-mail.ts",
+    "src/outbox-policy.ts"
   ],
   "timeoutMS": 60000,
   "concurrency": 4,

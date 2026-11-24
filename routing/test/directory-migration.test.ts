@@ -37,7 +37,7 @@ describe("A Directory that holds each Family's core version", () => {
     expect(await routing.run(["migrate"])).toMatchObject({ exitCode: 0 });
 
     expect(await columns()).toEqual(columnsNow);
-    expect(await routing.directory("SELECT max(version) AS version FROM directory_migration")).toEqual([{ version: 7 }]);
+    expect(await routing.directory("SELECT max(version) AS version FROM directory_migration")).toEqual([{ version: 8 }]);
     const after = await routing.run(["families"]);
     expect(after).toMatchObject({ exitCode: 0, stdout: before.stdout });
     expect(after.stdout).toBe(`${familyId}\tactive\tdue work never ran\n`);
@@ -56,6 +56,41 @@ describe("A Directory that holds each Family's core version", () => {
     const router = await routing.startRouter();
 
     expect((await fetch(`${router.url}/${familyId}/admin`)).status).toBe(200);
+  });
+});
+
+describe("A Directory without the mail outbox", () => {
+  it("migrates: the outbox is added, empty, and its Families are as they were", async () => {
+    await routing.run(["create", "--organization-id", ORG]);
+    const before = await routing.run(["families"]);
+    await routing.directory("DROP TABLE mail_outbox");
+    await routing.directory("DELETE FROM directory_migration WHERE version > 7");
+
+    expect(await routing.run(["migrate"])).toMatchObject({ exitCode: 0 });
+
+    expect(await routing.directory("SELECT count(*)::int AS mails FROM mail_outbox")).toEqual([{ mails: 0 }]);
+    expect(
+      (await routing.directory("SELECT column_name FROM information_schema.columns WHERE table_name = 'mail_outbox' ORDER BY ordinal_position")).map(
+        ({ column_name }) => column_name,
+      ),
+    ).toEqual([
+      "id",
+      "type",
+      "family_id",
+      "mail_from",
+      "reply_to",
+      "mail_to",
+      "subject",
+      "body",
+      "created_at",
+      "attempts",
+      "next_attempt_at",
+      "claimed_until",
+      "last_error",
+      "sent_at",
+    ]);
+    expect(await routing.directory("SELECT max(version) AS version FROM directory_migration")).toEqual([{ version: 8 }]);
+    expect(await routing.run(["families"])).toMatchObject({ exitCode: 0, stdout: before.stdout });
   });
 });
 

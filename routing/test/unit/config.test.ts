@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, directoryConnection, readConfig } from "../../src/config";
+import { ConfigError, directoryConnection, readConfig, readMailConfig } from "../../src/config";
 
 const operatorKey = Buffer.alloc(32, 1);
 const contextKey = "a context key of 32 characters or more";
@@ -291,5 +291,41 @@ describe("directoryConnection", () => {
   it("uses Postgres' default port when the address names none", () => {
     const config = readConfig({ ...minimal, DIRECTORY_DATABASE_URL: "postgres://routing@db.internal/directory" });
     expect(directoryConnection(config).port).toBe(5432);
+  });
+});
+
+describe("readMailConfig", () => {
+  /** The mail sender's environment: the Directory and the mailbox, nothing else of the Routing module's. */
+  const mailEnv = {
+    DIRECTORY_DATABASE_URL: "postgres://routing@db.internal:6543/directory",
+    DIRECTORY_DATABASE_PASSWORD: "directory-password",
+    SMTP_HOST: "smtp.ionos.de",
+    SMTP_PORT: "465",
+    SMTP_USER: "no-reply@family-agenda.cloud",
+    SMTP_PASSWORD: "mailbox-password",
+  };
+
+  it("reads the Directory and the mail server, and asks for no other key", () => {
+    const config = readMailConfig(mailEnv);
+    expect(config).toEqual({
+      directoryDatabaseUrl: "postgres://routing@db.internal:6543/directory",
+      directoryDatabasePassword: "directory-password",
+      smtp: { host: "smtp.ionos.de", port: 465, user: "no-reply@family-agenda.cloud", password: "mailbox-password" },
+    });
+    expect(directoryConnection(config)).toMatchObject({ host: "db.internal", port: 6543, password: "directory-password" });
+  });
+
+  it.each(Object.keys(mailEnv))("refuses to start without %s", (name) => {
+    expect(() => readMailConfig({ ...mailEnv, [name]: undefined })).toThrow(new ConfigError(`${name} is not set`));
+  });
+
+  it("refuses a port that is no port", () => {
+    expect(() => readMailConfig({ ...mailEnv, SMTP_PORT: "smtps" })).toThrow(new ConfigError("SMTP_PORT must be a port number, 0 to 65535"));
+  });
+
+  it("refuses a Directory address with a password in it", () => {
+    expect(() => readMailConfig({ ...mailEnv, DIRECTORY_DATABASE_URL: "postgres://routing:secret@db.internal/directory" })).toThrow(
+      new ConfigError("DIRECTORY_DATABASE_URL must not contain a password; set DIRECTORY_DATABASE_PASSWORD"),
+    );
   });
 });
