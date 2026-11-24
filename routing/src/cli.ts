@@ -3,12 +3,13 @@ import type { Writable } from "node:stream";
 import pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
 import { ConfigError, directoryConnection, readConfig, readMailConfig, type Config, type DirectorySettings } from "./config";
-import { parseCreate, parseDelete, parseFamilyId, parseOpenTrials, parseSetFounder, UsageError } from "./cli-arguments";
+import { parseCreate, parseDelete, parseFamilyId, parseInvite, parseOpenTrials, parseSetFounder, UsageError } from "./cli-arguments";
 import { familyLine, waitingMailLine } from "./cli-reports";
 import { createFamily, type CreateFamilyInput } from "./create-family";
 import { deleteFamily, type DeleteFamilyInput } from "./delete-family";
 import { coreClient } from "./core";
 import { directory, migrateDirectory } from "./directory";
+import { invite } from "./invite";
 import { createLog, type Log } from "./log";
 import { runMailSender, smtpTransport } from "./mail-sender";
 import { mailTemplates, putMailTemplates } from "./mail-templates";
@@ -65,6 +66,11 @@ const USAGE = `Usage:
     Records that Admin of the Family as its founder, who registered it, through
     IDP_MANAGEMENT_*; refuses anyone who is not an Admin now, and overwrites a founder recorded
     before only with --force.
+  routing invite <email> [--language de|en]
+    Invites a person to register a Family of their own while registration is closed: puts a mail,
+    German unless --language says otherwise, into the outbox, whose link works once and for 7 days.
+    Refuses anyone in a Family and anyone with an Admin's invitation. Needs IDP_MANAGEMENT_* and
+    CENTRAL_SIGN_IN_*.
   routing schedule
     Runs the Scheduler until stopped: every active Family's due work once a minute, its purge
     once an hour and its sweep of unreferenced secrets once a day. Due work that fails is tried
@@ -121,6 +127,7 @@ const COMMANDS: Record<string, Command> = {
   "open-trials": (args, config, io) => openTrials(config, parseOpenTrials(args), io),
   "start-trial": (args, config, io, log) => runDirectoryCommand(config, trialStart(parseFamilyId(args)), io, log),
   "set-founder": (args, config, io, log) => founderSetting(args, config, io, log),
+  invite: (args, config, io) => sendInvitation(args, config, io),
   serve: (_args, config, io, log) => serve(config, io, log),
   receive: (_args, config, io, log) => receive(config, io, log),
   schedule: (_args, config, io, log) => schedule(config, io, log),
@@ -303,6 +310,17 @@ function founderSetting(args: string[], config: Config, io: Io, log: Log): Promi
     failed: "Recording the founder failed; run set-founder again",
   };
   return runDirectoryCommand(config, command, io, log);
+}
+
+/** Puts an invitation to register into the outbox; needs IDP_MANAGEMENT_* and central sign-in, which its link leads to. */
+async function sendInvitation(args: string[], config: Config, io: Io): Promise<number> {
+  const input = parseInvite(args);
+  const { idpManagement: idp, centralSignIn, publicUrl } = config;
+  if (idp === null) throw new ConfigError("invite needs IDP_MANAGEMENT_ENDPOINT, _CLIENT_ID and _CLIENT_SECRET");
+  if (centralSignIn === null) throw new ConfigError("invite needs CENTRAL_SIGN_IN_CLIENT_ID and _CLIENT_SECRET");
+  const id = await withDirectory(config, (client) => invite(idp, outbox(client), publicUrl, input));
+  io.stdout.write(`The invitation is in the outbox as mail ${id}; its link works once and for 7 days\n`);
+  return 0;
 }
 
 /** Opens Trials and names each Family whose Trial it started. */

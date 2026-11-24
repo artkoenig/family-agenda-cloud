@@ -17,6 +17,9 @@ export const DESIGN_PATH = "/design";
 /** Where the waiting page asks again. */
 export const WAITING_PATH = "/sign-in/waiting";
 
+/** Where an invitation link (`routing invite`) leads, with its one-time token. */
+export const INVITATION_PATH = "/sign-in/invitation";
+
 /** Abmelden: ends Logto's session, back to the landing page. */
 export const SIGN_OUT_PATH = "/sign-in/out";
 

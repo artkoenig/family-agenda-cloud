@@ -254,6 +254,8 @@ change `REGISTRATION` in the `.env` and `scripts/deploy.sh`; it must say `Regist
 While registration is closed, an Admin's invitation still works: its link carries a one-time token that lets the
 invitee create an account and sign in even with `signInMode: SignIn`
 ([ADR-0011 of the core](https://github.com/artkoenig/family-agenda/blob/main/docs/adr/0011-invitation-links-carry-a-one-time-token.md)).
+The Operator's `routing invite <email>` uses the same kind of token to let a person register a Family of their own
+([Invite a Family](families.md#invite-a-family)).
 When registration opens and closes is the [launch checklist](../launch-checklist.md)'s, gates 13a and 13b.
 
 The mails Logto sends are Family Agenda's own, German and English, not the SMTP connector's plain English texts:

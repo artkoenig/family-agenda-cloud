@@ -5,7 +5,7 @@ import { landingOf, type FindByOrganization, type Landing } from "./landing";
 import type { PostRegisterAgain } from "./post-register";
 import { signInCallbackUrl, signOutRedirectUrl } from "./sign-in-client";
 import { openCookie, sealCookie } from "./sign-in-cookie";
-import { languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
+import { INVITATION_PATH, languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
 
 /**
  * Central sign-in (#154): the landing page's "Anmelden" signs the person in at Logto with the
@@ -15,6 +15,7 @@ import { languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, type SignInPage } 
  *
  * - `GET /sign-in` sends the browser to Logto, `GET /sign-in/again` does so with `prompt=none`,
  *   `GET /sign-in/register` on Logto's sign-up screen (`first_screen=register`).
+ * - `GET /sign-in/invitation` (`routing invite`) does so with the invitation link's one-time token.
  * - `GET /sign-in/out` (Abmelden, #173) ends Logto's session and sends the person to the landing page.
  * - `GET /sign-in/callback` ends the sign-in and lands the person (see `landingOf`).
  * - `GET /sign-in/waiting`, which the waiting page asks every few seconds, lands them again by
@@ -89,11 +90,26 @@ const REGISTER_PATH = "/sign-in/register";
 const ROUTES: Record<string, Route> = {
   "/sign-in": (context) => toLogto(context, false),
   "/sign-in/again": (context) => toLogto(context, true),
-  [REGISTER_PATH]: (context) => toLogto(context, false, "register"),
+  [REGISTER_PATH]: (context) => toLogto(context, false, { first_screen: "register" }),
+  [INVITATION_PATH]: (context, query) => toLogto(context, false, invitationOf(query)),
   "/sign-in/callback": callback,
   [WAITING_PATH]: waiting,
   [SIGN_OUT_PATH]: signOut,
 };
+
+/**
+ * The one-time token and the email it is for, by which Logto signs the person in or creates their
+ * account, even while registration is closed; nothing else of the link goes to Logto. No
+ * `first_screen`, with which Logto leaves the token unused.
+ */
+function invitationOf(query: URLSearchParams): Record<string, string> {
+  const parameters = new Map<string, string>();
+  for (const name of ["one_time_token", "login_hint"]) {
+    const value = query.get(name);
+    if (value !== null) parameters.set(name, value);
+  }
+  return Object.fromEntries(parameters);
+}
 
 type Context = { setup: SignInSetup; cookies: Map<string, string>; language: ReturnType<typeof languageOf>; now: Date };
 
@@ -101,8 +117,8 @@ const NO_STORE = { "cache-control": "no-store" };
 
 const random = (): string => randomBytes(32).toString("base64url");
 
-/** Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`, on `firstScreen` if given. */
-function toLogto({ setup, now }: Context, silent: boolean, firstScreen?: "register"): SignInAnswer {
+/** Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`, with the `extra` parameters. */
+function toLogto({ setup, now }: Context, silent: boolean, extra: Record<string, string> = {}): SignInAnswer {
   const transaction: Transaction = { state: random(), verifier: random(), nonce: random(), silent };
   const authorization = new URL(`${setup.client.issuerUrl}/auth`);
   authorization.search = new URLSearchParams({
@@ -115,7 +131,7 @@ function toLogto({ setup, now }: Context, silent: boolean, firstScreen?: "regist
     code_challenge: createHash("sha256").update(transaction.verifier).digest("base64url"),
     code_challenge_method: "S256",
     ...(silent ? { prompt: "none" } : {}),
-    ...(firstScreen ? { first_screen: firstScreen } : {}),
+    ...extra,
   }).toString();
   const cookie = setCookie(TRANSACTION_COOKIE, sealCookie(setup.operatorKey, TRANSACTION_COOKIE, transaction, TRANSACTION_LIFETIME_MS, now), TRANSACTION_LIFETIME_MS);
   return redirect(authorization.toString(), [cookie]);
