@@ -115,7 +115,6 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
 
    | Key | What it is | How to get it |
    |---|---|---|
-   | `LANDING_BASIC_AUTH_USER`, `LANDING_BASIC_AUTH_HASH` | Basic Auth in front of the landing page | a name and a password of the Operator's choice; the hash from `docker run --rm caddy:2.11.9 caddy hash-password --plaintext '<password>'`, in single quotes |
    | `OPERATOR_KEY` | wraps every family key and Family database password in the Directory | `openssl rand -base64 32`, exactly that |
    | `CONTEXT_KEY` | encrypts and signs the Contexts the cores open | `openssl rand -base64 32` |
    | `TRIGGER_TOKEN` | the bearer token of the cores' trigger port | `openssl rand -base64 32` |
@@ -172,8 +171,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    manager:
    `ssh root@family-agenda.cloud 'cd /opt/family-agenda && docker compose exec -T router routing create --organization-id <id>'`,
    with the id of a Logto Organization made for it in the Logto console.
-7. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`; with `LANDING_AUTH="user:password"` it also fetches the pages behind
-   Basic Auth. It fails when that Family's address does not answer or an unknown Family id does not get 404.
+7. `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh`. It fails when that Family's address does not answer or an unknown Family id does not get 404.
 8. Check by hand that the pool survives losing a core: on the Cube, `docker stop family-agenda-core-1`; run the smoke
    check again, which must pass; then `docker start family-agenda-core-1`. The
    [health check](#the-health-check) mails that the core exited, which is expected.

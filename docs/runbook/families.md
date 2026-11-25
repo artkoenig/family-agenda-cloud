@@ -81,8 +81,7 @@ routing invite <email> [--language de|en]
 It puts a mail, German unless `--language en`, into [the outbox](#the-mail-outbox), and prints its id there. The
 mail's link, `https://app.family-agenda.cloud/sign-in/invitation`, carries a one-time token of Logto's: it lets that
 address create an account with `signInMode: SignIn`. It works once and for 7 days. The Family is then created as for
-anyone who registers; `routing families` lists it. Logto's terms dialog links to the landing page: while that has
-Basic Auth, send its login along separately.
+anyone who registers; `routing families` lists it.
 
 - `The person already is in a Family`, `The person has an Admin's invitation`: refused, as the core would make them no
   Family of their own. A pending invitation can be withdrawn by an Admin of that Family; one once accepted

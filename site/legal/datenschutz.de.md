@@ -1,12 +1,12 @@
 # Datenschutzerklärung
 
-Stand: {{STAND}}
+Stand: 25. November 2026
 
 Diese Erklärung gilt für die Website family-agenda.cloud, die Anmeldung und den Dienst Family Agenda. Wesentliche Änderungen kündigen wir Familien per E-Mail an.
 
 ## 1 Verantwortlicher
 
-{{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}
+Artjom König, Family Agenda, Ludwigsweg 7, 53773 Hennef
 E-Mail: support@family-agenda.cloud
 
 Wir sind für alle Verarbeitungen in dieser Erklärung allein verantwortlich, auch für die Inhalte, die Familien im Dienst speichern. Einen Datenschutzbeauftragten haben wir nicht bestellt; wenden Sie sich mit allen Fragen an support@family-agenda.cloud.
@@ -116,7 +116,7 @@ Sie haben das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Lösch
 
 Schreiben Sie dazu an support@family-agenda.cloud.
 
-Sie können sich bei einer Datenschutz-Aufsichtsbehörde beschweren, etwa bei der für uns zuständigen: {{AUFSICHTSBEHOERDE}}.
+Sie können sich bei einer Datenschutz-Aufsichtsbehörde beschweren, etwa bei der für uns zuständigen: Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen, https://www.ldi.nrw.de.
 
 ## 11 Weiteres
 

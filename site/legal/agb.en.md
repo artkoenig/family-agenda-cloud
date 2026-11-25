@@ -2,11 +2,11 @@
 
 > This translation is for information only. Only the [German version](/agb) is legally binding.
 
-Version: {{STAND}}
+Version: 25 November 2026
 
 ## 1 Scope, provider
 
-(1) These terms apply to all contracts for using the service "Family Agenda" at family-agenda.cloud between {{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}} ("we") and you.
+(1) These terms apply to all contracts for using the service "Family Agenda" at family-agenda.cloud between Artjom König, Family Agenda, Ludwigsweg 7, 53773 Hennef, Germany ("we") and you.
 
 (2) We contract only with consumers for private households.
 

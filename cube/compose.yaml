@@ -21,9 +21,7 @@ name: family-agenda
 # The core image of the pool, pinned here as every other image is. A new core version is this line
 # changed and deployed: its cores prepare each Family when they first open it, and the Routing
 # module tries another core while one of the release before still refuses a Family (docs/runbook).
-# Until the core release whose registration takes the Context's Organization (artkoenig/family-agenda#448)
-# is out, this is the build of that commit on main; then it is that release's tag and digest.
-x-core-image: &core-image ghcr.io/artkoenig/family-agenda:sha-3088dda@sha256:86d95e134231229b2d3c9306584e0cc27aa32c1392d571d1255b9a6be47d9b0c
+x-core-image: &core-image ghcr.io/artkoenig/family-agenda:0.10.0@sha256:78210848ff42535717c8d8e5ad8f68c76ad2b208c6b5c1b30578ba651f7d73dd
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
 
 # Every service logs to the Cube's journal (journald, 14 days: cube/health/journald.conf), where
@@ -75,6 +73,10 @@ x-core: &core
     EGRESS_TICKET_KEY: ${EGRESS_TICKET_KEY:?}
     # Caddy and the Router sit in front: the Router forwards the browser's scheme and address.
     TRUST_PROXY: "true"
+    # The legal pages every page of a Family links to.
+    IMPRINT_URL: https://family-agenda.cloud/impressum
+    PRIVACY_URL: https://family-agenda.cloud/datenschutz
+    TERMS_URL: https://family-agenda.cloud/agb
     TESSDATA_DIRECTORY: /var/lib/family-agenda/tessdata
     PLUGIN_URLS: ics=http://plugin-ics:8080,imap=http://plugin-imap:8080,webuntis=http://plugin-webuntis:8080
     # Sign-in: one Logto for every Family (ADR-0009 of the core). Each Family is a Logto
@@ -223,10 +225,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    # Only what the Caddyfile reads: Caddy gets none of the Routing module's secrets.
-    environment:
-      LANDING_BASIC_AUTH_USER: ${LANDING_BASIC_AUTH_USER:?}
-      LANDING_BASIC_AUTH_HASH: ${LANDING_BASIC_AUTH_HASH:?}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./site:/srv/site:ro
