@@ -154,7 +154,10 @@ and legal texts are those of [#179](https://github.com/artkoenig/family-agenda-c
   Logto is on `signInMode: SignIn`, so nobody can register at `https://auth.family-agenda.cloud` without an
   invitation, while an Admin's invitation link still creates the invitee's account and signs them in (checked once
   on the Cube with an address of the Operator's).
-- **Measured:** — **Date:** — **Proof:**
+- **Measured:** `/`, `/en/` and all legal pages answer 200 without Basic Auth, `X-Robots-Tag` or `{{`; the deploy
+  said `Registration is closed`; sign-in and the invitation checked by hand by the Operator **Date:** 2026-11-25
+  **Proof:** [#254](https://github.com/artkoenig/family-agenda-cloud/pull/254), `scripts/smoke.sh` passed for both
+  active Families
 
 ### 13b. Registration open
 
