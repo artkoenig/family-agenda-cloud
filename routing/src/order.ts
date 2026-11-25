@@ -1,6 +1,6 @@
 /**
  * The order (#226): a Family's founder chooses the billing on `/order` and is sent to Stripe's
- * hosted Checkout. Nothing here changes the Directory but the founder recorded when first needed
+ * hosted Checkout; `/subscription` takes the Contract holder to Stripe's Portal (#227). Nothing here changes the Directory but the founder recorded when first needed
  * (`founderOf`): it learns of the order from Stripe's webhooks alone (#227).
  *
  * - Without a session the browser goes to central sign-in and comes back.
@@ -18,7 +18,7 @@ import type { Directory, DirectoryEntry } from "./directory";
 import { founderOf } from "./founder";
 import { person, setName, type IdpManagement, type LogtoPerson } from "./logto-management";
 import { organizations } from "./organizations";
-import { BILLING_FIELD, NAME_FIELD, NAME_LIMIT, noAccessPage, noFounderPage, notOfferedPage, onlyFounderOrdersPage, orderDonePage, orderedPage, orderPage } from "./order-pages";
+import { BILLING_FIELD, NAME_FIELD, NAME_LIMIT, noAccessPage, noFounderPage, noSubscriptionPage, notOfferedPage, onlyFounderOrdersPage, orderDonePage, orderedPage, orderPage, subscriptionHolderPage } from "./order-pages";
 import { checkoutSessionParams } from "./order-session";
 import { ORDER_PATHS, signInPathFor, type OrderPath } from "./routing-pages";
 import { sessionOf, type RoutingSession } from "./routing-session";
@@ -31,6 +31,8 @@ export type OrderSetup = {
   idp: IdpManagement;
   prices: StripeSettings["prices"];
   stripe: StripePort;
+  /** Stripe's configuration of the Portal (`portalConfiguration`). */
+  portal: string;
   now: () => Date;
 };
 
@@ -40,7 +42,7 @@ export type OrderRequest = { method: string | undefined; path: OrderPath; cookie
 /** The Router's answer. */
 export type OrderAnswer = { status: number; headers: Record<string, string>; body: string };
 
-const METHODS: Record<OrderPath["page"], readonly string[]> = { order: ["GET", "HEAD", "POST"], done: ["GET", "HEAD"] };
+const METHODS: Record<OrderPath["page"], readonly string[]> = { order: ["GET", "HEAD", "POST"], done: ["GET", "HEAD"], subscription: ["GET"] };
 
 const NO_STORE = { "cache-control": "no-store" };
 
@@ -59,6 +61,7 @@ export async function answerOrder(request: OrderRequest, setup: OrderSetup): Pro
   const visit = await visitOf(setup, language, session, now);
   if (!visit) return html(403, noAccessPage(language));
   if (page === "done") return html(200, orderDonePage(language, visit.entry.familyId));
+  if (page === "subscription") return answerSubscription(visit);
   return answerOrderPage(visit, posted ? request.form : undefined);
 }
 
@@ -85,6 +88,21 @@ async function answerOrderPage(visit: Visit, form: OrderRequest["form"] | undefi
   if (!founder) return html(200, noFounderPage(language, familyId));
   if (founder.userId !== session.userId) return html(200, onlyFounderOrdersPage(language, familyId, nameOf(founder) ?? founder.userId));
   return form ? postedOrder(visit, family, founder, form) : html(200, formOf(visit, family, founder));
+}
+
+/** `/subscription`: takes the Contract holder to Stripe's Portal, also while the Family is Locked. */
+async function answerSubscription({ setup, language, session, entry }: Visit): Promise<OrderAnswer> {
+  const { familyId } = entry;
+  const subscription = await setup.directory.lastSubscriptionOf(familyId);
+  if (!subscription || subscription.customerId === null) return html(200, noSubscriptionPage(language, familyId));
+  if (subscription.holder !== session.userId) return html(200, subscriptionHolderPage(language, familyId, await nameAtLogto(setup.idp, subscription.holder)));
+  const portal = await setup.stripe.portalSession({
+    customer: subscription.customerId,
+    configuration: setup.portal,
+    locale: language,
+    return_url: `${setup.config.publicUrl}/${familyId}/`,
+  });
+  return redirect(302, portal);
 }
 
 /** The Family's founder as Logto keeps them; undefined if none is recorded, or they are no Admin any more. */

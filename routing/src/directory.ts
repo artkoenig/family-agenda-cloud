@@ -15,6 +15,9 @@ export type LockReason = "trial_ended" | "subscription_ended" | "unpaid";
 /** The statuses of a Subscription that is running; any other ended it, or never started it. */
 const RUNNING_SUBSCRIPTION = ["trialing", "active", "past_due", "unpaid"];
 
+/** Whether a Subscription with this status of Stripe's is running. */
+export const isRunning = (status: string): boolean => RUNNING_SUBSCRIPTION.includes(status);
+
 /** A Family's Subscription, as Stripe last told of it. */
 export type Subscription = {
   subscriptionId: string;
@@ -244,6 +247,18 @@ export type Directory = {
   startTrial(familyId: string): Promise<Date | null>;
   /** The Family's running Subscription, of which it has at most one; null when it has none. */
   subscriptionOf(familyId: string): Promise<Subscription | null>;
+  /** The Family's running Subscription, or else the one ordered last; null when it never had one. */
+  lastSubscriptionOf(familyId: string): Promise<Subscription | null>;
+  /** The Subscription with this id; null when the Directory has none. */
+  subscription(subscriptionId: string): Promise<Subscription | null>;
+  /** Writes what Stripe tells of a Subscription, keeping when its confirmation was sent. */
+  saveSubscription(subscription: Omit<Subscription, "confirmationSentAt">): Promise<void>;
+  /** Notes that the Subscription's confirmation is sent. */
+  recordConfirmation(subscriptionId: string, at: Date): Promise<void>;
+  /** Whether the Stripe event was handled before. */
+  isEventHandled(eventId: string): Promise<boolean>;
+  /** Notes that the Stripe event is handled. */
+  recordEvent(eventId: string): Promise<void>;
   /**
    * Records the founder, unless one is recorded and `overwrite` is false; answers the founder the
    * Family has now, undefined when there is no such Family.
@@ -392,7 +407,7 @@ function subscriptionOf(row: SubscriptionRow): Subscription {
 }
 
 /** Runs `work` in a transaction on the client: committed if it ends, rolled back if it throws. */
-async function inTransaction<T>(client: Pick<pg.ClientBase, "query">, work: () => Promise<T>): Promise<T> {
+export async function inTransaction<T>(client: Pick<pg.ClientBase, "query">, work: () => Promise<T>): Promise<T> {
   await client.query("BEGIN");
   try {
     const result = await work();
@@ -548,6 +563,52 @@ export function directory(client: Pick<pg.ClientBase, "query">): Directory {
       );
       const row = rows[0];
       return row ? subscriptionOf(row) : null;
+    },
+    async lastSubscriptionOf(familyId) {
+      const { rows } = await client.query<SubscriptionRow>(
+        "SELECT * FROM subscription WHERE family_id = $1 ORDER BY (status = ANY($2::text[])) DESC, ordered_at DESC NULLS LAST, subscription_id LIMIT 1",
+        [familyId, RUNNING_SUBSCRIPTION],
+      );
+      const row = rows[0];
+      return row ? subscriptionOf(row) : null;
+    },
+    async subscription(subscriptionId) {
+      const { rows } = await client.query<SubscriptionRow>("SELECT * FROM subscription WHERE subscription_id = $1", [subscriptionId]);
+      const row = rows[0];
+      return row ? subscriptionOf(row) : null;
+    },
+    async saveSubscription(subscription) {
+      await client.query(
+        `INSERT INTO subscription (subscription_id, family_id, customer_id, holder, billing, status, ordered_at, trial_end, current_period_end, cancel_at, ended_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (subscription_id) DO UPDATE SET
+           family_id = excluded.family_id, customer_id = excluded.customer_id, holder = excluded.holder, billing = excluded.billing, status = excluded.status,
+           ordered_at = excluded.ordered_at, trial_end = excluded.trial_end, current_period_end = excluded.current_period_end,
+           cancel_at = excluded.cancel_at, ended_at = excluded.ended_at`,
+        [
+          subscription.subscriptionId,
+          subscription.familyId,
+          subscription.customerId,
+          subscription.holder,
+          subscription.billing,
+          subscription.status,
+          subscription.orderedAt,
+          subscription.trialEnd,
+          subscription.currentPeriodEnd,
+          subscription.cancelAt,
+          subscription.endedAt,
+        ],
+      );
+    },
+    async recordConfirmation(subscriptionId, at) {
+      await client.query("UPDATE subscription SET confirmation_sent_at = $2 WHERE subscription_id = $1", [subscriptionId, at]);
+    },
+    async isEventHandled(eventId) {
+      const { rows } = await client.query("SELECT 1 FROM stripe_event WHERE event_id = $1", [eventId]);
+      return rows.length > 0;
+    },
+    async recordEvent(eventId) {
+      await client.query("INSERT INTO stripe_event (event_id) VALUES ($1) ON CONFLICT DO NOTHING", [eventId]);
     },
     async recordFounder(familyId, userId, overwrite) {
       const { rows } = await client.query<{ registered_by: string | null }>(

@@ -110,15 +110,26 @@ describe("readConfig", () => {
     STRIPE_SECRET_KEY: "key",
     STRIPE_PRICE_MONTHLY: "price_m",
     STRIPE_PRICE_YEARLY: "price_y",
+    STRIPE_WEBHOOK_SECRET: "whsec",
+    OPERATOR_NAME: "Olga Operator",
+    OPERATOR_POSTAL_ADDRESS: "Postflex 1",
+    AGB_STAND: "1. November 2026",
   };
 
+  const STRIPE_KEYS = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_YEARLY", "OPERATOR_NAME", "OPERATOR_POSTAL_ADDRESS", "AGB_STAND"];
+
   it("takes Stripe's key and Prices, and empty ones as not set", () => {
-    expect(readConfig(withStripe).stripe).toEqual({ secretKey: "key", prices: { monthly: "price_m", yearly: "price_y" } });
-    expect(readConfig({ ...withStripe, STRIPE_SECRET_KEY: "", STRIPE_PRICE_MONTHLY: "", STRIPE_PRICE_YEARLY: "" }).stripe).toBeNull();
+    expect(readConfig(withStripe).stripe).toEqual({
+      secretKey: "key",
+      webhookSecret: "whsec",
+      prices: { monthly: "price_m", yearly: "price_y" },
+      imprint: { name: "Olga Operator", postalAddress: "Postflex 1", stand: "1. November 2026" },
+    });
+    expect(readConfig({ ...withStripe, ...Object.fromEntries(STRIPE_KEYS.map((key) => [key, ""])) }).stripe).toBeNull();
   });
 
-  it.each(["STRIPE_SECRET_KEY", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_YEARLY"])("refuses Stripe without %s", (name) => {
-    expect(() => readConfig({ ...withStripe, [name]: "" })).toThrow(new ConfigError("STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY, STRIPE_PRICE_YEARLY must be set all three, or none"));
+  it.each(STRIPE_KEYS)("refuses Stripe without %s", (name) => {
+    expect(() => readConfig({ ...withStripe, [name]: "" })).toThrow(new ConfigError(`${STRIPE_KEYS.join(", ")} must be set all, or none`));
   });
 
   it("refuses Stripe without central sign-in or Logto's Management API", () => {
@@ -127,8 +138,12 @@ describe("readConfig", () => {
     expect(() => readConfig({ ...withStripe, ...idpOff })).toThrow(new ConfigError("STRIPE_SECRET_KEY needs IDP_MANAGEMENT_ENDPOINT"));
   });
 
-  it.each(["/order", "/en/order", "/order/done", "/en/order/done"])("refuses a callback at the order's page %s", (path) => {
+  it.each(["/order", "/en/order", "/order/done", "/en/order/done", "/subscription", "/en/subscription"])("refuses a callback at the order's page %s", (path) => {
     expect(() => readConfig({ ...minimal, OIDC_CALLBACK_URL: `https://app.example${path}` })).toThrow(new ConfigError("OIDC_CALLBACK_URL must not be a page of the order"));
+  });
+
+  it("refuses a callback at Stripe's webhook", () => {
+    expect(() => readConfig({ ...minimal, OIDC_CALLBACK_URL: "https://app.example/stripe/events" })).toThrow(new ConfigError("OIDC_CALLBACK_URL must not be /stripe/events, Stripe's webhook"));
   });
 
   it("takes empty CENTRAL_SIGN_IN_CLIENT_* as not set, as Compose passes them before the setup wizard ran", () => {

@@ -1,6 +1,6 @@
 /**
  * The pages on which a Family's founder orders the Tariff (#226): `/order`, and `/order/done` after
- * Stripe's Checkout; the English ones under `/en` (`ORDER_PATHS`). In the landing page's design
+ * Stripe's Checkout; and `/subscription`, on the way to Stripe's Portal (#227); the English ones under `/en` (`ORDER_PATHS`). In the landing page's design
  * system, like the contract pages. Every value is escaped. No I/O.
  */
 import { escape, page, paragraphs, submit } from "./contract-pages";
@@ -28,6 +28,7 @@ type Words = {
   ordered: string;
   notOffered: string;
   noFounder: string;
+  subscription: { title: string; none: string };
   noAccess: { title: string; line: string };
   support: string;
   done: { title: string; mail: string };
@@ -53,6 +54,7 @@ const WORDS: Record<Language, Words> = {
     ordered: "Tarif bereits bestellt",
     notOffered: "Für diese Familie kann zurzeit kein Tarif bestellt werden.",
     noFounder: "Für diese Familie ist nicht hinterlegt, wer bestellen kann.",
+    subscription: { title: "Abonnement", none: "Für diese Familie gibt es kein Abonnement." },
     noAccess: { title: "Kein Zugriff", line: "Nur Admins der Familie können diese Seite sehen." },
     support: "Fragen? Schreiben Sie uns:",
     done: { title: "Danke für Ihre Bestellung.", mail: "Die Vertragsbestätigung kommt per E-Mail." },
@@ -73,6 +75,7 @@ const WORDS: Record<Language, Words> = {
     ordered: "Tariff already ordered",
     notOffered: "No tariff can be ordered for this family at the moment.",
     noFounder: "It is not recorded who can order for this family.",
+    subscription: { title: "Subscription", none: "This family has no subscription." },
     noAccess: { title: "No access", line: "Only the family's admins can see this page." },
     support: "Questions? Write to us:",
     done: { title: "Thank you for your order.", mail: "The contract confirmation is on its way by email." },
@@ -137,6 +140,17 @@ export function noAccessPage(language: Language): string {
 export function orderDonePage(language: Language, familyId: string): string {
   const { done } = WORDS[language];
   return page(language, done.title, `${paragraphs([done.mail])}\n${toFamily(language, familyId)}`);
+}
+
+/** `/subscription` for an Admin who is not its holder, with the holder's name unless Logto no longer knows them. */
+export function subscriptionHolderPage(language: Language, familyId: string, holderName: string | null): string {
+  return page(language, WORDS[language].subscription.title, `${holderName === null ? support(language) : paragraphs([holderLine(holderName, language)])}\n${toFamily(language, familyId)}`);
+}
+
+/** `/subscription` of a Family that never had a Subscription. */
+export function noSubscriptionPage(language: Language, familyId: string): string {
+  const { title, none } = WORDS[language].subscription;
+  return page(language, title, `${paragraphs([none])}\n${toFamily(language, familyId)}`);
 }
 
 const support = (language: Language): string => `<p>${escape(WORDS[language].support)} ${SUPPORT_LINK}</p>`;

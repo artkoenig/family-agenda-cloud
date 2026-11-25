@@ -16,7 +16,9 @@ import { postRegisterAgain } from "./post-register";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
 import { systemResolve } from "./resolve";
-import { orderPathOf, type OrderPath } from "./routing-pages";
+import { orderPathOf, STRIPE_EVENTS_PATH, type OrderPath } from "./routing-pages";
+import { familySchedules, openQueues } from "./scheduler";
+import { answerStripeEvent, type StripeEventsSetup } from "./stripe-events";
 import { checkPrices, stripePort, type StripePort } from "./stripe";
 
 /** The Router, listening for the browsers' requests. */
@@ -33,6 +35,8 @@ type RouterSetup = {
   signIn: SignInSetup | null;
   /** The order at Stripe; none unless configured, and its pages are then no paths of the Router's. */
   order: OrderSetup | null;
+  /** Stripe's webhook; none unless the order is, and its path is then no path of the Router's. */
+  stripeEvents: StripeEventsSetup | null;
 };
 
 /** A request as the Router passes it on to a core. */
@@ -55,6 +59,9 @@ const HELD_BODY_BYTES = 1024 * 1024;
 /** How much of a posted order the Router reads: more than any form of its has. */
 const ORDER_BYTES = 8 * 1024;
 
+/** How much of a Stripe event the Router reads: more than any has. */
+const STRIPE_EVENT_BYTES = 1024 * 1024;
+
 /** How much of a core's answer the Router reads to tell whether it is a refusal: more than any refusal has. */
 const REFUSAL_BYTES = 1024;
 
@@ -63,7 +70,8 @@ const REFUSAL_BYTES = 1024;
  * request on to any core with that Family's Context. It opens the Directory on the first request
  * that names a Family. `resolve` finds the cores the pool's name stands for, at each request;
  * `now` is the time central sign-in and the order go by, and `connectStripe` answers Stripe with the
- * restricted key. Refuses to start with Prices at Stripe that are not the Tariff's.
+ * restricted key. Refuses to start with Prices at Stripe that are not the Tariff's. With Stripe it also
+ * opens the Scheduler's queues, as Stripe's events lock and unlock Families.
  */
 export async function startRouter(
   config: Config,
@@ -72,8 +80,6 @@ export async function startRouter(
   now: () => Date = () => new Date(),
   connectStripe: (secretKey: string) => StripePort = stripePort,
 ): Promise<Router> {
-  const stripe = config.stripe && { prices: config.stripe.prices, port: connectStripe(config.stripe.secretKey) };
-  if (stripe) await checkPrices(stripe.port, stripe.prices);
   const directoryPool = new pg.Pool({ ...directoryConnection(config), max: 10 });
   // An idle connection the server closed is replaced on the next request; it is no reason to stop.
   directoryPool.on("error", (error) => {
@@ -90,8 +96,11 @@ export async function startRouter(
     postRegisterAgain: postRegisterAgain(pool, config.centralSignIn.webhookSecret, log),
     now,
   };
-  const order = stripe && config.idpManagement && { config, directory, idp: config.idpManagement, prices: stripe.prices, stripe: stripe.port, now };
-  const setup: RouterSetup = { config, directory, log, pool, signIn, order };
+  const stripe = await openStripe({ config, directory, directoryPool, log, resolve, now }, connectStripe).catch(async (error: unknown) => {
+    await directoryPool.end();
+    throw error;
+  });
+  const setup: RouterSetup = { config, directory, log, pool, signIn, order: stripe?.order ?? null, stripeEvents: stripe?.events ?? null };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -106,17 +115,42 @@ export async function startRouter(
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => { resolve(); }));
       await directoryPool.end();
+      await stripe?.close();
     },
   };
 }
 
-/** Answers a request for central sign-in or a page of the order; false if it is for neither. */
+type StripeSurroundings = Pick<StripeEventsSetup, "config" | "directoryPool" | "log" | "resolve" | "now"> & { directory: Directory };
+
+/** What the order and Stripe's webhook work with, and the Scheduler's queues they need; null unless Stripe is configured. */
+async function openStripe({ directory, ...shared }: StripeSurroundings, connectStripe: (secretKey: string) => StripePort) {
+  const { config, now } = shared;
+  const { stripe: settings, idpManagement: idp } = config;
+  if (!settings || !idp) return null;
+  const stripe = connectStripe(settings.secretKey);
+  await checkPrices(stripe, settings.prices);
+  const portal = await stripe.portalConfiguration();
+  const boss = openQueues(config, { supervise: false, schedule: false, registerInstance: false, max: 2 });
+  await boss.start();
+  const order: OrderSetup = { config, directory, idp, prices: settings.prices, stripe, portal, now };
+  const events: StripeEventsSetup = { ...shared, settings, idp, stripe, schedules: await familySchedules(boss) };
+  return { order, events, close: () => boss.stop({ graceful: false }) };
+}
+
+/** Answers a request for central sign-in, a page of the order or Stripe's webhook; false if it is for none of them. */
 async function ownPageRequest(setup: RouterSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<boolean> {
-  const { signIn, order } = setup;
   const [pathname = ""] = (incoming.url ?? "/").split("?", 1);
+  const { signIn } = setup;
+  if (!signIn || !isSignInPath(pathname)) return stripePageRequest(setup, pathname, incoming, outgoing);
+  await signInRequest(setup, signIn, incoming, outgoing);
+  return true;
+}
+
+/** Answers a request for a page of the order or Stripe's webhook; false if it is for neither. */
+async function stripePageRequest({ order, stripeEvents }: RouterSetup, pathname: string, incoming: IncomingMessage, outgoing: ServerResponse): Promise<boolean> {
   const orderPath = orderPathOf(pathname);
-  if (signIn && isSignInPath(pathname)) await signInRequest(setup, signIn, incoming, outgoing);
-  else if (order && orderPath) await orderRequest(order, orderPath, incoming, outgoing);
+  if (order && orderPath) await orderRequest(order, orderPath, incoming, outgoing);
+  else if (stripeEvents && pathname === STRIPE_EVENTS_PATH) await stripeEventRequest(stripeEvents, incoming, outgoing);
   else return false;
   return true;
 }
@@ -160,6 +194,19 @@ async function orderRequest(order: OrderSetup, path: OrderPath, incoming: Incomi
   // What was posted and not read would stay on the connection.
   if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
+}
+
+/** Answers a request to Stripe's webhook, whose signature is of the body's bytes. */
+async function stripeEventRequest(stripeEvents: StripeEventsSetup, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
+  const body = async (): Promise<Buffer | undefined> => {
+    const begun = await beginningOf(incoming, STRIPE_EVENT_BYTES);
+    return begun?.whole ? Buffer.concat(begun.chunks) : undefined;
+  };
+  const signature = incoming.headers["stripe-signature"];
+  const { status, headers, body: said } = await answerStripeEvent({ method: incoming.method, signature: typeof signature === "string" ? signature : undefined, body }, stripeEvents);
+  // What was posted and not read would stay on the connection.
+  if (!incoming.complete) outgoing.setHeader("connection", "close");
+  outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : said);
 }
 
 /**
