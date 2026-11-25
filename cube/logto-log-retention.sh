@@ -12,11 +12,16 @@
 # Every run writes one JSON line: level `info` with the number of rows deleted, or level `error`
 # with psql's message, which the health cron's rule for JSON logs reports (#208). After an error it
 # tries again in an hour, after a success in a day.
+#
+# At its start it first waits for Postgres, up to five minutes: after a reboot of the host Docker
+# starts every container at once, as `depends_on` holds for `docker compose up` only. --once does
+# not wait.
 set -uo pipefail
 
 SQL=${LOGTO_LOG_RETENTION_SQL:-/logto-log-retention.sql}
 DAY=86400
 HOUR=3600
+WAIT=${LOGTO_LOG_RETENTION_WAIT:-300}
 
 json_string() {
 	local text=${1//\\/\\\\}
@@ -49,10 +54,22 @@ if [[ ${1:-} == --once ]]; then
 	exit
 fi
 
+pause() {
+	sleep "$1" &
+	wait $!
+}
+
+# A Postgres that stays away is left to prune, which logs it as an error.
+wait_for_postgres() {
+	local deadline=$((SECONDS + WAIT))
+	until pg_isready -q || ((SECONDS >= deadline)); do
+		pause 1
+	done
+}
+
 # As the container's first process, bash would ignore `docker stop`'s TERM: it ends the wait.
 trap 'exit 0' TERM INT
+wait_for_postgres
 while true; do
-	if prune; then pause=$DAY; else pause=$HOUR; fi
-	sleep "$pause" &
-	wait $!
+	if prune; then pause "$DAY"; else pause "$HOUR"; fi
 done

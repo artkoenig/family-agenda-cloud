@@ -342,7 +342,8 @@ is a quota of Logto Cloud's plans, which nothing self-hosted deletes by.
 
 So the service `logto-log-retention` (`cube/logto-log-retention.sh` and `.sql`) deletes every row older than 30
 days, when it starts, which every deploy that changes it does, and then once a day; after a failed run it tries
-again in an hour. It runs as Logto's role `logto` over Postgres's local socket, not as the Routing module's role.
+again in an hour. At its start it waits up to five minutes for Postgres, which a reboot of the host starts at the
+same time. It runs as Logto's role `logto` over Postgres's local socket, not as the Routing module's role.
 Each run logs one JSON line: `level` `info` with the number of rows `deleted`, or `level` `error` with psql's
 message, which the `health` cron reports ([#208](https://github.com/artkoenig/family-agenda-cloud/issues/208)).
 
