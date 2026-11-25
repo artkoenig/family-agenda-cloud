@@ -7,6 +7,8 @@ describe("the Routing module's pages", () => {
     ["/en/order", "order", "en"],
     ["/order/done", "done", "de"],
     ["/en/order/done", "done", "en"],
+    ["/subscription", "subscription", "de"],
+    ["/en/subscription", "subscription", "en"],
   ])("knows %s", (path, page, language) => {
     expect(orderPathOf(path)).toEqual({ page, language });
     expect(wayBackOf(path)).toBe(path);

@@ -1,6 +1,7 @@
+import type { LegalImprint } from "./confirmation-mail";
 import type { Billing } from "./contract-wording";
 import type { IdpManagement } from "./logto-management";
-import { orderPathOf } from "./routing-pages";
+import { orderPathOf, STRIPE_EVENTS_PATH } from "./routing-pages";
 import type { GoogleClient, Registration } from "./sign-in-experience";
 
 /**
@@ -71,9 +72,10 @@ export type Config = {
    */
   centralSignIn: CentralSignIn | null;
   /**
-   * Stripe (STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY and _YEARLY), which the Tariff is ordered at
-   * (#226); without it the order page and every other path of Stripe's is off. Only the Router
-   * needs it.
+   * Stripe (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_MONTHLY and _YEARLY), which the
+   * Tariff is ordered at (#226) and tells of it (#227), and the imprint of its mails (OPERATOR_NAME,
+   * OPERATOR_POSTAL_ADDRESS, AGB_STAND); without it the order page and every other path of Stripe's
+   * is off. Only the Router needs it.
    */
   stripe: StripeSettings | null;
   /** Where the Router listens for the browsers' requests. */
@@ -92,8 +94,11 @@ export type Config = {
  */
 export type CentralSignIn = { issuerUrl: string; clientId: string; clientSecret: string; webhookSecret: string };
 
-/** Stripe's restricted key and the ids of the Tariff's two Prices. */
-export type StripeSettings = { secretKey: string; prices: Record<Billing, string> };
+/**
+ * Stripe's restricted key, the signing secret of its webhook, the ids of the Tariff's two Prices, and
+ * the Operator's imprint, which the mails about a Subscription end with.
+ */
+export type StripeSettings = { secretKey: string; webhookSecret: string; prices: Record<Billing, string>; imprint: LegalImprint };
 
 export class ConfigError extends Error {}
 
@@ -216,20 +221,25 @@ function centralSignIn(env: Env): CentralSignIn | null {
   return { issuerUrl, clientId, clientSecret, webhookSecret: required(env, "IDP_WEBHOOK_SECRET") };
 }
 
-const STRIPE = ["STRIPE_SECRET_KEY", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_YEARLY"] as const;
+const STRIPE = ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRICE_MONTHLY", "STRIPE_PRICE_YEARLY", "OPERATOR_NAME", "OPERATOR_POSTAL_ADDRESS", "AGB_STAND"] as const;
 
 /**
- * STRIPE_SECRET_KEY, STRIPE_PRICE_MONTHLY and STRIPE_PRICE_YEARLY: all three, or none; with them,
- * central sign-in and Logto's Management API, which say who orders.
+ * Stripe's settings and the imprint of its mails: all of them, or none; with them, central sign-in
+ * and Logto's Management API, which say who orders.
  */
 function stripe(env: Env): StripeSettings | null {
   const given = STRIPE.filter((name) => env[name]);
   if (given.length === 0) return null;
-  if (given.length < STRIPE.length) throw new ConfigError(`${STRIPE.join(", ")} must be set all three, or none`);
+  if (given.length < STRIPE.length) throw new ConfigError(`${STRIPE.join(", ")} must be set all, or none`);
   for (const name of ["CENTRAL_SIGN_IN_CLIENT_ID", "IDP_MANAGEMENT_ENDPOINT"]) {
     if (!env[name]) throw new ConfigError(`STRIPE_SECRET_KEY needs ${name}`);
   }
-  return { secretKey: required(env, "STRIPE_SECRET_KEY"), prices: { monthly: required(env, "STRIPE_PRICE_MONTHLY"), yearly: required(env, "STRIPE_PRICE_YEARLY") } };
+  return {
+    secretKey: required(env, "STRIPE_SECRET_KEY"),
+    webhookSecret: required(env, "STRIPE_WEBHOOK_SECRET"),
+    prices: { monthly: required(env, "STRIPE_PRICE_MONTHLY"), yearly: required(env, "STRIPE_PRICE_YEARLY") },
+    imprint: { name: required(env, "OPERATOR_NAME"), postalAddress: required(env, "OPERATOR_POSTAL_ADDRESS"), stand: required(env, "AGB_STAND") },
+  };
 }
 
 /** Where and how the Router listens. */
@@ -266,6 +276,7 @@ function callbackPath(env: Env): string {
   }
   if (isSignInPath(url.pathname)) throw new ConfigError("OIDC_CALLBACK_URL must not be below /sign-in, central sign-in's paths");
   if (orderPathOf(url.pathname)) throw new ConfigError("OIDC_CALLBACK_URL must not be a page of the order");
+  if (url.pathname === STRIPE_EVENTS_PATH) throw new ConfigError(`OIDC_CALLBACK_URL must not be ${STRIPE_EVENTS_PATH}, Stripe's webhook`);
   return url.pathname;
 }
 

@@ -1,48 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type Stripe from "stripe";
 import { dateOf } from "../src/contract-wording";
 import { SIGN_OUT_PATH } from "../src/sign-in-pages";
 import { trialEndsAt } from "../src/trial";
 import type { Router } from "../src/router";
-import type { StripePort } from "../src/stripe";
-import type { TariffPrice } from "../src/order-session";
 import { setUpRouting, type TestRouting } from "./support/routing";
+import { CHECKOUT, PORTAL, PRICES, standInStripe, STRIPE_ENV, type StandInStripe } from "./support/stand-in-stripe";
 
 const PUBLIC_URL = "https://app.family-agenda.test";
-const CHECKOUT = "https://checkout.stripe.test/session";
 const DAY = 24 * 60 * 60_000;
-const PRICES: Record<string, TariffPrice> = {
-  price_m: { active: true, currency: "eur", tax_behavior: "inclusive", type: "recurring", unit_amount: 499, recurring: { interval: "month", interval_count: 1 } },
-  price_y: { active: true, currency: "eur", tax_behavior: "inclusive", type: "recurring", unit_amount: 4990, recurring: { interval: "year", interval_count: 1 } },
-};
 
 let routing: TestRouting;
 let router: Router;
 let signInEnv: Record<string, string>;
-let stripe: StripePort & { created: Stripe.Checkout.SessionCreateParams[]; open: Set<string> };
+let stripe: StandInStripe;
 let now: Date;
-
-function fakeStripe(prices = PRICES): typeof stripe {
-  const created: Stripe.Checkout.SessionCreateParams[] = [];
-  const open = new Set<string>();
-  return {
-    created,
-    open,
-    price: (id) => Promise.resolve(prices[id]!),
-    createSession(params) {
-      created.push(params);
-      open.add(`${params.client_reference_id!}#${created.length}`);
-      return Promise.resolve(CHECKOUT);
-    },
-    openSessions: (familyId) => Promise.resolve([...open].filter((id) => id.startsWith(`${familyId}#`))),
-    expireSession(id) {
-      open.delete(id);
-      return Promise.resolve();
-    },
-  };
-}
-
-const STRIPE_ENV = { STRIPE_SECRET_KEY: "key", STRIPE_PRICE_MONTHLY: "price_m", STRIPE_PRICE_YEARLY: "price_y" };
 
 beforeEach(async () => {
   now = new Date();
@@ -50,7 +21,7 @@ beforeEach(async () => {
   expect(await routing.run(["migrate"])).toMatchObject({ exitCode: 0 });
   const client = await routing.run(["sign-in-client"], { PUBLIC_URL });
   signInEnv = { PUBLIC_URL, OIDC_ISSUER_URL: routing.logto.issuer, ...Object.fromEntries(client.stdout.trim().split("\n").map((line) => line.split(/=(.*)/s).slice(0, 2) as [string, string])) };
-  stripe = fakeStripe();
+  stripe = standInStripe();
   router = await routing.startRouter({ ...signInEnv, ...STRIPE_ENV }, () => now, stripe);
 });
 afterEach(async () => {
@@ -284,7 +255,7 @@ describe("The order", () => {
 
 describe("The Router", () => {
   it("refuses to start with a Price that is not the Tariff's", async () => {
-    const wrong = fakeStripe({ ...PRICES, price_y: { ...PRICES["price_y"]!, unit_amount: 4900 } });
+    const wrong = standInStripe({ ...PRICES, price_y: { ...PRICES["price_y"]!, unit_amount: 4900 } });
     await expect(routing.startRouter({ ...signInEnv, ...STRIPE_ENV }, undefined, wrong)).rejects.toThrow("Stripe's yearly Price price_y is not 4990 cents");
   });
 
@@ -295,5 +266,47 @@ describe("The Router", () => {
     const answer = await own.request("/order");
     expect(answer.body).not.toContain("Tarif bestellen");
     expect(answer.location ?? "").not.toContain("back=");
+  });
+});
+
+describe("The Subscription's page", () => {
+  const subscribe = (familyId: string, id: string, customer: string | null, status = "active", holder = "u-1") =>
+    routing.directory("INSERT INTO subscription (subscription_id, family_id, customer_id, holder, billing, status, ordered_at) VALUES ($1, $2, $3, $4, 'monthly', $5, now())", [id, familyId, customer, holder, status]);
+
+  it("takes the holder to Stripe's Portal, also of a Locked Family and one whose Subscription ended", async () => {
+    const familyId = await createFamily();
+    const own = await signedIn();
+    await subscribe(familyId, "sub_old", "cus_old", "canceled");
+    expect(await own.request("/subscription")).toMatchObject({ status: 302, location: PORTAL });
+    await subscribe(familyId, "sub_1", "cus_1", "unpaid");
+    await routing.directory("UPDATE family SET locked_at = now(), lock_reason = 'unpaid' WHERE family_id = $1", [familyId]);
+    expect(await own.request("/en/subscription")).toMatchObject({ status: 302, location: PORTAL });
+    expect(stripe.portalSessions).toEqual([
+      { customer: "cus_old", configuration: "bpc_1", locale: "de", return_url: `${PUBLIC_URL}/${familyId}/` },
+      { customer: "cus_1", configuration: "bpc_1", locale: "en", return_url: `${PUBLIC_URL}/${familyId}/` },
+    ]);
+  });
+
+  it("names the holder to another Admin, or gives the support's address", async () => {
+    const familyId = await createFamily();
+    routing.logto.addMember("org_1", "u-2");
+    routing.logto.setName("u-1", "Anna Muster");
+    await subscribe(familyId, "sub_1", "cus_1");
+    const own = await signedIn("u-2");
+    expect((await own.request("/subscription")).body).toContain("Anna Muster");
+    await routing.directory("UPDATE subscription SET holder = 'u-gone'");
+    expect((await own.request("/subscription")).body).toContain("support@family-agenda.cloud");
+    expect(stripe.portalSessions).toEqual([]);
+  });
+
+  it("says so without a Subscription, and takes a GET alone, signed in", async () => {
+    const familyId = await createFamily();
+    expect((await browser().request("/subscription")).location).toBe(`${PUBLIC_URL}/sign-in?back=%2Fsubscription`);
+    const own = await signedIn();
+    expect(await own.request("/subscription")).toMatchObject({ status: 200, body: expect.stringContaining("kein Abonnement") as unknown });
+    expect((await own.request("/en/subscription")).body).toContain("This family has no subscription.");
+    await subscribe(familyId, "sub_1", null);
+    expect((await own.request("/subscription")).body).toContain("kein Abonnement");
+    expect((await own.post({}, "/subscription")).status).toBe(405);
   });
 });

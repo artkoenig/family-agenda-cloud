@@ -244,8 +244,13 @@ services:
       <<: *routing-environment
       # Stripe, which the Tariff is ordered at; empty leaves /order out. The Router alone gets it.
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_MONTHLY: ${STRIPE_PRICE_MONTHLY:-}
       STRIPE_PRICE_YEARLY: ${STRIPE_PRICE_YEARLY:-}
+      # The imprint of the mails about a Subscription.
+      OPERATOR_NAME: ${OPERATOR_NAME:-}
+      OPERATOR_POSTAL_ADDRESS: ${OPERATOR_POSTAL_ADDRESS:-}
+      AGB_STAND: ${AGB_STAND:-}
     networks: [edge, pool, directory, outbound]
     healthcheck:
       test: ["CMD", "node", "-e", "require('node:net').connect(8080, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]

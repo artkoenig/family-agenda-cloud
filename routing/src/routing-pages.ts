@@ -4,16 +4,23 @@
  */
 import type { Language } from "./sign-in-pages";
 
-/** Where an Admin orders the Tariff, and where Stripe's Checkout sends them after the order. */
-export const ORDER_PATHS: Record<"order" | "done", Record<Language, string>> = {
+/**
+ * Where an Admin orders the Tariff, where Stripe's Checkout sends them after the order, and where the
+ * Contract holder reaches Stripe's Portal.
+ */
+export const ORDER_PATHS: Record<"order" | "done" | "subscription", Record<Language, string>> = {
   order: { de: "/order", en: "/en/order" },
   done: { de: "/order/done", en: "/en/order/done" },
+  subscription: { de: "/subscription", en: "/en/subscription" },
 };
 
 /** A page of the order, in its language. */
 export type OrderPath = { page: keyof typeof ORDER_PATHS; language: Language };
 
-const PAGES = ["order", "done"] as const;
+/** Where Stripe posts its events (#227). */
+export const STRIPE_EVENTS_PATH = "/stripe/events";
+
+const PAGES = ["order", "done", "subscription"] as const;
 const LANGUAGES = ["de", "en"] as const;
 
 /** The page of the order at this path; undefined for every other path. */

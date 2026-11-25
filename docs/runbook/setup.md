@@ -130,7 +130,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.conf
    | `IDP_WEBHOOK_SECRET` | the signing key of Logto's PostRegister webhook to `http://router:8080/idp/events`; the Router signs a lost PostRegister it sends again with it | `pending` at first; the core's `logto-setup` prints it |
    | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the Google OAuth client of Logto's Google connector; optional, empty leaves Google off the sign-in screen | empty at first; [Google sign-in](#google-sign-in) |
    | `REGISTRATION` | whether anyone may register at Logto: `open` or `closed`, closed unless set | `closed`; [Opening and closing registration](#opening-and-closing-registration) |
-   | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY` | Stripe's restricted key and the ids of the Tariff's two Prices, for the Router alone; optional, empty leaves the order page off | empty at first; [Stripe](#stripe) |
+   | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `OPERATOR_NAME`, `OPERATOR_POSTAL_ADDRESS`, `AGB_STAND` | Stripe's restricted key, the signing secret of its webhook, the ids of the Tariff's two Prices, and the imprint of the mails about a Subscription, for the Router alone; optional, all or none, empty leaves the order page and the webhook off | empty at first; [Stripe](#stripe) |
    | `LLM_API_KEY` | the AI Model Hub token every core extracts with | [step 6](#6-ai-model-hub-token) |
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
    | `OPERATOR_ALERT_ADDRESS` | where the [health check](#the-health-check)'s digest mail of errors goes | the Operator's own address, not one at `family-agenda.cloud` |
@@ -316,20 +316,46 @@ Once per Stripe environment, by the Operator: first in a sandbox
    | --- | --- | --- |
    | Prices | Read | the check at the Router's start |
    | Checkout Sessions | Write | the order: creating, listing and expiring Sessions |
+   | Subscriptions | Write | reading a Subscription on each event; cancelling a second one |
+   | Invoices, Invoice Payments | Read | finding the payments of a second Subscription |
+   | Charges and Refunds (with Payment Intents) | Write | refunding them |
+   | Customers | Write | German invoices |
+   | Customer Portal | Write | the Portal's configuration and sessions |
 
-   The webhooks and the Customer Portal (#227) and the Cancellation, Withdrawal and deletion pages (#229–#231) need
-   more; add it to the key with them.
-6. Put the key and the ids of the Prices (`price_…`) into the Cube's `.env` (`STRIPE_SECRET_KEY`,
-   `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`) and deploy. The key is a secret; the password manager keeps it.
+   The Cancellation, Withdrawal and deletion pages (#229–#231) need more; add it to the key with them.
+6. **Developers → Webhooks → Add endpoint**: `https://app.family-agenda.cloud/stripe/events`, API version
+   `2026-11-18.endive`, with the events `checkout.session.completed`, `customer.subscription.created`,
+   `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid` and `invoice.payment_failed`.
+   Its signing secret goes into `.env` as `STRIPE_WEBHOOK_SECRET`.
+7. **Settings → Billing → Subscriptions and emails**:
+   - Smart Retries on for cards, and the retries for SEPA Direct Debit on; after the last one, **mark the
+     subscription as unpaid** and leave the invoice as it is. Never *cancel*: the Family is locked on `unpaid`, and
+     a paid invoice unlocks it.
+   - Mails to customers on: failed payments, with the link to Stripe's hosted page; the renewal reminder, 30 days
+     before a yearly renewal; finalized invoices.
+   - No Subscription Schedules and no other automation on Subscriptions.
+8. **Settings → Billing → Invoices**: the prefix `FA-`, numbered for the whole account; the footer names the
+   Operator, the Postflex address, `support@family-agenda.cloud` and, once issued, the USt-IdNr.
+9. The Customer Portal needs no settings: the Router creates its configuration at its start and keeps it up to date
+   (payment method, invoices and billing address; no cancelling, pausing or plan change). Do not change it by hand.
+10. Put the key, the signing secret, the ids of the Prices (`price_…`) and the imprint into the Cube's `.env`
+    (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`; `OPERATOR_NAME`,
+    `OPERATOR_POSTAL_ADDRESS` and `AGB_STAND`, as `{{NAME}}`, `{{POSTFLEX_ADDRESS}}` and `{{STAND}}` on the site) and
+    deploy. The key and the signing secret are secrets; the password manager keeps them.
 
 The Router reads both Prices when it starts and refuses to start unless they are active, in EUR, recurring every
 month and every year, including tax, and cost what the Tariff does (`PRICE_CENTS` in
 `routing/src/contract-wording.ts`); its log says which is not. It does not start while Stripe does not answer
-either: emptying the three keys and deploying turns the order off and lets it start.
+either: emptying these settings and deploying turns the order off and lets it start.
 
 Check: `https://app.family-agenda.cloud/order` sends a browser that is not signed in to the sign-in, and the founder
 of a Family in its Trial back to the order page; the button leads to Stripe's Checkout, in the sandbox paid with
 Stripe's test cards.
+
+The webhook (`/stripe/events`) answers 500 until an event is handled, and Stripe delivers it again for up to three
+days; **Developers → Webhooks** lists what failed, the Router's log says why. Two log lines need the Operator:
+`A contract confirmation could not be written` (send it by hand), and `A Family has a second running Subscription`
+(it was cancelled and refunded; check the refund).
 
 ### Logto's sign-in log
 
