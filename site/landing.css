@@ -282,5 +282,3 @@ html:not([data-scripted]) .lp-stage { width: 360px; }
 .lp-faq__item summary { cursor: pointer; font-weight: 700; font-size: 18px; }
 .lp-faq__item p { margin-top: var(--space-3); color: var(--ink-muted); line-height: 1.55; }
 
-/* A hint to the English page for a browser that is not German, instead of a redirect search engines would follow. */
-.lp-langhint { display: flex; justify-content: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); font-size: 15px; background: var(--surface-sunken); }

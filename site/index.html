@@ -262,15 +262,6 @@
   <script>
     (() => {
       // Remembers a language picked by hand, so the first-visit choice by browser language does not override it.
-      // A browser that is not German, on a first visit: a hint to the English page (no redirect, which search engines would follow).
-      try {
-        if (!localStorage.getItem("lp-lang") && !/^de\b/i.test(navigator.language)) {
-          const hint = document.createElement("p");
-          hint.className = "lp-langhint"; hint.lang = "en";
-          hint.innerHTML = 'This page is also available in English. <a href="en/" hreflang="en" data-lang="en">Switch to English</a>';
-          document.body.prepend(hint);
-        }
-      } catch {}
       for (const link of document.querySelectorAll("[data-lang]")) {
         link.addEventListener("click", () => { try { localStorage.setItem("lp-lang", link.dataset.lang); } catch {} });
       }
