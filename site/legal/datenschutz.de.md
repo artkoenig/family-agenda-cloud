@@ -18,18 +18,20 @@ Beim Aufruf von family-agenda.cloud verarbeitet unser Webserver Ihre IP-Adresse,
 - Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO; unser Interesse ist ein sicherer Betrieb.
 - Speicherdauer: Server-Protokolle werden nach 14 Tagen gelöscht.
 
+**Fehlermeldungen.** Tritt im Betrieb ein Fehler auf, erhalten wir eine E-Mail mit einer gekürzten Zeile aus dem Server-Protokoll. IP-Adressen und Kennungen sind darin unkenntlich gemacht; nur die Kennung der betroffenen Familie bleibt lesbar. Diese E-Mails gehen an ein Postfach bei Gmail (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland); Daten können an Google LLC in den USA gehen (Angemessenheitsbeschluss EU-US Data Privacy Framework). Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO.
+
 Die Website lädt nichts von Dritten (Schriften liegen auf unserem Server), setzt keine Cookies und verwendet weder Analyse- noch Tracking-Werkzeuge. Wählen Sie die Sprache von Hand, merkt sich Ihr Browser diese Wahl lokal; sie wird nicht an uns übertragen.
 
 ## 3 Registrierung und Anmeldung
 
-Für die Anmeldung verarbeiten wir Ihre E-Mail-Adresse, Ihren Namen, gegebenenfalls ein Passwort (nur als Hash), die Einmal-Codes, die wir Ihnen per E-Mail senden, und ein Anmeldeprotokoll mit IP-Adresse und Zeitpunkt. Der Anmeldedienst (Logto) läuft auf unserem eigenen Server.
+Für die Anmeldung verarbeiten wir Ihre E-Mail-Adresse, Ihren Namen, gegebenenfalls ein Passwort (nur als Hash), die Einmal-Codes, die wir Ihnen per E-Mail senden, und ein Anmeldeprotokoll mit IP-Adresse, Browser-Kennung und Zeitpunkt. Der Anmeldedienst (Logto) läuft auf unserem eigenen Server.
 
 - Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (Vertrag), für das Anmeldeprotokoll Art. 6 Abs. 1 lit. f DSGVO (Schutz vor Missbrauch).
 - Speicherdauer: Konto bis zur Löschung der Familie; Anmeldeprotokolle 30 Tage.
 
 **Schutz vor Missbrauch.** Bei der Registrierung löst Ihr Browser eine kleine Rechenaufgabe (CAPTCHA „Cap“, auf unserem eigenen Server, ohne Dritte). Wir senden an eine Adresse höchstens drei Anmelde-E-Mails pro Stunde. Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO.
 
-**Anmeldung mit Google.** Wenn Sie „Mit Google anmelden“ wählen, übermittelt Google uns Ihren Namen, Ihre E-Mail-Adresse und eine Google-Kennung. Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland, ist dafür selbst verantwortlich; Daten können an Google LLC in den USA gehen (Angemessenheitsbeschluss EU-US Data Privacy Framework). Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO; Sie können stattdessen jederzeit die Anmeldung per E-Mail-Code nutzen und die Verknüpfung durch Löschen Ihres Kontos beenden.
+**Anmeldung mit Google.** Wenn Sie „Mit Google anmelden“ wählen, übermittelt Google uns Ihren Namen, Ihre E-Mail-Adresse, die Adresse Ihres Profilbilds und eine Google-Kennung. Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland, ist dafür selbst verantwortlich; Daten können an Google LLC in den USA gehen (Angemessenheitsbeschluss EU-US Data Privacy Framework). Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO; Sie können stattdessen jederzeit die Anmeldung per E-Mail-Code nutzen und die Verknüpfung durch Löschen Ihres Kontos beenden.
 
 ## 4 Der Dienst: Familie, Quellen und Agenden
 
@@ -70,7 +72,7 @@ Dieser Abschnitt informiert Personen, die selbst nicht Mitglied einer Familie si
 
 Für Testzeitraum und Abonnement verarbeiten wir Name und E-Mail-Adresse des Vertragspartners, Tarif, Laufzeit, Bestell-, Kündigungs- und Widerrufszeitpunkte.
 
-Bezahlt wird über **Stripe Payments Europe, Limited**, 1 Grand Canal Street Lower, Dublin 2, Irland. Stripe verarbeitet Zahlungsdaten (Karte oder Konto), Rechnungsadresse und Land in unserem Auftrag. Für Betrugsprävention und Identitätsprüfung ist Stripe selbst verantwortlich. Daten können an Stripe, Inc. in den USA gehen (EU-US Data Privacy Framework, ergänzend Standardvertragsklauseln). Auf seiner Bezahlseite setzt Stripe eigene Cookies; dazu gilt die Datenschutzerklärung von Stripe.
+Bezahlt wird über **Stripe Payments Europe, Limited**, 1 Grand Canal Street Lower, Dublin 2, Irland. Stripe verarbeitet Zahlungsdaten (Karte oder Konto), Rechnungsadresse und Land in unserem Auftrag. Für Betrugsprävention und Identitätsprüfung ist Stripe selbst verantwortlich. Daten können an Stripe, LLC in den USA gehen (EU-US Data Privacy Framework, ergänzend Standardvertragsklauseln). Auf seiner Bezahlseite setzt Stripe eigene Cookies; dazu gilt die Datenschutzerklärung von Stripe.
 
 - Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO; für Rechnungen Art. 6 Abs. 1 lit. c DSGVO.
 - Speicherdauer: Rechnungen und Buchungsbelege 8 Jahre ab Ende des Kalenderjahres (§ 147 Abs. 3 AO, § 14b UStG); danach wird der Kunde bei Stripe gelöscht.
@@ -104,7 +106,7 @@ Admins können die Familie jederzeit selbst löschen. Vorher können sie einen E
 - **IONOS Cloud GmbH**, Greifswalder Str. 207, 10405 Berlin: Server, Speicher, Sicherungen und das KI-Modell, alles in Deutschland. Auftragsverarbeiter.
 - **IONOS SE**, Elgendorfer Str. 57, 56410 Montabaur: E-Mail-Versand. Auftragsverarbeiter.
 - **Stripe** (Abschnitt 6): Zahlungsabwicklung; Übermittlung in die USA.
-- **Google** (Abschnitt 3): nur bei Anmeldung mit Google; Übermittlung in die USA.
+- **Google** (Abschnitte 2 und 3): Postfach für unsere Fehlermeldungen; Anmeldung mit Google, nur wenn Sie sie wählen; Übermittlung in die USA.
 
 Weitere Übermittlungen in Länder außerhalb der EU gibt es nicht. Die Anbieter der Quellen sind keine Empfänger: Wir rufen dort im Auftrag Ihrer Familie ab, was sie freigegeben hat.
 

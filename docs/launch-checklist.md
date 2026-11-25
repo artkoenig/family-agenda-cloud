@@ -115,9 +115,15 @@ Numbered after the last gate so that gates 10 to 14, which issues cite by number
 
 ### 12. Processing agreements and sub-processor list
 
-- **Threshold:** [#70](https://github.com/artkoenig/family-agenda-cloud/issues/70) decided and in place. This keeps
-  [#62](https://github.com/artkoenig/family-agenda-cloud/issues/62) (IONOS's written word on the AI Model Hub) blocking
-  for stage (c), and explicitly not for stages (a) and (b).
+- **Threshold:** all three hold. They block stage (c), and explicitly not stages (a) and (b).
+  - The processing agreements with IONOS Cloud GmbH, IONOS SE and Stripe are in force and indexed in
+    `docs/privacy/processing-agreements.md` ([#182](https://github.com/artkoenig/family-agenda-cloud/issues/182)).
+  - The Art. 30 record (`docs/privacy/records-of-processing.md`) and the Schwellwertanalyse with its risk assessment
+    (`docs/privacy/threshold-analysis.md`, [#198](https://github.com/artkoenig/family-agenda-cloud/issues/198)) are in
+    `docs/privacy/` and accepted by the Operator.
+  - IONOS's written reply on the AI Model Hub is filed in
+    `docs/correspondence/2026-11-ionos-ai-model-hub-request.md`, and no answer in it contradicts the privacy policy or
+    the record ([#179](https://github.com/artkoenig/family-agenda-cloud/issues/179)).
 - **Measured:** — **Date:** — **Proof:**
 
 ### 13. Entry point
