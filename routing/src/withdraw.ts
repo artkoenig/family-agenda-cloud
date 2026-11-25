@@ -70,16 +70,31 @@ export async function answerWithdraw(request: ContractRequest, setup: ContractSe
 
 /** The Contract holder's visit; for everybody else, why there is no form for them. */
 async function visitOf(setup: ContractSetup, language: Language, { session, now, form }: Admitted): Promise<Visit | ContractAnswer> {
-  const posted = form !== null;
-  const entry = await setup.directory.findByOrganization(session.organizationId);
-  if (!entry || !runs(entry) || !(await isAdmin(setup, session))) return html(403, noAccessPage(language));
-  if (!(await founderOf(setup, entry.familyId))) return html(posted ? 403 : 200, noWithdrawHolderPage(language));
+  const refused = (status: number, page: string): ContractAnswer => html(statusOf(form, status), page);
+  const entry = await familyOf(setup, session);
+  if (!entry) return html(403, noAccessPage(language));
+  if (!(await founderOf(setup, entry.familyId))) return refused(403, noWithdrawHolderPage(language));
   const record = await setup.directory.lastSubscriptionOf(entry.familyId);
-  if (!record) return html(posted ? 409 : 200, nothingToWithdrawPage(language));
+  if (!record) return refused(409, nothingToWithdrawPage(language));
+  const holder = await holderOf(setup, record);
+  if (record.holder !== session.userId) return refused(403, withdrawHolderPage(language, nameOf(holder, record.holder)));
+  return { setup, language, entry, record, holder, csrf: session.csrf, now };
+}
+
+/** A page without the form is shown to who asks for it, and refuses what is posted. */
+const statusOf = (form: Admitted["form"], refusal: number): number => (form === null ? 200 : refusal);
+
+/** The running Family of the session, if the session is an Admin's of it. */
+async function familyOf(setup: ContractSetup, session: Admitted["session"]): Promise<DirectoryEntry | undefined> {
+  const entry = await setup.directory.findByOrganization(session.organizationId);
+  return entry && runs(entry) && (await isAdmin(setup, session)) ? entry : undefined;
+}
+
+/** The Subscription's holder at Logto. */
+async function holderOf(setup: ContractSetup, record: Subscription): Promise<LogtoPerson> {
   const holder = await person(setup.idp, record.holder);
   if (!holder) throw new Error(`The holder ${record.holder} of a Subscription is gone from Logto`);
-  if (record.holder !== session.userId) return html(posted ? 403 : 200, withdrawHolderPage(language, nameOf(holder, record.holder)));
-  return { setup, language, entry, record, holder, csrf: session.csrf, now };
+  return holder;
 }
 
 /** The holder as the pages and the mail name them. */
@@ -127,7 +142,7 @@ async function withdrawn(visit: Visit, client: pg.PoolClient, withdrawal: Withdr
   const { subscription, receivedAt } = withdrawal;
   const ended = hasEnded(subscription);
   if (ended && !noted) return undefined;
-  if (ended && (await outbox(client).holds({ type: MAIL_TYPE, familyId: record.familyId }, record.orderedAt ?? new Date(0)))) return receipt(visit, withdrawal);
+  if (ended && (await mailIsOut(client, record))) return receipt(visit, withdrawal);
   if (!noted) await setup.stripe.addMetadata(subscription.id, { [WITHDRAWAL_RECEIVED_AT]: receivedAt.toISOString() });
   const taken = ended ? subscription : await setup.stripe.cancelSubscription(subscription.id);
   const refundCents = await setup.stripe.refundSubscription(subscription.id);
@@ -135,6 +150,9 @@ async function withdrawn(visit: Visit, client: pg.PoolClient, withdrawal: Withdr
   setup.log.info("Took a Withdrawal within its period", { familyId: record.familyId, subscription: subscription.id, refundCents });
   return receipt(visit, withdrawal);
 }
+
+/** Whether the mail of a Withdrawal from this Subscription is in the outbox: one since it was ordered. */
+const mailIsOut = (client: pg.PoolClient, { familyId, orderedAt }: Subscription): Promise<boolean> => outbox(client).holds({ type: MAIL_TYPE, familyId }, orderedAt ?? new Date(0));
 
 /**
  * After the period: an ordinary Cancellation to the earliest date. One the Subscription notes
