@@ -479,7 +479,7 @@ services:
 
   plugin-imap:
     <<: *plugin
-    image: ghcr.io/artkoenig/family-agenda-imap:0.4.0@sha256:53f5fe9e26fd4f0c0e5db7e10aa482239dca8ca4e32f6806e192dc1d0efd7c8d
+    image: ghcr.io/artkoenig/family-agenda-imap:0.5.0@sha256:364d66b26cfb035275da42f7989915ca5198b07dca674f45060cee95910f6431
     networks: [plugin-imap, plugin-imap-egress]
   plugin-imap-egress:
     <<: *egress-proxy
