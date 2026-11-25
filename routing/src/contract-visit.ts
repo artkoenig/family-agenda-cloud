@@ -5,6 +5,8 @@
  * - Without a session the browser goes to central sign-in and comes back.
  * - A form counts only with the session's token.
  * - What a form declares is worked out under the Family's lock, on a connection of its own.
+ *
+ * The Contract section (contract-fragment.ts) shares who may see what, but answers with no redirect.
  */
 import type pg from "pg";
 import { monthsAfter, type Cancellable, type EndDate } from "./cancel-dates";

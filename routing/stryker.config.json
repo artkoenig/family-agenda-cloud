@@ -39,6 +39,7 @@
     "src/legal-footer.ts",
     "src/contract-wording.ts",
     "src/contract-pages.ts",
+    "src/contract-section.ts",
     "src/contract-mails.ts",
     "src/checkout-texts.ts",
     "src/confirmation-mail.ts",

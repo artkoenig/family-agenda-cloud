@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cancelPathOf, orderPathOf, signInPathFor, wayBackOf, withdrawPathOf } from "../../src/routing-pages";
+import { cancelPathOf, CONTRACT_SECTION_PATH, contractPathOf, orderPathOf, signInPathFor, wayBackOf, withdrawPathOf } from "../../src/routing-pages";
 
 describe("the Routing module's pages", () => {
   it.each([
@@ -20,6 +20,16 @@ describe("the Routing module's pages", () => {
       expect(wayBackOf(path)).toBeUndefined();
     },
   );
+
+  it("knows the Contract section's fragment, which nobody comes back to but at the section", () => {
+    expect(contractPathOf("/contract")).toBe("de");
+    expect(contractPathOf("/en/contract")).toBe("en");
+    for (const path of ["/contract/", "/cancel", "/en"]) expect(contractPathOf(path)).toBeUndefined();
+    expect(wayBackOf("/contract")).toBeUndefined();
+    expect(CONTRACT_SECTION_PATH).toBe("/admin/sections/contract");
+    expect(wayBackOf("/admin/sections/contract")).toBe("/admin/sections/contract");
+    expect(wayBackOf("/admin/sections/other")).toBeUndefined();
+  });
 
   it.each([
     ["/cancel", "de"],

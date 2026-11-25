@@ -351,7 +351,8 @@ Once per Stripe environment, by the Operator: first in a sandbox
 The Router reads both Prices when it starts and refuses to start unless they are active, in EUR, recurring every
 month and every year, including tax, and cost what the Tariff does (`PRICE_CENTS` in
 `routing/src/contract-wording.ts`); its log says which is not. It does not start while Stripe does not answer
-either: emptying these settings and deploying turns the order off and lets it start.
+either: emptying these settings and deploying turns the order and
+the Contract section off and lets it start.
 
 Check: `https://app.family-agenda.cloud/order` sends a browser that is not signed in to the sign-in, and the founder
 of a Family in its Trial back to the order page; the button leads to Stripe's Checkout, in the sandbox paid with

@@ -3,7 +3,7 @@
  * (#214): how they name a contract, its dates, times and amounts, and the links and lines the
  * Admin area and the Locked page show. Dates and times are Berlin's, whatever the Family's time
  * zone: `TT.MM.JJJJ` and `HH:MM Uhr` in German, `D Month YYYY` and `HH:MM (Berlin time)` in English.
- * No I/O.
+ * Only the dates of the Contract section (`…In`) are of a time zone given. No I/O.
  */
 import type { Language } from "./sign-in-pages";
 
@@ -35,6 +35,12 @@ export const CONTRACT_PATHS: Record<"cancel" | "withdraw" | "delete", Record<Lan
   delete: { de: "/delete", en: "/en/delete" },
 };
 
+/** Where the Routing module serves the fragment of the Contract section (#267). */
+export const CONTRACT_FRAGMENT_PATHS: Record<Language, string> = { de: "/contract", en: "/en/contract" };
+
+/** How many days after it was Locked a Family is deleted (#228). */
+export const DELETED_AFTER_DAYS = 30;
+
 /**
  * The language of a mail for the recipient's Logto locale (#192): German for any German locale,
  * English for any other. German for none, until people have a locale at Logto (#243).
@@ -46,19 +52,41 @@ export function mailLanguageOf(locale: string | null | undefined): Language {
 
 const BERLIN = "Europe/Berlin";
 
-const DATE_FORMATS: Record<Language, Intl.DateTimeFormat> = {
-  de: new Intl.DateTimeFormat("de-DE", { timeZone: BERLIN, day: "2-digit", month: "2-digit", year: "numeric" }),
-  en: new Intl.DateTimeFormat("en-GB", { timeZone: BERLIN, day: "numeric", month: "long", year: "numeric" }),
-};
+const dateFormatsIn = (timeZone: string): Record<Language, Intl.DateTimeFormat> => ({
+  de: new Intl.DateTimeFormat("de-DE", { timeZone, day: "2-digit", month: "2-digit", year: "numeric" }),
+  en: new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "long", year: "numeric" }),
+});
+
+const DATE_FORMATS = dateFormatsIn(BERLIN);
 
 const TIME_FORMAT = new Intl.DateTimeFormat("de-DE", { timeZone: BERLIN, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
-/** Year, month and day as Berlin counts them, e.g. `2026-03-05`. */
-const BERLIN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: BERLIN, year: "numeric", month: "2-digit", day: "2-digit" });
+/** Year, month and day as a time zone counts them, e.g. `2026-03-05`. */
+const dayFormatIn = (timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+
+const DAY_MS = 24 * 60 * 60_000;
+
+const BERLIN_DAY = dayFormatIn(BERLIN);
 
 /** The Berlin date of an instant, e.g. `05.03.2026` or `5 March 2026`. */
 export function dateOf(instant: Date, language: Language): string {
   return DATE_FORMATS[language].format(instant);
+}
+
+/** The date of an instant in the time zone, as `dateOf` formats Berlin's. */
+export function dateIn(timeZone: string, instant: Date, language: Language): string {
+  return dateFormatsIn(timeZone)[language].format(instant);
+}
+
+/** How many calendar days of the time zone `to` is after `from`. */
+export function daysBetween(timeZone: string, from: Date, to: Date): number {
+  const format = dayFormatIn(timeZone);
+  return (Date.parse(format.format(to)) - Date.parse(format.format(from))) / DAY_MS;
+}
+
+/** The date `days` calendar days of the time zone after that of an instant, whatever daylight saving does in between. */
+export function dateAfterIn(timeZone: string, instant: Date, days: number, language: Language): string {
+  return dateIn("UTC", new Date(Date.parse(dayFormatIn(timeZone).format(instant)) + days * DAY_MS), language);
 }
 
 /** The Berlin day of an instant as `YYYY-MM-DD`, which sorts as the days do. */

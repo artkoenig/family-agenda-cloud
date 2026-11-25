@@ -22,6 +22,13 @@ const config: Config = readConfig({
   PUBLIC_URL: "https://agenda.example",
 });
 
+/** As a Router that serves the contract pages is configured. */
+const withStripe: Config = {
+  ...config,
+  stripe: { secretKey: "sk", webhookSecret: "whsec" } as Config["stripe"],
+  idpManagement: { issuerUrl: "https://logto.internal" } as unknown as Config["idpManagement"],
+};
+
 const wrapper = wrapperFor(operatorKey, "f-1");
 
 const entry: DirectoryEntry = {
@@ -50,6 +57,7 @@ const family: Family = {
   blobLocation: "/srv/blobs/f-1",
   timeZone: "Europe/Vienna",
   organizationId: "org_1",
+  registeredBy: null,
   familyKey: "the family key",
   databasePassword: "the database password",
 };
@@ -63,6 +71,10 @@ describe("familyUrl", () => {
 describe("unwrappedFamily", () => {
   it("is the Directory entry with its family key and database password unwrapped", () => {
     expect(unwrappedFamily(config, entry)).toEqual(family);
+  });
+
+  it("names the founder of the entry", () => {
+    expect(unwrappedFamily(config, { ...entry, registeredBy: "u-1" })).toMatchObject({ registeredBy: "u-1" });
   });
 
   it("refuses an entry that holds no family key", () => {
@@ -117,5 +129,33 @@ describe("sealedContext", () => {
 
   it("names no Organization for a Family created before registration, which the core then records on its first opening", () => {
     expect(openContext(sealedContext(config, { ...withKey, organizationId: null }), contextKey)).not.toHaveProperty("organizationId");
+  });
+
+  describe("sections", () => {
+    const founded: Family = { ...withKey, registeredBy: "u-1" };
+
+    it("is the Contract section alone, for the founder, at the fragment's address in each language", () => {
+      expect(openContext(sealedContext(withStripe, founded), contextKey).sections).toEqual([
+        {
+          id: "contract",
+          label: { en: "Contract", de: "Vertrag" },
+          onlyFor: "u-1",
+          src: { en: "https://agenda.example/en/contract", de: "https://agenda.example/contract" },
+        },
+      ]);
+    });
+
+    it("is left out for a Family without a founder", () => {
+      expect(openContext(sealedContext(withStripe, withKey), contextKey)).not.toHaveProperty("sections");
+    });
+
+    it("is left out where the Router serves no fragment", () => {
+      expect(openContext(sealedContext(config, founded), contextKey)).not.toHaveProperty("sections");
+      expect(openContext(sealedContext({ ...withStripe, idpManagement: null }, founded), contextKey)).not.toHaveProperty("sections");
+    });
+
+    it("is left out where the public address is not https, for which the core would refuse the whole Context", () => {
+      expect(openContext(sealedContext({ ...withStripe, publicUrl: "http://agenda.example" }, founded), contextKey)).not.toHaveProperty("sections");
+    });
   });
 });

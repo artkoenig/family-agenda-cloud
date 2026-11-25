@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import pg from "pg";
 import { answerCancel, type CancelSetup } from "./cancel";
+import { answerContractSection } from "./contract-fragment";
 import type { ContractAnswer, ContractRequest } from "./contract-visit";
 import { answerSignIn, tokenExchange, type SignInSetup } from "./central-sign-in";
 import { directoryConnection, isSignInPath, type Config } from "./config";
@@ -19,7 +20,7 @@ import { postRegisterAgain } from "./post-register";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
 import { systemResolve } from "./resolve";
-import { cancelPathOf, orderPathOf, STRIPE_EVENTS_PATH, withdrawPathOf, type OrderPath } from "./routing-pages";
+import { cancelPathOf, contractPathOf, orderPathOf, STRIPE_EVENTS_PATH, withdrawPathOf, type OrderPath } from "./routing-pages";
 import { familySchedules, openQueues } from "./scheduler";
 import { answerStripeEvent, type StripeEventsSetup } from "./stripe-events";
 import { answerWithdraw } from "./withdraw";
@@ -200,18 +201,20 @@ const formOf = (incoming: IncomingMessage) => async (): Promise<URLSearchParams 
   return body?.whole ? new URLSearchParams(Buffer.concat(body.chunks).toString()) : undefined;
 };
 
-/** A page a Subscription is ended on, in its language: what answers it. */
+/** The Contract section's fragment, or a page a Subscription is ended on, in its language: what answers it. */
 type ContractPage = { answer: (request: ContractRequest, setup: CancelSetup) => Promise<ContractAnswer>; language: Language };
 
-/** The page to cancel on (#229) or to withdraw on (#230) at this path; undefined for every other path. */
+/** The Contract section's fragment (#267), or the page to cancel on (#229) or to withdraw on (#230), at this path; undefined for every other path. */
 function contractPageOf(pathname: string): ContractPage | undefined {
+  const sectionLanguage = contractPathOf(pathname);
+  if (sectionLanguage) return { answer: answerContractSection, language: sectionLanguage };
   const cancelLanguage = cancelPathOf(pathname);
   if (cancelLanguage) return { answer: answerCancel, language: cancelLanguage };
   const withdrawLanguage = withdrawPathOf(pathname);
   return withdrawLanguage && { answer: answerWithdraw, language: withdrawLanguage };
 }
 
-/** Answers a request for `/cancel` or `/withdraw`. */
+/** Answers a request for `/contract`, `/cancel` or `/withdraw`. */
 async function contractRequest(setup: CancelSetup, { answer, language }: ContractPage, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
   const { status, headers, body } = await answer({ method: incoming.method ?? "", language, cookie: incoming.headers.cookie, form: formOf(incoming) }, setup);
   // What was posted and not read would stay on the connection.

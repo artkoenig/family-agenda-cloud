@@ -7,6 +7,9 @@ import {
   contractOf,
   berlinDayOf,
   dateAfter,
+  dateAfterIn,
+  dateIn,
+  daysBetween,
   daysAfter,
   dateOf,
   deleterLine,
@@ -55,6 +58,16 @@ describe("dates, times and amounts", () => {
     expect(berlinDayOf(new Date("2026-07-01T22:00:00Z"))).toBe("2026-07-02");
     expect(daysAfter(lateEvening, 14)).toEqual(new Date("2026-03-20T12:00:00Z"));
     expect(daysAfter(new Date("2026-10-24T22:30:00Z"), 1)).toEqual(new Date("2026-10-26T12:00:00Z"));
+  });
+
+  it("dates and counts days in a given time zone, across the change from summer time", () => {
+    expect(dateIn("Europe/Lisbon", lateEvening, "de")).toBe("05.03.2026");
+    expect(dateIn("Asia/Tokyo", lateEvening, "en")).toBe("6 March 2026");
+    expect(daysBetween("Europe/Berlin", new Date("2026-10-24T22:30:00Z"), new Date("2026-10-25T23:30:00Z"))).toBe(1);
+    expect(daysBetween("Europe/Lisbon", lateEvening, new Date("2026-03-05T00:30:00Z"))).toBe(0);
+    expect(daysBetween("Asia/Tokyo", new Date("2026-02-27T14:59:00Z"), lateEvening)).toBe(7);
+    expect(dateAfterIn("Europe/Berlin", new Date("2026-10-24T22:30:00Z"), 1, "de")).toBe("26.10.2026");
+    expect(dateAfterIn("America/New_York", new Date("2026-10-24T02:30:00Z"), 1, "en")).toBe("24 October 2026");
   });
 
   it("writes euros with cents, after the number in German and before it in English", () => {

@@ -1,7 +1,9 @@
 import { posix } from "node:path";
 import type { Config } from "./config";
-import { sealContext } from "./context";
+import { sealContext, type AdminSection } from "./context";
+import { CONTRACT_FRAGMENT_PATHS } from "./contract-wording";
 import type { DirectoryEntry } from "./directory";
+import { CONTRACT_SECTION } from "./routing-pages";
 import { wrapperFor } from "./secrets";
 
 /** Everything a Family is made of, its secrets unwrapped: held in memory only. */
@@ -13,6 +15,8 @@ export type Family = {
   timeZone: string;
   /** The Family's Logto Organization; null for a Family created before registration. */
   organizationId: string | null;
+  /** The Family's founder, as the Directory records it; null while it is not known. */
+  registeredBy: string | null;
   familyKey: string;
   databasePassword: string;
 };
@@ -37,6 +41,7 @@ export function unwrappedFamily(config: Config, entry: DirectoryEntry): Family {
     blobLocation: entry.blobLocation,
     timeZone: entry.timeZone,
     organizationId: entry.organizationId,
+    registeredBy: entry.registeredBy,
     familyKey: wrapper.unwrap("family-key", entry.wrappedFamilyKey),
     databasePassword: wrapper.unwrap("database-password", entry.wrappedDatabasePassword),
   };
@@ -53,7 +58,17 @@ export function sealedContext(config: Config, family: Family): string {
     timeZone: family.timeZone,
     publicUrl: familyUrl(config, family.familyId),
     ...(family.organizationId === null ? {} : { organizationId: family.organizationId }),
+    ...sectionsOf(config, family),
   });
+}
+
+/** The Contract section (contract-section.ts) for the founder, where there is one and the Router serves the fragment. A core takes only an `https:` address. */
+function sectionsOf(config: Config, { registeredBy }: Family): { sections?: AdminSection[] } {
+  if (registeredBy === null || !config.publicUrl.startsWith("https:") || !config.stripe || !config.idpManagement) return {};
+  const { de, en } = CONTRACT_FRAGMENT_PATHS;
+  return {
+    sections: [{ id: CONTRACT_SECTION, label: { en: "Contract", de: "Vertrag" }, onlyFor: registeredBy, src: { en: `${config.publicUrl}${en}`, de: `${config.publicUrl}${de}` } }],
+  };
 }
 
 /** The core keeps the Family's blobs in <blobDirectory>/<familyId>, so the blob location must end in the Family id. */
