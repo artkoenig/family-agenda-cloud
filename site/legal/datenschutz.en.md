@@ -20,18 +20,20 @@ When you open family-agenda.cloud, our web server processes your IP address, the
 - Legal basis: Art. 6(1)(f) GDPR; our interest is secure operation.
 - Retention: server logs are deleted after 14 days.
 
+**Error alerts.** When an error occurs in operation, we receive an email with a shortened line from the server log. IP addresses and identifiers are masked in it; only the identifier of the family concerned stays readable. These emails go to a mailbox at Gmail (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland); data may go to Google LLC in the US (adequacy decision EU-US Data Privacy Framework). Legal basis: Art. 6(1)(f) GDPR.
+
 The website loads nothing from third parties (fonts are on our server), sets no cookies and uses no analytics or tracking tools. If you pick the language by hand, your browser remembers that choice locally; it is not sent to us.
 
 ## 3 Registration and sign-in
 
-For sign-in we process your email address, your name, a password if you set one (only as a hash), the one-time codes we send you by email, and a sign-in log with IP address and time. The sign-in service (Logto) runs on our own server.
+For sign-in we process your email address, your name, a password if you set one (only as a hash), the one-time codes we send you by email, and a sign-in log with IP address, browser identifier and time. The sign-in service (Logto) runs on our own server.
 
 - Legal basis: Art. 6(1)(b) GDPR (contract); for the sign-in log Art. 6(1)(f) GDPR (preventing abuse).
 - Retention: account until the family is deleted; sign-in logs 30 days.
 
 **Preventing abuse.** At registration your browser solves a small computing puzzle (CAPTCHA "Cap", on our own server, no third party). We send at most three sign-in emails per hour to one address. Legal basis: Art. 6(1)(f) GDPR.
 
-**Sign in with Google.** If you choose "Sign in with Google", Google sends us your name, email address and a Google identifier. Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland, is itself the controller for this; data may go to Google LLC in the US (adequacy decision EU-US Data Privacy Framework). Legal basis: Art. 6(1)(b) GDPR; you can use sign-in by email code instead at any time and end the link by deleting your account.
+**Sign in with Google.** If you choose "Sign in with Google", Google sends us your name, email address, the address of your profile picture and a Google identifier. Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland, is itself the controller for this; data may go to Google LLC in the US (adequacy decision EU-US Data Privacy Framework). Legal basis: Art. 6(1)(b) GDPR; you can use sign-in by email code instead at any time and end the link by deleting your account.
 
 ## 4 The service: family, sources and agendas
 
@@ -72,7 +74,7 @@ This section informs people who are not members of a family but whose data appea
 
 For the Trial and the subscription we process the contracting party's name and email address, plan, term, and the times of order, cancellation and withdrawal.
 
-Payment is handled by **Stripe Payments Europe, Limited**, 1 Grand Canal Street Lower, Dublin 2, Ireland. Stripe processes payment data (card or account), billing address and country on our behalf. For fraud prevention and identity checks, Stripe is itself the controller. Data may go to Stripe, Inc. in the US (EU-US Data Privacy Framework, additionally standard contractual clauses). Stripe sets its own cookies on its payment page; Stripe's privacy policy applies to them.
+Payment is handled by **Stripe Payments Europe, Limited**, 1 Grand Canal Street Lower, Dublin 2, Ireland. Stripe processes payment data (card or account), billing address and country on our behalf. For fraud prevention and identity checks, Stripe is itself the controller. Data may go to Stripe, LLC in the US (EU-US Data Privacy Framework, additionally standard contractual clauses). Stripe sets its own cookies on its payment page; Stripe's privacy policy applies to them.
 
 - Legal basis: Art. 6(1)(b) GDPR; for invoices Art. 6(1)(c) GDPR.
 - Retention: invoices and accounting records 8 years from the end of the calendar year (§ 147(3) AO, § 14b UStG); then the customer is deleted at Stripe.
@@ -106,7 +108,7 @@ Admins can delete the family themselves at any time. Before that they can downlo
 - **IONOS Cloud GmbH**, Greifswalder Str. 207, 10405 Berlin, Germany: servers, storage, backups and the AI model, all in Germany. Processor.
 - **IONOS SE**, Elgendorfer Str. 57, 56410 Montabaur, Germany: sending email. Processor.
 - **Stripe** (section 6): payment processing; transfer to the US.
-- **Google** (section 3): only with sign-in with Google; transfer to the US.
+- **Google** (sections 2 and 3): mailbox for our error alerts; sign-in with Google, only if you choose it; transfer to the US.
 
 There are no other transfers to countries outside the EU. The providers of the sources are not recipients: we fetch from them, on your family's behalf, what the family has given access to.
 
