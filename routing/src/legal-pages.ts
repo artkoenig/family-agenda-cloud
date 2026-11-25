@@ -38,10 +38,13 @@ export const LEGAL_PAGES: readonly LegalPage[] = [
   },
 ];
 
-/** The footer's buttons to the app's cancel and withdraw pages: German labels on English pages too, with a gloss. */
+/**
+ * The footer's contract buttons: German labels on English pages too, with a gloss. Disabled until the
+ * app's cancel and withdraw pages exist (#229, #230; launch checklist, 13b).
+ */
 const CONTRACT_LINKS = [
-  { label: "Verträge hier kündigen", gloss: "cancel contracts here", paths: { de: "/cancel", en: "/en/cancel" } },
-  { label: "Vertrag widerrufen", gloss: "withdraw from contract", paths: { de: "/withdraw", en: "/en/withdraw" } },
+  { label: "Verträge hier kündigen", gloss: "cancel contracts here" },
+  { label: "Vertrag widerrufen", gloss: "withdraw from contract" },
 ] as const;
 
 /** What a page says around its content, per language. */
@@ -52,7 +55,7 @@ const WORDS = {
 
 function contractButton(link: (typeof CONTRACT_LINKS)[number], language: Language): string {
   const label = language === "de" ? link.label : `<span lang="de">${link.label}</span> <span class="lp-footer__gloss">(${link.gloss})</span>`;
-  return `      <a class="fam-button lp-footer__button" href="${APP_URL}${link.paths[language]}">${label}</a>`;
+  return `      <button class="fam-button lp-footer__button" type="button" disabled>${label}</button>`;
 }
 
 /** The footer of a page in `language`, whose link to the other language goes to `otherLanguageHref`. */
