@@ -104,6 +104,11 @@ Check:
 curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat ~/.config/ionos/ai-model-hub.token)" https://openai.inference.de-txl.ionos.com/v1/models
 ```
 
+**Another model or provider.** The cores extract at `LLM_BASE_URL` (`cube/compose.yaml`, the AI Model Hub in Berlin)
+with the model `LLM_MODEL`. Before either is changed to a provider or a model that does not run in Germany, redo
+[`docs/privacy/threshold-analysis.md`](../privacy/threshold-analysis.md) and log it there. Another model of the AI
+Model Hub runs in Germany as well and needs no new check.
+
 ## 7. Host and first deploy
 
 1. `scripts/bootstrap.sh`: Docker, `unattended-upgrades` with a reboot at 04:00, SSH with keys only,
@@ -568,3 +573,16 @@ What happens then, without the Operator:
 
 Check afterwards: `docker compose ps core` lists that many cores as healthy, `docker compose exec router getent ahosts
 cores` lists one address for each of them, and `SMOKE_FAMILY_ID=<its id> scripts/smoke.sh` passes.
+
+## 10. A new Source Type
+
+The hosted Source Types are `ics`, `imap` and `webuntis`: one plugin each, a service in `cube/compose.yaml`.
+
+1. Before anything else, redo [`docs/privacy/threshold-analysis.md`](../privacy/threshold-analysis.md) and log it
+   there. It is written for these three Source Types; Messengers (the Matrix bridge) are not hosted until it is redone.
+   If the new Source Type changes what is processed or who receives it, the record of processing activities and the
+   privacy policy change with it.
+2. Add the plugin from the public core's `plugins.yml` to `cube/compose.yaml`, as the comment above `x-core` there
+   says: its entry in `PLUGIN_URLS` and its `plugin-<id>` network in the cores' networks, a `plugin-<id>` service and
+   a `plugin-<id>-egress` service, and the two networks at the end, both internal.
+3. `scripts/deploy.sh`.

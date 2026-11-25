@@ -42,6 +42,16 @@ A Family id is the part of a Family's address after the host, 36 characters long
   a deploy replaces the container. Do not copy them off the Cube, keep them longer than that, or put lines with ids
   into tickets, mails or chats; cut the ids out first.
 
+## A Family's content
+
+Items and Source Records are shown only to the Family. Do not evaluate them, build profiles from them or train a model
+with them, and look at a Family's content only to fix a fault with an Admin's consent, or where the law requires it
+(privacy policy § 4, "Keine eigene Nutzung"; AGB § 10(3)).
+
+Before content is used in any other way, for the Operator's own purposes: redo
+[`docs/privacy/threshold-analysis.md`](../privacy/threshold-analysis.md) and log it there. The reading that no DSFA is
+needed rests on this rule (its section 7).
+
 ## Create a Family
 
 Families create themselves: a person registers at Logto, a core creates the Family's Logto Organization and posts
@@ -69,6 +79,12 @@ If it fails part-way (`Creating the Family failed; run create again with --famil
 Family id, and `routing families` lists the Family as `being_prepared` unless it failed before the Family was
 entered into the Directory. Run the same command again with
 `--family-id <that id>`; it finishes what is missing and prints the address. Running it once more does no harm.
+
+**More than 1000 Families.** The Schwellwertanalyse is written for a service sized for 1000 Families. Before the
+Cube holds more than 1000 (`routing families` lists them, deleted ones included), redo
+[`docs/privacy/threshold-analysis.md`](../privacy/threshold-analysis.md) and log it there. Until that is done, keep
+registration closed (`REGISTRATION=closed`, [setup runbook](setup.md#opening-and-closing-registration)), send no
+invitation and create no Family by hand.
 
 ## Invite a Family
 
