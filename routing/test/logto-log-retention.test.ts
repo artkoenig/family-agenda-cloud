@@ -1,9 +1,11 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { once } from "node:events";
+import net, { type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import pg from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, inject } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, inject, vi } from "vitest";
 
 /**
  * The Cube's logto-log-retention service (cube/compose.yaml), which deletes Logto's sign-in log older
@@ -57,17 +59,20 @@ const LOGTO_SCHEMA = `
 
 type Run = { exitCode: number; stdout: string; lines: Record<string, unknown>[] };
 
-/** Runs the service's script once, with the connection libpq's PG* variables name. */
+/** The connection, as libpq's PG* variables name it. */
+const environment = (database = name, user = name) => ({
+  PATH: process.env.PATH ?? "",
+  PGHOST: superuserUrl.hostname,
+  PGPORT: superuserUrl.port || "5432",
+  PGUSER: user,
+  PGPASSWORD: password,
+  PGDATABASE: database,
+  LOGTO_LOG_RETENTION_SQL: sql,
+});
+
+/** Runs the service's script once. */
 async function runOnce(database = name, user = name): Promise<Run> {
-  const env = {
-    PATH: process.env.PATH ?? "",
-    PGHOST: superuserUrl.hostname,
-    PGPORT: superuserUrl.port || "5432",
-    PGUSER: user,
-    PGPASSWORD: password,
-    PGDATABASE: database,
-    LOGTO_LOG_RETENTION_SQL: sql,
-  };
+  const env = environment(database, user);
   const { exitCode, stdout } = await promisify(execFile)("bash", [script, "--once"], { env }).then(
     ({ stdout }) => ({ exitCode: 0, stdout }),
     (error: unknown) => {
@@ -80,6 +85,49 @@ async function runOnce(database = name, user = name): Promise<Run> {
     .split("\n")
     .map((line) => JSON.parse(line) as Record<string, unknown>);
   return { exitCode, stdout, lines };
+}
+
+async function listen(server: net.Server, port = 0): Promise<number> {
+  server.listen(port, "127.0.0.1");
+  await once(server, "listening");
+  return (server.address() as AddressInfo).port;
+}
+
+async function unusedPort(): Promise<number> {
+  const server = net.createServer();
+  const port = await listen(server);
+  server.close();
+  await once(server, "close");
+  return port;
+}
+
+/** Runs the service's script as the service does, with Postgres on a port of this host. */
+function startService(port: number, wait: number) {
+  // In a process group of its own, as the script's `sleep` outlives it outside of a container.
+  const child = spawn("bash", [script], {
+    env: { ...environment(), PGHOST: "127.0.0.1", PGPORT: String(port), LOGTO_LOG_RETENTION_WAIT: String(wait) },
+    detached: true,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  let stdout = "";
+  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+  const exited = once(child, "exit") as Promise<[number | null]>;
+  return {
+    stdout: () => stdout,
+    firstLine: () =>
+      vi.waitFor(() => JSON.parse(stdout.slice(0, stdout.indexOf("\n") + 1)) as Record<string, unknown>, { timeout: 10_000, interval: 50 }),
+    terminate: async () => {
+      child.kill("SIGTERM");
+      return (await exited)[0];
+    },
+    cleanUp: () => {
+      try {
+        process.kill(-child.pid!, "SIGKILL");
+      } catch {
+        // Every process of the group has ended.
+      }
+    },
+  };
 }
 
 const remaining = async () => (await query(name, "SELECT id FROM logs ORDER BY id")).map(({ id }) => id);
@@ -153,4 +201,47 @@ describe("Deleting Logto's sign-in log after 30 days", () => {
     expect(run.exitCode).not.toBe(0);
     expect(run.lines).toMatchObject([{ level: "error", error: expect.stringContaining(`${name}_unknown`) as unknown }]);
   });
+});
+
+describe("The service's start, as after a reboot of the host, which starts Postgres at the same time", () => {
+  it("waits for Postgres and logs no error until it is there", async () => {
+    const port = await unusedPort();
+    const service = startService(port, 60);
+    const proxy = net.createServer((socket) => {
+      const upstream = net.connect(Number(superuserUrl.port || "5432"), superuserUrl.hostname);
+      socket.on("error", () => upstream.destroy()).pipe(upstream);
+      upstream.on("error", () => socket.destroy()).pipe(socket);
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(service.stdout()).toBe("");
+      await listen(proxy, port);
+
+      expect(await service.firstLine()).toMatchObject({ level: "info", deleted: 3 });
+    } finally {
+      service.cleanUp();
+      proxy.close();
+    }
+  }, 20_000);
+
+  it("logs an error when Postgres stays away", async () => {
+    const service = startService(await unusedPort(), 1);
+    try {
+      expect(await service.firstLine()).toMatchObject({ level: "error", error: expect.stringContaining("failed") as unknown });
+    } finally {
+      service.cleanUp();
+    }
+  }, 20_000);
+
+  it("ends on TERM while it waits", async () => {
+    const service = startService(await unusedPort(), 60);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      expect(await service.terminate()).toBe(0);
+      expect(service.stdout()).toBe("");
+    } finally {
+      service.cleanUp();
+    }
+  }, 20_000);
 });

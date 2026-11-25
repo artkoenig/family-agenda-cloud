@@ -302,7 +302,8 @@ services:
       - ./logto-log-retention.sql:/logto-log-retention.sql:ro
     network_mode: none
     entrypoint: ["bash", "/logto-log-retention.sh"]
-    # Logto's tables are there once it is healthy: it seeds its database on its first start.
+    # Logto's tables are there once it is healthy: it seeds its database on its first start. After a
+    # reboot of the host Docker ignores this, so the script waits for Postgres itself.
     depends_on:
       logto:
         condition: service_healthy
