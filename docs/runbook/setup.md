@@ -138,7 +138,7 @@ Model Hub runs in Germany as well and needs no new check.
    | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `OPERATOR_NAME`, `OPERATOR_POSTAL_ADDRESS`, `AGB_STAND` | Stripe's restricted key, the signing secret of its webhook, the ids of the Tariff's two Prices, and the imprint of the mails about a Subscription, for the Router alone; optional, all or none, empty leaves the order page and the webhook off | empty at first; [Stripe](#stripe) |
    | `LLM_API_KEY` | the AI Model Hub token every core extracts with | [step 6](#6-ai-model-hub-token) |
    | `LLM_MODEL` | the AI Model Hub model; optional, `Qwen/Qwen3.8-27B` unless set | `openai/gpt-oss-120b` is the alternative ([launch checklist](../launch-checklist.md), gate 8) |
-   | `OPERATOR_ALERT_ADDRESS` | where the [health check](#the-health-check)'s digest mail of errors goes | the Operator's own address, not one at `family-agenda.cloud` |
+   | `OPERATOR_ALERT_ADDRESS` | where the [health check](#the-health-check)'s digest mail of errors goes | `support@family-agenda.cloud`: a mailbox under a processing agreement ([record](../privacy/records-of-processing.md), activity 1), not a private one |
    | `HEALTH_HEARTBEAT_URL` | the ping URL of the Cube's check at healthchecks.io | [The health check](#the-health-check) |
    | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` | the SMTP server and login the mail sender and the health check send through; `smtp.ionos.de`, `465` and `support@family-agenda.cloud` unless set | as in `cube/.env.example` |
    | `SMTP_PASSWORD` | the password of the mailbox `support@family-agenda.cloud` | [step 5](#5-mailbox), the password manager |
