@@ -74,6 +74,9 @@ type Words = {
     contract: string;
     button: Button;
     receipt: { title: string; content: (orderedContract: string, name: string) => string; mail: (email: string) => string };
+    nothing: string;
+    noHolder: string;
+    failed: { title: string; line: string };
   };
   received: (date: string, time: string) => string;
   print: string;
@@ -124,6 +127,12 @@ const WORDS: Record<Language, Words> = {
         title: "Ihr Widerruf ist bei uns eingegangen.",
         content: (orderedContract, name) => `Inhalt: Widerruf des Vertrags ${orderedContract}, durch ${name}.`,
         mail: (email) => `Eine Eingangsbestätigung geht an ${email}.`,
+      },
+      nothing: "Für diese Familie gibt es kein Abonnement, das widerrufen werden kann.",
+      noHolder: "Für diese Familie ist nicht hinterlegt, wer den Vertrag widerrufen kann.",
+      failed: {
+        title: "Das hat gerade nicht geklappt",
+        line: "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuchen Sie es in einigen Minuten erneut.",
       },
     },
     received: (date, time) => `Eingegangen am ${date} um ${time}.`,
@@ -177,6 +186,12 @@ const WORDS: Record<Language, Words> = {
         title: "We have received your withdrawal.",
         content: (orderedContract, name) => `Content: withdrawal from the contract ${orderedContract}, by ${name}.`,
         mail: (email) => `An acknowledgement is on its way to ${email}.`,
+      },
+      nothing: "This family has no subscription that could be withdrawn from.",
+      noHolder: "There is no record of who can withdraw from the contract for this family.",
+      failed: {
+        title: "That did not work just now",
+        line: "We could not take your declaration just now. Please try again in a few minutes.",
       },
     },
     received: (date, time) => `Received on ${date} at ${time}.`,
@@ -260,6 +275,30 @@ export function withdrawPage(language: Language, { holder, contract, csrf }: Wit
     [escape(withdraw.contract), escape(orderedContractOf(contract, language))],
   ]);
   return page(language, withdraw.title, form(csrf, `${rows}\n${submit(withdraw.button)}`));
+}
+
+/** `/withdraw` for an Admin who is not the contract's holder: who is, and no form. */
+export function withdrawHolderPage(language: Language, holderName: string): string {
+  return page(language, WORDS[language].withdraw.title, paragraphs([holderLine(holderName, language)]));
+}
+
+/** `/withdraw` of a Family that has no Subscription to withdraw from. */
+export function nothingToWithdrawPage(language: Language): string {
+  const { title, nothing } = WORDS[language].withdraw;
+  return page(language, title, paragraphs([nothing]));
+}
+
+/** `/withdraw` of a Family no founder is recorded for: nobody gets the form, and the support says how it goes on. */
+export function noWithdrawHolderPage(language: Language): string {
+  const words = WORDS[language];
+  return page(language, words.withdraw.title, `${paragraphs([words.withdraw.noHolder])}\n<p>${escape(words.support)} ${SUPPORT_LINK}</p>`);
+}
+
+/** What `/withdraw` shows if the declaration could not be taken: to try again, and the support is another way. */
+export function withdrawFailedPage(language: Language): string {
+  const words = WORDS[language];
+  const { title, line } = words.withdraw.failed;
+  return page(language, title, `${paragraphs([line])}\n<p>${escape(words.support)} ${SUPPORT_LINK}</p>`);
 }
 
 /** What `/withdraw` shows once the Withdrawal came in. */

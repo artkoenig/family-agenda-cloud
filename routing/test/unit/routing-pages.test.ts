@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cancelPathOf, orderPathOf, signInPathFor, wayBackOf } from "../../src/routing-pages";
+import { cancelPathOf, orderPathOf, signInPathFor, wayBackOf, withdrawPathOf } from "../../src/routing-pages";
 
 describe("the Routing module's pages", () => {
   it.each([
@@ -32,6 +32,20 @@ describe("the Routing module's pages", () => {
 
   it.each(["/cancel/", "/de/cancel", "/order", "/withdraw", ""])("takes %j for no page of a Cancellation", (path) => {
     expect(cancelPathOf(path)).toBeUndefined();
+  });
+
+  it.each([
+    ["/withdraw", "de"],
+    ["/en/withdraw", "en"],
+  ] as const)("knows %s as the page to withdraw on, and comes back to it", (path, language) => {
+    expect(withdrawPathOf(path)).toBe(language);
+    expect(cancelPathOf(path)).toBeUndefined();
+    expect(orderPathOf(path)).toBeUndefined();
+    expect(wayBackOf(path)).toBe(path);
+  });
+
+  it.each(["/withdraw/", "/de/withdraw", "/cancel", "/en/withdraw?x=1", ""])("takes %j for no page of a Withdrawal", (path) => {
+    expect(withdrawPathOf(path)).toBeUndefined();
   });
 
   it("sends a browser to sign in and back", () => {

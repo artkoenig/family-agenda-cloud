@@ -73,15 +73,15 @@ const list = (...data: unknown[]) => ({ object: "list", has_more: false, data })
 it("refunds every payment of a Subscription", async () => {
   const answers = {
     "GET /v1/invoices?subscription=sub_1&limit=100": list({ id: "in_1" }, { id: "in_2" }),
-    "GET /v1/invoice_payments?invoice=in_1&status=paid&limit=100": list({ id: "p_1", payment: { type: "payment_intent", payment_intent: "pi_1" } }),
-    "GET /v1/invoice_payments?invoice=in_2&status=paid&limit=100": list({ id: "p_2", payment: { type: "charge", charge: { id: "ch_1" } } }),
+    "GET /v1/invoice_payments?invoice=in_1&status=paid&limit=100": list({ id: "p_1", amount_paid: 499, payment: { type: "payment_intent", payment_intent: "pi_1" } }, { id: "p_0", amount_paid: null, payment: { type: "charge", charge: "ch_0" } }),
+    "GET /v1/invoice_payments?invoice=in_2&status=paid&limit=100": list({ id: "p_2", amount_paid: 4990, payment: { type: "charge", charge: { id: "ch_1" } } }),
     "POST /v1/refunds": { id: "re_1" } as unknown,
   };
   const { calls, port } = await stripeAnswering(answers);
-  await port.refundSubscription("sub_1");
-  expect(calls.filter(({ path }) => path === "/v1/refunds").map(({ body }) => body)).toEqual(["payment_intent=pi_1&reason=duplicate", "charge=ch_1&reason=duplicate"]);
+  expect(await port.refundSubscription("sub_1")).toBe(5489);
+  expect(calls.filter(({ path }) => path === "/v1/refunds").map(({ body }) => body)).toEqual(["payment_intent=pi_1&reason=duplicate", "charge=ch_0&reason=duplicate", "charge=ch_1&reason=duplicate"]);
   answers["POST /v1/refunds"] = { error: { type: "invalid_request_error", code: "charge_already_refunded", message: "Refunded" } };
-  await port.refundSubscription("sub_1");
+  expect(await port.refundSubscription("sub_1")).toBe(5489);
   answers["POST /v1/refunds"] = { error: { type: "invalid_request_error", code: "resource_missing", message: "No such payment" } };
   await expect(port.refundSubscription("sub_1")).rejects.toThrow("No such payment");
 });

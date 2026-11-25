@@ -79,6 +79,8 @@ x-core: &core
     TERMS_URL: https://family-agenda.cloud/agb
     # Where the Admin area sends the Contract holder to cancel the Subscription (#229).
     CANCEL_URL: https://app.family-agenda.cloud/cancel
+    # Where the Admin area sends the Contract holder to withdraw from the Subscription (#230).
+    WITHDRAW_URL: https://app.family-agenda.cloud/withdraw
     TESSDATA_DIRECTORY: /var/lib/family-agenda/tessdata
     PLUGIN_URLS: ics=http://plugin-ics:8080,imap=http://plugin-imap:8080,webuntis=http://plugin-webuntis:8080
     # Sign-in: one Logto for every Family (ADR-0009 of the core). Each Family is a Logto

@@ -101,6 +101,9 @@ export function firstPaymentOf({ created, billing_cycle_anchor }: StripeSubscrip
 export const CANCELLATION_RECEIVED_AT = "cancellationReceivedAt";
 export const CANCELLATION_REFUND_CENTS = "cancellationRefundCents";
 
+/** What the Subscription's metadata notes of a Withdrawal (#230): when it came in. */
+export const WITHDRAWAL_RECEIVED_AT = "withdrawalReceivedAt";
+
 /**
  * The cents to pay back now that the Subscription has ended: what its Cancellation noted, if it ended
  * by that and not earlier, as for a payment that failed. 0 if there is nothing to pay back.

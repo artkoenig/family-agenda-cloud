@@ -93,6 +93,11 @@ describe("A mail put in the outbox", () => {
     const mail = mailTo("anna.mueller@example.org");
     const client = await connect();
     await outbox(client).enqueue(mail, { type: "cancellation", familyId: FAMILY });
+    const day = 24 * 60 * 60_000;
+    expect(await outbox(client).holds({ type: "cancellation", familyId: FAMILY }, new Date(Date.now() - day))).toBe(true);
+    expect(await outbox(client).holds({ type: "cancellation", familyId: FAMILY }, new Date(Date.now() + day))).toBe(false);
+    expect(await outbox(client).holds({ type: "withdrawal", familyId: FAMILY }, new Date(0))).toBe(false);
+    expect(await outbox(client).holds({ type: "cancellation", familyId: "00000000-0000-4000-8000-000000000000" }, new Date(0))).toBe(false);
 
     expect(await deliverDue(await sender())).toEqual({ sent: 1, failed: 0 });
 
