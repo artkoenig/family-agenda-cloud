@@ -2,9 +2,11 @@ import { createServer, request, type ClientRequest, type IncomingMessage, type S
 import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import pg from "pg";
+import { answerCancel, type CancelSetup } from "./cancel";
 import { answerSignIn, tokenExchange, type SignInSetup } from "./central-sign-in";
 import { directoryConnection, isSignInPath, type Config } from "./config";
 import { CONTEXT_HEADER } from "./context";
+import type { Language } from "./contract-wording";
 import { openingRefusal, pageErrorCode } from "./core-answers";
 import { directory as openDirectory, type Directory } from "./directory";
 import { isBodiless, mayRefuseOpening, neverConnected } from "./failover";
@@ -16,7 +18,7 @@ import { postRegisterAgain } from "./post-register";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
 import { systemResolve } from "./resolve";
-import { orderPathOf, STRIPE_EVENTS_PATH, type OrderPath } from "./routing-pages";
+import { cancelPathOf, orderPathOf, STRIPE_EVENTS_PATH, type OrderPath } from "./routing-pages";
 import { familySchedules, openQueues } from "./scheduler";
 import { answerStripeEvent, type StripeEventsSetup } from "./stripe-events";
 import { checkPrices, stripePort, type StripePort } from "./stripe";
@@ -35,6 +37,7 @@ type RouterSetup = {
   signIn: SignInSetup | null;
   /** The order at Stripe; none unless configured, and its pages are then no paths of the Router's. */
   order: OrderSetup | null;
+  cancel: CancelSetup | null;
   /** Stripe's webhook; none unless the order is, and its path is then no path of the Router's. */
   stripeEvents: StripeEventsSetup | null;
 };
@@ -100,7 +103,7 @@ export async function startRouter(
     await directoryPool.end();
     throw error;
   });
-  const setup: RouterSetup = { config, directory, log, pool, signIn, order: stripe?.order ?? null, stripeEvents: stripe?.events ?? null };
+  const setup: RouterSetup = { config, directory, log, pool, signIn, order: stripe?.order ?? null, cancel: stripe?.cancel ?? null, stripeEvents: stripe?.events ?? null };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -134,7 +137,8 @@ async function openStripe({ directory, ...shared }: StripeSurroundings, connectS
   await boss.start();
   const order: OrderSetup = { config, directory, idp, prices: settings.prices, stripe, portal, now };
   const events: StripeEventsSetup = { ...shared, settings, idp, stripe, schedules: await familySchedules(boss) };
-  return { order, events, close: () => boss.stop({ graceful: false }) };
+  const cancel: CancelSetup = { config, directory, directoryPool: shared.directoryPool, idp, stripe, imprint: settings.imprint, log: shared.log, now };
+  return { order, cancel, events, close: () => boss.stop({ graceful: false }) };
 }
 
 /** Answers a request for central sign-in, a page of the order or Stripe's webhook; false if it is for none of them. */
@@ -147,9 +151,11 @@ async function ownPageRequest(setup: RouterSetup, incoming: IncomingMessage, out
 }
 
 /** Answers a request for a page of the order or Stripe's webhook; false if it is for neither. */
-async function stripePageRequest({ order, stripeEvents }: RouterSetup, pathname: string, incoming: IncomingMessage, outgoing: ServerResponse): Promise<boolean> {
+async function stripePageRequest({ order, cancel, stripeEvents }: RouterSetup, pathname: string, incoming: IncomingMessage, outgoing: ServerResponse): Promise<boolean> {
   const orderPath = orderPathOf(pathname);
+  const cancelLanguage = cancelPathOf(pathname);
   if (order && orderPath) await orderRequest(order, orderPath, incoming, outgoing);
+  else if (cancel && cancelLanguage) await cancelRequest(cancel, cancelLanguage, incoming, outgoing);
   else if (stripeEvents && pathname === STRIPE_EVENTS_PATH) await stripeEventRequest(stripeEvents, incoming, outgoing);
   else return false;
   return true;
@@ -184,13 +190,23 @@ async function signInRequest(setup: RouterSetup, signIn: SignInSetup, incoming: 
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
 }
 
+/** What a browser posts to a page of the order or to `/cancel`; undefined if that is too long. */
+const formOf = (incoming: IncomingMessage) => async (): Promise<URLSearchParams | undefined> => {
+  const body = await beginningOf(incoming, ORDER_BYTES);
+  return body?.whole ? new URLSearchParams(Buffer.concat(body.chunks).toString()) : undefined;
+};
+
+/** Answers a request for `/cancel`. */
+async function cancelRequest(cancel: CancelSetup, language: Language, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
+  const { status, headers, body } = await answerCancel({ method: incoming.method, language, cookie: incoming.headers.cookie, form: formOf(incoming) }, cancel);
+  // What was posted and not read would stay on the connection.
+  if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");
+  outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
+}
+
 /** Answers a request for a page of the order. */
 async function orderRequest(order: OrderSetup, path: OrderPath, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const form = async (): Promise<URLSearchParams | undefined> => {
-    const body = await beginningOf(incoming, ORDER_BYTES);
-    return body?.whole ? new URLSearchParams(Buffer.concat(body.chunks).toString()) : undefined;
-  };
-  const { status, headers, body } = await answerOrder({ method: incoming.method, path, cookie: incoming.headers.cookie, form }, order);
+  const { status, headers, body } = await answerOrder({ method: incoming.method, path, cookie: incoming.headers.cookie, form: formOf(incoming) }, order);
   // What was posted and not read would stay on the connection.
   if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);

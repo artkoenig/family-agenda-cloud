@@ -29,6 +29,11 @@ export type StandInStripe = StripePort & {
   /** The ids of the Subscriptions cancelled, and of those refunded, one entry per call. */
   cancelled: string[];
   refunded: string[];
+  /** Every end set at a Subscription, and every payback of unused months, one entry per call. */
+  ends: { id: string; end: Date | null; metadata: Record<string, string>; idempotencyKey: string }[];
+  unused: { id: string; cents: number }[];
+  /** Fails every call that sets a Subscription's end, while true. */
+  failEnds: boolean;
   customerLocales: Map<string, string[]>;
   portalSessions: Stripe.BillingPortal.SessionCreateParams[];
   /** Fails every call that changes a Customer, until set to false. */
@@ -43,6 +48,9 @@ export function standInStripe(prices = PRICES): StandInStripe {
     subscriptions: new Map(),
     cancelled: [],
     refunded: [],
+    ends: [],
+    unused: [],
+    failEnds: false,
     customerLocales: new Map(),
     portalSessions: [],
     failCustomers: false,
@@ -71,6 +79,18 @@ export function standInStripe(prices = PRICES): StandInStripe {
     },
     refundSubscription(id) {
       stripe.refunded.push(id);
+      return Promise.resolve();
+    },
+    setEnd(id, end, metadata, idempotencyKey) {
+      if (stripe.failEnds) return Promise.reject(new Error("Stripe is down"));
+      stripe.ends.push({ id, end, metadata, idempotencyKey });
+      const subscription = stripe.subscriptions.get(id)!;
+      const changed = { ...subscription, cancel_at: end === null ? null : Math.floor(end.getTime() / 1000), metadata: { ...subscription.metadata, ...metadata } };
+      stripe.subscriptions.set(id, changed);
+      return Promise.resolve({ ...changed });
+    },
+    refundUnused(id, cents) {
+      stripe.unused.push({ id, cents });
       return Promise.resolve();
     },
     setCustomerLocales(customerId, locales) {

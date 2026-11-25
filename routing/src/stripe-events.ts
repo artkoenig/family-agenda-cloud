@@ -27,7 +27,7 @@ import type { Resolve } from "./pool";
 import { provisioning, withFamilyLock, type ScheduledProvisioning } from "./provisioning";
 import type { FamilySchedules } from "./scheduler";
 import { signedEvent, type StripePort, type StripeSubscription } from "./stripe";
-import { DUPLICATE, firstPaymentOf, hasEnded, isDuplicate, newerOf, noticeOf, ordererOf, recordOf, type CompletedSession, type Notice, type Orderer } from "./stripe-subscription";
+import { DUPLICATE, firstPaymentOf, hasEnded, isDuplicate, newerOf, noticeOf, ordererOf, recordOf, unusedCentsOf, type CompletedSession, type Notice, type Orderer } from "./stripe-subscription";
 import { unpaidMail } from "./unpaid-mail";
 
 /** What the webhook works with. */
@@ -115,7 +115,16 @@ async function follow(handling: Handling, orderer: Orderer, subscriptionId: stri
   await saved(at);
   if (isDuplicate(subscription)) return;
   await familyFollows(at);
+  await unusedPaidBack(at);
   if (session) await confirm(at, session);
+}
+
+/** Pays back the unused months of a yearly Subscription that its Cancellation has ended (#229). */
+async function unusedPaidBack({ handling, orderer, subscription }: Case): Promise<void> {
+  const cents = unusedCentsOf(subscription);
+  if (cents === 0) return;
+  await handling.stripe.refundUnused(subscription.id, cents);
+  handling.log.info("Paid back the unused months of a cancelled Subscription", { familyId: orderer.familyId, subscription: subscription.id, cents });
 }
 
 /**

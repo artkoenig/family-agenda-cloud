@@ -6,20 +6,25 @@
  *
  * The `/cancel` page holds nothing but the fields § 312k BGB asks for, the end date to choose and
  * the button (BGH I ZR 200/25), and like every page here the legal footer. Receipts acknowledge
- * receipt only. Every value is escaped. The forms post to the page's own address. No I/O.
+ * receipt only. Every value is escaped. The forms post to the page's own address, each with the
+ * session's token in a hidden field (#229). No page has an inline handler: the print button and
+ * `/delete`'s checkbox work by `SCRIPT_PATH`, which only their pages load. No I/O.
  */
-import { CONTRACT_PATHS, dateOf, orderedContractOf, contractOf, timeOf, type Contract, type Language, type Person } from "./contract-wording";
+import { CONTRACT_PATHS, cancelledLine, dateOf, holderLine, orderedContractOf, contractOf, timeOf, type Contract, type Language, type Person } from "./contract-wording";
 import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "./legal-footer";
-import { DESIGN_PATH } from "./sign-in-pages";
+import { DESIGN_PATH, SUPPORT_LINK } from "./sign-in-pages";
 
 /** The holder's `/cancel`: `endDates` are the next ends of billing periods to choose from; the earliest is chosen. */
-export type CancelPageValues = { holder: Person; contract: Contract; endDates: readonly [Date, ...Date[]] };
+export type CancelPageValues = { holder: Person; contract: Contract; endDates: readonly [Date, ...Date[]]; csrf: string };
+
+/** The holder's `/cancel` while a Cancellation to `endsOn` is pending. */
+export type CancelledPageValues = { endsOn: Date; csrf: string };
 
 /** What `/cancel` shows once the Cancellation came in at `receivedAt`, ending the contract on `endsOn`. */
 export type CancelReceiptValues = { holder: Person; contract: Contract; receivedAt: Date; endsOn: Date };
 
 /** The holder's `/withdraw`. */
-export type WithdrawPageValues = { holder: Person; contract: Contract };
+export type WithdrawPageValues = { holder: Person; contract: Contract; csrf: string };
 
 /** What `/withdraw` shows once the Withdrawal came in at `receivedAt`. */
 export type WithdrawReceiptValues = { holder: Person; contract: Contract; receivedAt: Date };
@@ -28,10 +33,19 @@ export type WithdrawReceiptValues = { holder: Person; contract: Contract; receiv
  * `/delete` for the one Admin who may delete the Family; `exportHref` downloads its Export.
  * `subscription` if one is running, with the end of its withdrawal period while that lasts.
  */
-export type DeletePageValues = { familyName: string; exportHref: string; subscription: { withdrawalPeriodEndsOn: Date | null } | null };
+export type DeletePageValues = { familyName: string; exportHref: string; subscription: { withdrawalPeriodEndsOn: Date | null } | null; csrf: string };
 
 /** The name of the end date `/cancel` posts, as an ISO 8601 instant. */
 export const END_DATE_FIELD = "end";
+
+/** The name of the field the button taking a Cancellation back posts. */
+export const UNDO_FIELD = "undo";
+
+/** The name of the hidden field every form posts the session's token in. */
+export const CSRF_FIELD = "csrf";
+
+/** The script behind the print button and `/delete`'s checkbox: `site/contract.js`, served with the design system. */
+export const SCRIPT_PATH = `${DESIGN_PATH}/contract.js`;
 
 /** The name of `/delete`'s checkbox, `on` once ticked. */
 export const UNDERSTOOD_FIELD = "understood";
@@ -49,7 +63,10 @@ type Words = {
     endDate: string;
     button: Button;
     receipt: { title: string; content: (contract: string, name: string, end: string) => string; ends: (end: string) => string; mail: (email: string) => string };
+    nothing: string;
+    failed: { title: string; line: string };
   };
+  support: string;
   withdraw: {
     title: string;
     name: string;
@@ -90,7 +107,13 @@ const WORDS: Record<Language, Words> = {
         ends: (end) => `Der Vertrag endet am ${end}.`,
         mail: (email) => `Eine Bestätigung geht an ${email}.`,
       },
+      nothing: "Für diese Familie läuft kein Abonnement, das gekündigt werden kann.",
+      failed: {
+        title: "Das hat gerade nicht geklappt",
+        line: "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Es wurde nichts geändert. Bitte versuchen Sie es in einigen Minuten erneut.",
+      },
     },
+    support: "Fragen? Schreiben Sie uns:",
     withdraw: {
       title: "Vertrag widerrufen",
       name: "Name:",
@@ -137,7 +160,13 @@ const WORDS: Record<Language, Words> = {
         ends: (end) => `The contract ends on ${end}.`,
         mail: (email) => `A confirmation is on its way to ${email}.`,
       },
+      nothing: "This family has no running subscription that could be cancelled.",
+      failed: {
+        title: "That did not work just now",
+        line: "We could not take your declaration just now. Nothing was changed. Please try again in a few minutes.",
+      },
     },
+    support: "Questions? Write to us:",
     withdraw: {
       title: "Withdraw from the contract",
       name: "Name:",
@@ -172,7 +201,7 @@ const WORDS: Record<Language, Words> = {
 };
 
 /** `/cancel`: the § 312k fields, the end date to choose and „jetzt kündigen“; nothing else. */
-export function cancelPage(language: Language, { holder, contract, endDates }: CancelPageValues): string {
+export function cancelPage(language: Language, { holder, contract, endDates, csrf }: CancelPageValues): string {
   const { cancel } = WORDS[language];
   const options = [...endDates]
     .sort((a, b) => a.getTime() - b.getTime())
@@ -186,7 +215,31 @@ export function cancelPage(language: Language, { holder, contract, endDates }: C
     [escape(cancel.contract), escape(orderedContractOf(contract, language))],
     [`<label for="${END_DATE_FIELD}">${escape(cancel.endDate)}</label>`, endDate],
   ]);
-  return page(language, cancel.title, `<form method="post">\n${rows}\n${submit(cancel.button)}\n</form>`);
+  return page(language, cancel.title, form(csrf, `${rows}\n${submit(cancel.button)}`));
+}
+
+/** `/cancel` while a Cancellation is pending: when the contract ends, and the button that takes the Cancellation back. */
+export function cancelledPage(language: Language, { endsOn, csrf }: CancelledPageValues): string {
+  const { status, undo, undoNote } = cancelledLine(endsOn, language);
+  return page(language, WORDS[language].cancel.title, `${paragraphs([status])}\n${form(csrf, submit({ label: undo, note: undoNote }, UNDO_FIELD))}`);
+}
+
+/** `/cancel` for an Admin who is not the contract's holder: who is, and no form. */
+export function cancelHolderPage(language: Language, holderName: string): string {
+  return page(language, WORDS[language].cancel.title, paragraphs([holderLine(holderName, language)]));
+}
+
+/** `/cancel` of a Family no Subscription runs for. */
+export function nothingToCancelPage(language: Language): string {
+  const { title, nothing } = WORDS[language].cancel;
+  return page(language, title, paragraphs([nothing]));
+}
+
+/** What `/cancel` shows if the declaration could not be taken: nothing changed, and the support is another way. */
+export function cancelFailedPage(language: Language): string {
+  const words = WORDS[language];
+  const { title, line } = words.cancel.failed;
+  return page(language, title, `${paragraphs([line])}\n<p>${escape(words.support)} ${SUPPORT_LINK}</p>`);
 }
 
 /** What `/cancel` shows once the Cancellation came in. */
@@ -195,18 +248,18 @@ export function cancelReceiptPage(language: Language, { holder, contract, receiv
   const { receipt } = words.cancel;
   const end = dateOf(endsOn, language);
   const lines = [received(language, receivedAt), receipt.content(contractOf(contract, language), holder.name, end), receipt.ends(end), receipt.mail(holder.email)];
-  return page(language, receipt.title, `${paragraphs(lines)}\n${printButton(words.print)}`);
+  return page(language, receipt.title, `${paragraphs(lines)}\n${printButton(words.print)}`, "", true);
 }
 
 /** `/withdraw`: the holder, the contract and „Widerruf bestätigen“. */
-export function withdrawPage(language: Language, { holder, contract }: WithdrawPageValues): string {
+export function withdrawPage(language: Language, { holder, contract, csrf }: WithdrawPageValues): string {
   const { withdraw } = WORDS[language];
   const rows = fields([
     [escape(withdraw.name), escape(holder.name)],
     [escape(withdraw.email), escape(holder.email)],
     [escape(withdraw.contract), escape(orderedContractOf(contract, language))],
   ]);
-  return page(language, withdraw.title, `<form method="post">\n${rows}\n${submit(withdraw.button)}\n</form>`);
+  return page(language, withdraw.title, form(csrf, `${rows}\n${submit(withdraw.button)}`));
 }
 
 /** What `/withdraw` shows once the Withdrawal came in. */
@@ -214,11 +267,11 @@ export function withdrawReceiptPage(language: Language, { holder, contract, rece
   const words = WORDS[language];
   const { receipt } = words.withdraw;
   const lines = [received(language, receivedAt), receipt.content(orderedContractOf(contract, language), holder.name), receipt.mail(holder.email)];
-  return page(language, receipt.title, `${paragraphs(lines)}\n${printButton(words.print)}`);
+  return page(language, receipt.title, `${paragraphs(lines)}\n${printButton(words.print)}`, "", true);
 }
 
 /** `/delete`: what goes when, the Export first, and „Familie endgültig löschen“, active only once the checkbox is ticked. */
-export function deletePage(language: Language, { familyName, exportHref, subscription }: DeletePageValues): string {
+export function deletePage(language: Language, { familyName, exportHref, subscription, csrf }: DeletePageValues): string {
   const words = WORDS[language].delete;
   const stages = words.stages.map((stage) => `<li>${escape(stage)}</li>`).join("\n");
   const body = [
@@ -226,12 +279,13 @@ export function deletePage(language: Language, { familyName, exportHref, subscri
     `<p>${escape(words.when)}</p>\n<ul>\n${stages}\n</ul>`,
     `<p>${escape(words.exportFirst)}</p>\n<p class="action"><a class="fam-button fam-button--secondary" href="${escape(exportHref)}">${escape(words.exportButton)}</a></p>`,
     subscriptionNote(language, subscription),
-    `<form method="post">
-<p class="understood"><input type="checkbox" id="${UNDERSTOOD_FIELD}" name="${UNDERSTOOD_FIELD}" required onchange="this.form.elements.namedItem('delete').disabled=!this.checked"> <label for="${UNDERSTOOD_FIELD}">${escape(words.understood)}</label></p>
-<p class="action"><button class="fam-button fam-button--danger" type="submit" name="delete" disabled>${escape(words.button)}</button></p>
-</form>`,
+    form(
+      csrf,
+      `<p class="understood"><input type="checkbox" id="${UNDERSTOOD_FIELD}" name="${UNDERSTOOD_FIELD}" required data-enables="delete"> <label for="${UNDERSTOOD_FIELD}">${escape(words.understood)}</label></p>
+<p class="action"><button class="fam-button fam-button--danger" type="submit" name="delete" disabled>${escape(words.button)}</button></p>`,
+    ),
   ];
-  return page(language, words.title, body.filter((part) => part !== null).join("\n"));
+  return page(language, words.title, body.filter((part) => part !== null).join("\n"), "", true);
 }
 
 /** What deleting does to a running Subscription, and while it can still be withdrawn, the way to. */
@@ -257,17 +311,27 @@ export function paragraphs(lines: readonly string[]): string {
   return lines.map((line) => `<p>${escape(line)}</p>`).join("\n");
 }
 
-export function submit({ label, note }: Button): string {
+/** The button that posts its form; `name` if the form's answer depends on it. */
+export function submit({ label, note }: Button, name?: string): string {
   const meaning = note === null ? "" : ` <span class="note">${escape(note)}</span>`;
-  return `<p class="action"><button class="fam-button fam-button--primary" type="submit">${escape(label)}</button>${meaning}</p>`;
+  const named = name === undefined ? "" : ` name="${name}" value="1"`;
+  return `<p class="action"><button class="fam-button fam-button--primary" type="submit"${named}>${escape(label)}</button>${meaning}</p>`;
+}
+
+/** A form that posts to the page's own address, with the session's token. */
+export function form(csrf: string, content: string): string {
+  return `<form method="post">\n<input type="hidden" name="${CSRF_FIELD}" value="${escape(csrf)}">\n${content}\n</form>`;
 }
 
 function printButton(label: string): string {
-  return `<p class="action no-print"><button class="fam-button fam-button--secondary" type="button" onclick="window.print()">${escape(label)}</button></p>`;
+  return `<p class="action no-print"><button class="fam-button fam-button--secondary" type="button" data-print>${escape(label)}</button></p>`;
 }
 
-/** The whole HTML document: the title, the body and the legal footer; `style` adds a page's own rules. */
-export function page(language: Language, title: string, body: string, style = ""): string {
+/**
+ * The whole HTML document: the title, the body and the legal footer; `style` adds a page's own
+ * rules, and `scripted` loads `SCRIPT_PATH` for a page with a print button or `/delete`'s checkbox.
+ */
+export function page(language: Language, title: string, body: string, style = "", scripted = false): string {
   return `<!doctype html>
 <html lang="${language}">
 <head>
@@ -277,7 +341,7 @@ export function page(language: Language, title: string, body: string, style = ""
 <title>${escape(title)} · Family Agenda</title>
 <link rel="stylesheet" href="${DESIGN_PATH}/tokens.css">
 <link rel="stylesheet" href="${DESIGN_PATH}/design.css">
-<style>${STYLE}${style}</style>
+<style>${STYLE}${style}</style>${scripted ? `\n<script src="${SCRIPT_PATH}" defer></script>` : ""}
 </head>
 <body class="fam-page">
 <main class="card">

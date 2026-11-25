@@ -96,3 +96,17 @@ export function recordOf(subscription: StripeSubscription, { familyId, holder }:
 export function firstPaymentOf({ created, billing_cycle_anchor }: StripeSubscription, { paidAtOnce }: CompletedSession): Date {
   return new Date((paidAtOnce ? created : billing_cycle_anchor) * 1000);
 }
+
+/** What the Subscription's metadata notes of a pending Cancellation (#229): when it came in, and what its end pays back. */
+export const CANCELLATION_RECEIVED_AT = "cancellationReceivedAt";
+export const CANCELLATION_REFUND_CENTS = "cancellationRefundCents";
+
+/**
+ * The cents to pay back now that the Subscription has ended: what its Cancellation noted, if it ended
+ * by that and not earlier, as for a payment that failed. 0 if there is nothing to pay back.
+ */
+export function unusedCentsOf({ status, cancel_at, ended_at, metadata }: StripeSubscription): number {
+  const cents = Number(metadata[CANCELLATION_REFUND_CENTS] ?? "");
+  const endedByCancellation = status === "canceled" && cancel_at !== null && ended_at !== null && ended_at >= cancel_at;
+  return endedByCancellation && Number.isInteger(cents) && cents > 0 ? cents : 0;
+}
