@@ -3,16 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Family Agenda Cloud: die ganze Familienwoche auf einer Seite</title>
-  <meta name="description" content="Family Agenda liest Stundenplan, Kalender und Schul-Mails und zeigt der ganzen Familie eine einfache Übersicht. Wir betreiben es für dich in Deutschland: nichts installieren, 2 Wochen testen.">
+  <title>Familienplaner-App für Stundenplan, Kalender &amp; Schul-Mails | Family Agenda</title>
+  <meta name="description" content="Der Familienplaner, der WebUntis-Stundenplan, Kalender und Schul-Mails für euch liest und die ganze Familienwoche auf eine Seite bringt. In Deutschland gehostet, DSGVO-freundlich. 2 Wochen kostenlos testen.">
   <meta name="theme-color" content="#faf6f0" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1c1814" media="(prefers-color-scheme: dark)">
-  <link rel="alternate" hreflang="de" href="./">
-  <link rel="alternate" hreflang="en" href="en/">
-  <script>
-    // First visit with a browser that is not German: go to the English page. A language picked by hand wins from then on.
-    try { if (!localStorage.getItem("lp-lang") && !/^de\b/i.test(navigator.language)) location.replace("en/"); } catch {}
-  </script>
+  <link rel="canonical" href="https://family-agenda.cloud/">
+  <link rel="alternate" hreflang="de" href="https://family-agenda.cloud/">
+  <link rel="alternate" hreflang="en" href="https://family-agenda.cloud/en/">
+  <link rel="alternate" hreflang="x-default" href="https://family-agenda.cloud/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Family Agenda">
+  <meta property="og:locale" content="de_DE">
+  <meta property="og:url" content="https://family-agenda.cloud/">
+  <meta property="og:title" content="Familienplaner-App für Stundenplan, Kalender &amp; Schul-Mails | Family Agenda">
+  <meta property="og:description" content="Der Familienplaner, der WebUntis-Stundenplan, Kalender und Schul-Mails für euch liest und die ganze Familienwoche auf eine Seite bringt. In Deutschland gehostet, DSGVO-freundlich. 2 Wochen kostenlos testen.">
+  <meta property="og:image" content="https://family-agenda.cloud/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Family Agenda: die ganze Familienwoche auf einer Seite">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preload" href="fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <script type="application/ld+json">[{"@context": "https://schema.org", "@type": "Organization", "@id": "https://family-agenda.cloud/#org", "name": "Family Agenda", "url": "https://family-agenda.cloud/", "logo": "https://family-agenda.cloud/apple-touch-icon.png", "sameAs": ["https://github.com/artkoenig/family-agenda"]}, {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Family Agenda Cloud", "url": "https://family-agenda.cloud/", "inLanguage": "de", "description": "Familienplaner, der Stundenplan (WebUntis), Kalender und Schul-Mails liest und der ganzen Familie eine gemeinsame Übersicht zeigt. In Deutschland gehostet.", "applicationCategory": "LifestyleApplication", "operatingSystem": "Web, iOS, Android", "image": "https://family-agenda.cloud/og-image.png", "publisher": {"@id": "https://family-agenda.cloud/#org"}, "offers": [{"@type": "Offer", "price": "4.99", "priceCurrency": "EUR", "priceSpecification": {"@type": "UnitPriceSpecification", "price": "4.99", "priceCurrency": "EUR", "billingDuration": "P1M"}}, {"@type": "Offer", "price": "49.90", "priceCurrency": "EUR", "priceSpecification": {"@type": "UnitPriceSpecification", "price": "49.90", "priceCurrency": "EUR", "billingDuration": "P1Y"}}]}, {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Funktioniert Family Agenda mit WebUntis?", "acceptedAnswer": {"@type": "Answer", "text": "Ja. Family Agenda liest den Stundenplan aus WebUntis, mit Vertretungen, Raumwechseln und Ausfällen, und zeigt ihn in der Agenda des jeweiligen Kindes."}}, {"@type": "Question", "name": "Welche Kalender kann ich verbinden?", "acceptedAnswer": {"@type": "Answer", "text": "Jeden Kalender, der einen iCal-Link (ICS) anbietet: zum Beispiel Google Kalender, iCloud oder Outlook, den Vereinskalender, die Schulferien oder euren gemeinsamen Familienkalender."}}, {"@type": "Question", "name": "Welche Postfächer werden unterstützt?", "acceptedAnswer": {"@type": "Answer", "text": "Jedes Postfach mit IMAP-Zugang, in dem die Schul-Mails landen. Family Agenda liest nur: Es markiert nichts als gelesen, antwortet nicht und löscht nichts."}}, {"@type": "Question", "name": "Wo liegen unsere Daten, und ist das DSGVO-konform?", "acceptedAnswer": {"@type": "Answer", "text": "Die Daten liegen in einer eigenen Datenbank auf Servern in Deutschland. Auch das KI-Modell, das eure Mails liest, läuft in Deutschland. Keine Werbung, kein Tracking, und mit euren Inhalten wird kein Modell trainiert."}}, {"@type": "Question", "name": "Was kostet Family Agenda?", "acceptedAnswer": {"@type": "Answer", "text": "4,99 € im Monat oder 49,90 € im Jahr für die ganze Familie, inklusive USt. Die ersten 2 Wochen sind kostenlos und ohne Zahlungsdaten; der Test endet von selbst."}}, {"@type": "Question", "name": "Kann ich Family Agenda auch selbst betreiben?", "acceptedAnswer": {"@type": "Answer", "text": "Ja. Family Agenda ist Open Source und läuft kostenlos auch bei dir zuhause, zum Beispiel auf einem Raspberry Pi oder einem NAS."}}]}]</script>
   <link rel="icon" href="app-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="design.css">
@@ -47,7 +59,7 @@
   <main id="top">
     <section class="lp-hero">
       <img class="lp-hero__icon" src="app-icon.svg" alt="" width="88" height="88">
-      <h1 class="lp-hero__title">Liebling, ich habe <span class="lp-accent">den Mental Load geschrumpft.</span></h1>
+      <h1 class="lp-hero__title">Liebling, ich habe <span class="lp-accent">den Mental Load geschrumpft.</span> <span class="lp-hero__sub">Der Familienplaner, der Stundenplan, Kalender und Schul-Mails für euch liest.</span></h1>
       <p class="lp-hero__lead">Wir sind auch Eltern. Irgendwann hatten wir genug davon, uns vor dem Frühstück durch Stundenplan-App, Kalender und Schul-Mails zu wühlen. Family Agenda liest das alles für dich und bringt die ganze Woche auf eine einzige Seite. Und wir betreiben es für dich: Du brauchst keinen Server, nur ein paar Minuten.</p>
       <div class="lp-hero__actions">
         <button class="fam-button fam-button--primary" type="button" disabled>Registrierung öffnet bald</button>
@@ -218,6 +230,18 @@
         <a class="fam-button fam-button--secondary" href="https://github.com/artkoenig/family-agenda">Zur Open-Source-Version</a>
       </div>
     </section>
+    <section class="lp-section" id="faq">
+      <p class="lp-step__eyebrow">Fragen und Antworten</p>
+      <h2 class="lp-section__title">Häufige Fragen</h2>
+      <div class="lp-faq">
+        <details class="lp-faq__item"><summary>Funktioniert Family Agenda mit WebUntis?</summary><p>Ja. Family Agenda liest den Stundenplan aus WebUntis, mit Vertretungen, Raumwechseln und Ausfällen, und zeigt ihn in der Agenda des jeweiligen Kindes.</p></details>
+        <details class="lp-faq__item"><summary>Welche Kalender kann ich verbinden?</summary><p>Jeden Kalender, der einen iCal-Link (ICS) anbietet: zum Beispiel Google Kalender, iCloud oder Outlook, den Vereinskalender, die Schulferien oder euren gemeinsamen Familienkalender.</p></details>
+        <details class="lp-faq__item"><summary>Welche Postfächer werden unterstützt?</summary><p>Jedes Postfach mit IMAP-Zugang, in dem die Schul-Mails landen. Family Agenda liest nur: Es markiert nichts als gelesen, antwortet nicht und löscht nichts.</p></details>
+        <details class="lp-faq__item"><summary>Wo liegen unsere Daten, und ist das DSGVO-konform?</summary><p>Die Daten liegen in einer eigenen Datenbank auf Servern in Deutschland. Auch das KI-Modell, das eure Mails liest, läuft in Deutschland. Keine Werbung, kein Tracking, und mit euren Inhalten wird kein Modell trainiert.</p></details>
+        <details class="lp-faq__item"><summary>Was kostet Family Agenda?</summary><p>4,99 € im Monat oder 49,90 € im Jahr für die ganze Familie, inklusive USt. Die ersten 2 Wochen sind kostenlos und ohne Zahlungsdaten; der Test endet von selbst.</p></details>
+        <details class="lp-faq__item"><summary>Kann ich Family Agenda auch selbst betreiben?</summary><p>Ja. Family Agenda ist Open Source und läuft kostenlos auch bei dir zuhause, zum Beispiel auf einem Raspberry Pi oder einem NAS.</p></details>
+      </div>
+    </section>
   </main>
 
   <footer class="lp-footer">
@@ -238,6 +262,15 @@
   <script>
     (() => {
       // Remembers a language picked by hand, so the first-visit choice by browser language does not override it.
+      // A browser that is not German, on a first visit: a hint to the English page (no redirect, which search engines would follow).
+      try {
+        if (!localStorage.getItem("lp-lang") && !/^de\b/i.test(navigator.language)) {
+          const hint = document.createElement("p");
+          hint.className = "lp-langhint"; hint.lang = "en";
+          hint.innerHTML = 'This page is also available in English. <a href="en/" hreflang="en" data-lang="en">Switch to English</a>';
+          document.body.prepend(hint);
+        }
+      } catch {}
       for (const link of document.querySelectorAll("[data-lang]")) {
         link.addEventListener("click", () => { try { localStorage.setItem("lp-lang", link.dataset.lang); } catch {} });
       }

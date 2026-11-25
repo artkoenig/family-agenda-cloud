@@ -272,3 +272,15 @@ html:not([data-scripted]) .lp-stage { width: 360px; }
   .lp .lp-hero__facts { gap: var(--space-2); }
   .lp-hero__facts li { padding: 6px var(--space-3) 6px 10px; font-size: 15px; }
 }
+
+/* The H1's second line: what Family Agenda is, in the words people search for. */
+.lp-hero__sub { display: block; margin-top: var(--space-4); font-size: clamp(20px, 2.6vw, 26px); line-height: 1.3; font-weight: 600; letter-spacing: 0; color: var(--ink-muted); }
+
+/* Frequently asked questions. */
+.lp-faq { display: grid; gap: var(--space-3); max-width: 760px; }
+.lp-faq__item { padding: var(--space-4) var(--space-5); border-radius: 16px; background: var(--surface-sunken); }
+.lp-faq__item summary { cursor: pointer; font-weight: 700; font-size: 18px; }
+.lp-faq__item p { margin-top: var(--space-3); color: var(--ink-muted); line-height: 1.55; }
+
+/* A hint to the English page for a browser that is not German, instead of a redirect search engines would follow. */
+.lp-langhint { display: flex; justify-content: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); font-size: 15px; background: var(--surface-sunken); }
