@@ -2,13 +2,13 @@
 
 > This translation is for information only. Only the [German version](/datenschutz) is legally binding.
 
-Version: {{STAND}}
+Version: 25 November 2026
 
 This policy covers the website family-agenda.cloud, sign-in and the Family Agenda service. We announce material changes to families by email.
 
 ## 1 Controller
 
-{{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}
+Artjom König, Family Agenda, Ludwigsweg 7, 53773 Hennef, Germany
 Email: support@family-agenda.cloud
 
 We are the sole controller for all processing in this policy, including the content families store in the service. We have not appointed a data protection officer; send all questions to support@family-agenda.cloud.
@@ -118,7 +118,7 @@ You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (A
 
 Write to support@family-agenda.cloud for any of these.
 
-You can complain to a data protection supervisory authority, for example the one responsible for us: {{AUFSICHTSBEHOERDE}}.
+You can complain to a data protection supervisory authority, for example the one responsible for us: Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen, https://www.ldi.nrw.de.
 
 ## 11 Further information
 

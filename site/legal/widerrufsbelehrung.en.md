@@ -8,7 +8,7 @@ You have the right to withdraw from this contract within fourteen days without g
 
 The withdrawal period is fourteen days from the day the contract is concluded.
 
-To exercise your right of withdrawal, you must inform us ({{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}, email: support@family-agenda.cloud) of your decision to withdraw from this contract by an unequivocal statement (e.g. a letter sent by post or an email). You may use the attached model withdrawal form, but it is not obligatory. You can also exercise your right of withdrawal online at https://app.family-agenda.cloud/en/withdraw (button "Vertrag widerrufen" in the Admin area). If you use this online function, we will send you without delay, on a durable medium (e.g. by email), an acknowledgement of receipt stating the content of the withdrawal and the date and time it was received.
+To exercise your right of withdrawal, you must inform us (Artjom König, Family Agenda, Ludwigsweg 7, 53773 Hennef, Germany, email: support@family-agenda.cloud) of your decision to withdraw from this contract by an unequivocal statement (e.g. a letter sent by post or an email). You may use the attached model withdrawal form, but it is not obligatory. You can also exercise your right of withdrawal online at https://app.family-agenda.cloud/en/withdraw (button "Vertrag widerrufen" in the Admin area). If you use this online function, we will send you without delay, on a durable medium (e.g. by email), an acknowledgement of receipt stating the content of the withdrawal and the date and time it was received.
 
 To meet the withdrawal deadline, it is sufficient for you to send your communication concerning your exercise of the right of withdrawal before the withdrawal period has expired.
 
@@ -20,7 +20,7 @@ If you withdraw from this contract, we shall reimburse to you all payments recei
 
 (Complete and return this form only if you wish to withdraw from the contract.)
 
-– To {{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}}, email: support@family-agenda.cloud:
+– To Artjom König, Family Agenda, Ludwigsweg 7, 53773 Hennef, Germany, email: support@family-agenda.cloud:
 
 – I/We (\*) hereby give notice that I/We (\*) withdraw from my/our (\*) contract of sale of the following goods (\*)/for the provision of the following service (\*)
 

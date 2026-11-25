@@ -1,10 +1,10 @@
 # Allgemeine Geschäftsbedingungen
 
-Stand: {{STAND}}
+Stand: 25. November 2026
 
 ## § 1 Geltungsbereich, Anbieter
 
-(1) Diese AGB gelten für alle Verträge über die Nutzung des Dienstes „Family Agenda“ unter family-agenda.cloud zwischen {{NAME}}, Family Agenda, {{POSTFLEX_ADDRESS}} („wir“) und Ihnen.
+(1) Diese AGB gelten für alle Verträge über die Nutzung des Dienstes „Family Agenda“ unter family-agenda.cloud zwischen Artjom König, Family Agenda, Ludwigsweg 7, 53773 Hennef („wir“) und Ihnen.
 
 (2) Wir schließen Verträge nur mit Verbrauchern für private Haushalte.
 
