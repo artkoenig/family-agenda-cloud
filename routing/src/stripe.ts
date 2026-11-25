@@ -27,8 +27,8 @@ export type StripePort = {
   addMetadata(subscriptionId: string, metadata: Record<string, string>): Promise<void>;
   /** Ends the Subscription at once, without a last invoice; answers it as it is then. */
   cancelSubscription(id: string): Promise<StripeSubscription>;
-  /** Refunds in full whatever was paid for the Subscription, and not refunded before. */
-  refundSubscription(id: string): Promise<void>;
+  /** Refunds in full whatever was paid for the Subscription, and not refunded before; answers all that was paid, in cents. */
+  refundSubscription(id: string): Promise<number>;
   /**
    * Ends the Subscription at exactly `end`, or never if that is null, prorating nothing, and adds to
    * its metadata; answers it as it is then.
@@ -95,11 +95,14 @@ export function stripePort(secretKey: string, at?: StripeHost): StripePort {
     },
     cancelSubscription: (id) => stripe.subscriptions.cancel(id, { invoice_now: false, prorate: false }),
     async refundSubscription(id) {
+      let cents = 0;
       for await (const invoice of stripe.invoices.list({ subscription: id, limit: 100 })) {
-        for await (const { payment } of stripe.invoicePayments.list({ invoice: invoice.id, status: "paid", limit: 100 })) {
+        for await (const { payment, amount_paid } of stripe.invoicePayments.list({ invoice: invoice.id, status: "paid", limit: 100 })) {
           await refund(stripe, payment);
+          cents += amount_paid ?? 0;
         }
       }
+      return cents;
     },
     setEnd: (id, end, metadata, idempotencyKey) =>
       stripe.subscriptions.update(id, { cancel_at: end === null ? "" : Math.floor(end.getTime() / 1000), proration_behavior: "none", metadata }, { idempotencyKey }),

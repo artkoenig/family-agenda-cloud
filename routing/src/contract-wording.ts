@@ -61,11 +61,21 @@ export function dateOf(instant: Date, language: Language): string {
   return DATE_FORMATS[language].format(instant);
 }
 
+/** The Berlin day of an instant as `YYYY-MM-DD`, which sorts as the days do. */
+export function berlinDayOf(instant: Date): string {
+  return BERLIN_DAY.format(instant);
+}
+
+/** Noon UTC of the Berlin day `days` calendar days after that of an instant, whatever daylight saving does in between. */
+export function daysAfter(instant: Date, days: number): Date {
+  const [year, month, day] = berlinDayOf(instant).split("-").map(Number) as [number, number, number];
+  // Noon UTC falls on the same date in Berlin, at UTC+1 or UTC+2.
+  return new Date(Date.UTC(year, month - 1, day + days, 12));
+}
+
 /** The Berlin date `days` calendar days after that of an instant, whatever daylight saving does in between. */
 export function dateAfter(instant: Date, days: number, language: Language): string {
-  const [year, month, day] = BERLIN_DAY.format(instant).split("-").map(Number) as [number, number, number];
-  // Noon UTC falls on the same date in Berlin, at UTC+1 or UTC+2.
-  return dateOf(new Date(Date.UTC(year, month - 1, day + days, 12)), language);
+  return dateOf(daysAfter(instant, days), language);
 }
 
 /** The Berlin time of an instant, e.g. `09:05 Uhr` or `09:05 (Berlin time)`. */

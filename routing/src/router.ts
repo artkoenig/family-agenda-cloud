@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import pg from "pg";
 import { answerCancel, type CancelSetup } from "./cancel";
+import type { ContractAnswer, ContractRequest } from "./contract-visit";
 import { answerSignIn, tokenExchange, type SignInSetup } from "./central-sign-in";
 import { directoryConnection, isSignInPath, type Config } from "./config";
 import { CONTEXT_HEADER } from "./context";
@@ -18,9 +19,10 @@ import { postRegisterAgain } from "./post-register";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
 import { systemResolve } from "./resolve";
-import { cancelPathOf, orderPathOf, STRIPE_EVENTS_PATH, type OrderPath } from "./routing-pages";
+import { cancelPathOf, orderPathOf, STRIPE_EVENTS_PATH, withdrawPathOf, type OrderPath } from "./routing-pages";
 import { familySchedules, openQueues } from "./scheduler";
 import { answerStripeEvent, type StripeEventsSetup } from "./stripe-events";
+import { answerWithdraw } from "./withdraw";
 import { checkPrices, stripePort, type StripePort } from "./stripe";
 
 /** The Router, listening for the browsers' requests. */
@@ -155,9 +157,9 @@ async function ownPageRequest(setup: RouterSetup, incoming: IncomingMessage, out
 /** Answers a request for a page of the order or Stripe's webhook; false if it is for neither. */
 async function stripePageRequest({ order, cancel, stripeEvents }: RouterSetup, pathname: string, incoming: IncomingMessage, outgoing: ServerResponse): Promise<boolean> {
   const orderPath = orderPathOf(pathname);
-  const cancelLanguage = cancelPathOf(pathname);
+  const contractPage = contractPageOf(pathname);
   if (order && orderPath) await orderRequest(order, orderPath, incoming, outgoing);
-  else if (cancel && cancelLanguage) await cancelRequest(cancel, cancelLanguage, incoming, outgoing);
+  else if (cancel && contractPage) await contractRequest(cancel, contractPage, incoming, outgoing);
   else if (stripeEvents && pathname === STRIPE_EVENTS_PATH) await stripeEventRequest(stripeEvents, incoming, outgoing);
   else return false;
   return true;
@@ -192,15 +194,26 @@ async function signInRequest(setup: RouterSetup, signIn: SignInSetup, incoming: 
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
 }
 
-/** What a browser posts to a page of the order or to `/cancel`; undefined if that is too long. */
+/** What a browser posts to a page of the order, to `/cancel` or to `/withdraw`; undefined if that is too long. */
 const formOf = (incoming: IncomingMessage) => async (): Promise<URLSearchParams | undefined> => {
   const body = await beginningOf(incoming, ORDER_BYTES);
   return body?.whole ? new URLSearchParams(Buffer.concat(body.chunks).toString()) : undefined;
 };
 
-/** Answers a request for `/cancel`. */
-async function cancelRequest(cancel: CancelSetup, language: Language, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const { status, headers, body } = await answerCancel({ method: incoming.method ?? "", language, cookie: incoming.headers.cookie, form: formOf(incoming) }, cancel);
+/** A page a Subscription is ended on, in its language: what answers it. */
+type ContractPage = { answer: (request: ContractRequest, setup: CancelSetup) => Promise<ContractAnswer>; language: Language };
+
+/** The page to cancel on (#229) or to withdraw on (#230) at this path; undefined for every other path. */
+function contractPageOf(pathname: string): ContractPage | undefined {
+  const cancelLanguage = cancelPathOf(pathname);
+  if (cancelLanguage) return { answer: answerCancel, language: cancelLanguage };
+  const withdrawLanguage = withdrawPathOf(pathname);
+  return withdrawLanguage && { answer: answerWithdraw, language: withdrawLanguage };
+}
+
+/** Answers a request for `/cancel` or `/withdraw`. */
+async function contractRequest(setup: CancelSetup, { answer, language }: ContractPage, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
+  const { status, headers, body } = await answer({ method: incoming.method ?? "", language, cookie: incoming.headers.cookie, form: formOf(incoming) }, setup);
   // What was posted and not read would stay on the connection.
   if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);

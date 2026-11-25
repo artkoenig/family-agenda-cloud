@@ -15,45 +15,44 @@
  *   (`stripe-events.ts`). Taking the Cancellation back drops the note and sends no mail.
  */
 import type pg from "pg";
-import { endDatesOf, monthsAfter, type Cancellable, type EndDate } from "./cancel-dates";
-import type { Config } from "./config";
-import { cancellationMail, type Imprint } from "./contract-mails";
-import { cancelFailedPage, cancelHolderPage, cancelledPage, cancelPage, cancelReceiptPage, CSRF_FIELD, END_DATE_FIELD, nothingToCancelPage, UNDO_FIELD } from "./contract-pages";
-import { CONTRACT_PATHS, mailLanguageOf, type Billing, type Contract, type Language, type Person } from "./contract-wording";
-import { cookiesOf } from "./cookies";
-import { directory as directoryOn, inTransaction, type Directory, type DirectoryEntry, type Subscription } from "./directory";
-import { reasonOf, type Log } from "./log";
-import { person, type IdpManagement, type LogtoPerson } from "./logto-management";
+import { endDatesOf, type EndDate } from "./cancel-dates";
+import { cancellationMail } from "./contract-mails";
+import { cancelFailedPage, cancelHolderPage, cancelledPage, cancelPage, cancelReceiptPage, END_DATE_FIELD, nothingToCancelPage, UNDO_FIELD } from "./contract-pages";
+import {
+  admitted,
+  cancellableOf,
+  familyNameOf,
+  html,
+  instantOf,
+  isAdmin,
+  nameOf,
+  notedAt,
+  notedOf,
+  redirect,
+  runs,
+  underFamilyLock,
+  type ContractAnswer,
+  type ContractRequest,
+  type ContractSetup,
+} from "./contract-visit";
+import { CONTRACT_PATHS, mailLanguageOf, type Contract, type Language, type Person } from "./contract-wording";
+import { directory as directoryOn, inTransaction, type DirectoryEntry, type Subscription } from "./directory";
+import { reasonOf } from "./log";
+import { person, type LogtoPerson } from "./logto-management";
 import { noAccessPage } from "./order-pages";
-import { organizations } from "./organizations";
 import { outbox } from "./outbox";
-import { withFamilyLock } from "./provisioning";
-import { signInPathFor } from "./routing-pages";
-import { isOwnForm, sessionOf, type RoutingSession } from "./routing-session";
-import type { StripePort, StripeSubscription } from "./stripe";
-import { CANCELLATION_RECEIVED_AT, CANCELLATION_REFUND_CENTS, hasEnded, recordOf } from "./stripe-subscription";
+import type { RoutingSession } from "./routing-session";
+import type { StripeSubscription } from "./stripe";
+import { CANCELLATION_RECEIVED_AT, CANCELLATION_REFUND_CENTS, hasEnded, recordOf, WITHDRAWAL_RECEIVED_AT } from "./stripe-subscription";
 
 /** What the Cancellation works with. */
-export type CancelSetup = {
-  config: Config;
-  directory: Directory;
-  directoryPool: pg.Pool;
-  idp: IdpManagement;
-  stripe: StripePort;
-  imprint: Imprint;
-  log: Log;
-  now: () => Date;
-};
+export type CancelSetup = ContractSetup;
 
-/** A browser's request for `/cancel`; `form` reads what it posts, undefined if that is too long. */
-export type CancelRequest = { method: string; language: Language; cookie: string | undefined; form: () => Promise<URLSearchParams | undefined> };
+/** A browser's request for `/cancel`. */
+export type CancelRequest = ContractRequest;
 
 /** The Router's answer. */
-export type CancelAnswer = { status: number; headers: Record<string, string>; body: string };
-
-const METHODS = ["GET", "HEAD", "POST"];
-
-const NO_STORE = { "cache-control": "no-store" };
+export type CancelAnswer = ContractAnswer;
 
 /** The holder's visit: their running Subscription as the Directory keeps it, and who they are at Logto. */
 type Visit = { setup: CancelSetup; language: Language; entry: DirectoryEntry; record: Subscription; holder: LogtoPerson; csrf: string; now: Date };
@@ -64,22 +63,17 @@ type Live = { subscription: StripeSubscription; contract: Contract; endDates: [E
 /** Answers a request for `/cancel`. */
 export async function answerCancel(request: CancelRequest, setup: CancelSetup): Promise<CancelAnswer> {
   const { language } = request;
-  if (!METHODS.includes(request.method)) return { status: 405, headers: { ...NO_STORE, allow: METHODS.join(", ") }, body: "" };
-  const posted = request.method === "POST";
-  const now = setup.now();
-  const session = sessionOf(setup.config.operatorKey, cookiesOf(request.cookie), now);
-  if (!session) return redirect(posted ? 303 : 302, signInPathFor(CONTRACT_PATHS.cancel[language]));
-  if (!posted) return answerVisit(setup, language, session, now, 200, shown);
-  const form = await request.form();
-  if (!form) return { status: 413, headers: { ...NO_STORE, "content-type": "text/plain; charset=utf-8" }, body: "Too long\n" };
-  if (!isOwnForm(session, form.get(CSRF_FIELD))) return html(403, cancelFailedPage(language));
+  const letIn = await admitted(request, setup, "cancel", cancelFailedPage);
+  if ("status" in letIn) return letIn;
+  const { session, now, form } = letIn;
+  if (!form) return answerVisit(setup, language, session, now, 200, shown);
   return answerVisit(setup, language, session, now, 403, (visit) => declared(visit, form));
 }
 
 /** Answers the Contract holder by `answer`, and everybody else with why there is no form for them; another Admin with `other`. */
 async function answerVisit(setup: CancelSetup, language: Language, session: RoutingSession, now: Date, other: 200 | 403, answer: (visit: Visit) => Promise<CancelAnswer>): Promise<CancelAnswer> {
   const entry = await setup.directory.findByOrganization(session.organizationId);
-  if (!entry || !isCancellable(entry) || !(await isAdmin(setup, session))) return html(403, noAccessPage(language));
+  if (!entry || !runs(entry) || !(await isAdmin(setup, session))) return html(403, noAccessPage(language));
   const record = await setup.directory.subscriptionOf(entry.familyId);
   if (!record) return html(200, nothingToCancelPage(language));
   const holder = await person(setup.idp, record.holder);
@@ -87,16 +81,6 @@ async function answerVisit(setup: CancelSetup, language: Language, session: Rout
   if (record.holder !== session.userId) return html(other, cancelHolderPage(language, nameOf(holder, record.holder)));
   return answer({ setup, language, entry, record, holder, csrf: session.csrf, now });
 }
-
-/** Whether the Family runs, Locked or not: not one being prepared, suspended or deleted. */
-const isCancellable = ({ status }: DirectoryEntry): boolean => status === "active" || status === "locked";
-
-async function isAdmin({ idp }: CancelSetup, { organizationId, userId }: RoutingSession): Promise<boolean> {
-  return (await organizations(idp).admins(organizationId)).some((admin) => admin.userId === userId);
-}
-
-/** The person's name, else their address, else their id at Logto. */
-const nameOf = ({ name, email }: LogtoPerson, userId: string): string => name ?? email ?? userId;
 
 /** The holder as the pages and the mail name them. */
 const personOf = ({ record, holder }: Visit): Person => ({ name: nameOf(holder, record.holder), email: holder.email ?? "" });
@@ -126,39 +110,14 @@ async function liveOf({ setup, entry, record, now }: Visit): Promise<Live | unde
   return { subscription, contract, endDates: endDatesOf(cancellableOf(subscription, billing, entry, now), now) };
 }
 
-/** The Family's name at Logto, else its id. */
-async function familyNameOf({ idp }: CancelSetup, { organizationId, familyId }: DirectoryEntry): Promise<string> {
-  if (organizationId === null) return familyId;
-  return (await organizations(idp).name(organizationId)) ?? familyId;
-}
-
-/**
- * When the Subscription is, or was, first paid: at its anchor. Stripe charges at once for a Checkout
- * paid after its anchor and moves that a period on; such a Subscription was first paid a period before it.
- */
-function cancellableOf({ billing_cycle_anchor }: StripeSubscription, billing: Billing, { trialEndsAt }: DirectoryEntry, now: Date): Cancellable {
-  const anchor = new Date(billing_cycle_anchor * 1000);
-  const inTrial = trialEndsAt !== null && now < trialEndsAt;
-  return { billing, anchor: now < anchor && !inTrial ? monthsAfter(anchor, billing === "yearly" ? -12 : -1) : anchor };
-}
-
-/** What a posted form declares, on a connection of its own: the Family's lock is the session's. */
-async function declared(visit: Visit, form: URLSearchParams): Promise<CancelAnswer> {
-  const { setup, entry } = visit;
-  const client = await setup.directoryPool.connect();
-  try {
-    const answer = await withFamilyLock(client, entry.familyId, async () => {
-      const live = await liveOf(visit).catch((error: unknown) => failed(visit, error));
-      if (!live) return html(409, nothingToCancelPage(visit.language));
-      if ("headers" in live) return live;
-      return form.has(UNDO_FIELD) ? undone(visit, client, live) : cancelled(visit, client, live, form.get(END_DATE_FIELD));
-    });
-    client.release();
-    return answer;
-  } catch (error) {
-    client.release(true);
-    throw error;
-  }
+/** What a posted form declares, under the Family's lock. */
+function declared(visit: Visit, form: URLSearchParams): Promise<CancelAnswer> {
+  return underFamilyLock(visit.setup.directoryPool, visit.entry.familyId, async (client) => {
+    const live = await liveOf(visit).catch((error: unknown) => failed(visit, error));
+    if (!live) return html(409, nothingToCancelPage(visit.language));
+    if ("headers" in live) return live;
+    return form.has(UNDO_FIELD) ? undone(visit, client, live) : cancelled(visit, client, live, form.get(END_DATE_FIELD));
+  });
 }
 
 /** The Cancellation to the posted end date, if that is one of those offered now. */
@@ -181,12 +140,6 @@ async function cancelled(visit: Visit, client: pg.PoolClient, live: Live, posted
   return html(200, cancelReceiptPage(language, { holder: personOf(visit), contract, receivedAt: now, endsOn: end }));
 }
 
-/** What the Subscription notes of the Cancellation: when it came in, and what its end pays back. */
-const notedOf = ({ settlement }: EndDate, now: Date): Record<string, string> => ({
-  [CANCELLATION_RECEIVED_AT]: now.toISOString(),
-  [CANCELLATION_REFUND_CENTS]: settlement.case === "yearly-after-year-one" ? String(settlement.refundCents) : "",
-});
-
 /** The confirmation to the holder, in their language; none, and a line in the log, if Logto has no address of theirs. */
 function confirmationOf(visit: Visit, contract: Contract, { end, settlement }: EndDate) {
   const { setup, record, now } = visit;
@@ -200,8 +153,7 @@ function confirmationOf(visit: Visit, contract: Contract, { end, settlement }: E
 function alreadyCancelled(visit: Visit, { subscription, contract }: Live, endsOn: Date, posted: string | null): CancelAnswer {
   const { language, now } = visit;
   if (endsOn.toISOString() !== posted) return redirect(303, CONTRACT_PATHS.cancel[language]);
-  const noted = new Date(subscription.metadata[CANCELLATION_RECEIVED_AT] ?? "");
-  const receivedAt = Number.isNaN(noted.getTime()) ? now : noted;
+  const receivedAt = notedAt(subscription, CANCELLATION_RECEIVED_AT) ?? now;
   return html(200, cancelReceiptPage(language, { holder: personOf(visit), contract, receivedAt, endsOn }));
 }
 
@@ -209,7 +161,7 @@ function alreadyCancelled(visit: Visit, { subscription, contract }: Live, endsOn
 async function undone(visit: Visit, client: pg.PoolClient, { subscription }: Live): Promise<CancelAnswer> {
   const { setup, language, record, now } = visit;
   if (subscription.cancel_at !== null) {
-    const noted = { [CANCELLATION_RECEIVED_AT]: "", [CANCELLATION_REFUND_CENTS]: "" };
+    const noted = { [CANCELLATION_RECEIVED_AT]: "", [CANCELLATION_REFUND_CENTS]: "", [WITHDRAWAL_RECEIVED_AT]: "" };
     const taken = await setup.stripe.setEnd(subscription.id, null, noted, `undo:${subscription.id}:${subscription.cancel_at}:${now.getTime()}`).catch((error: unknown) => failed(visit, error));
     if ("headers" in taken) return taken;
     await directoryOn(client).saveSubscription(recordOf(taken, record));
@@ -223,9 +175,3 @@ function failed({ setup, language, record }: Visit, error: unknown): CancelAnswe
   setup.log.error("Stripe did not take a request of /cancel", { familyId: record.familyId, subscription: record.subscriptionId, reason: reasonOf(error) });
   return html(502, cancelFailedPage(language));
 }
-
-const instantOf = (seconds: number | null): Date | null => (seconds === null ? null : new Date(seconds * 1000));
-
-const html = (status: number, body: string): CancelAnswer => ({ status, headers: { ...NO_STORE, "content-type": "text/html; charset=utf-8" }, body });
-
-const redirect = (status: 302 | 303, location: string): CancelAnswer => ({ status, headers: { ...NO_STORE, location }, body: "" });

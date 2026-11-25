@@ -33,6 +33,8 @@ export type WaitingMail = {
 export type Outbox = {
   /** Puts the mail in, to be sent as soon as the hourly limit allows. Answers its id. */
   enqueue(mail: OutboxMail, label: MailLabel): Promise<string>;
+  /** Whether a mail of this type about the Family was put in since `since`, sent or not. */
+  holds(label: Required<MailLabel>, since: Date): Promise<boolean>;
   /** Every mail not sent yet, oldest first. */
   waiting(): Promise<WaitingMail[]>;
 };
@@ -49,6 +51,10 @@ export function outbox(client: Pick<pg.ClientBase, "query">): Outbox {
       );
       const [row] = rows as [{ id: string }];
       return row.id;
+    },
+    async holds({ type, familyId }, since) {
+      const { rows } = await client.query("SELECT 1 FROM mail_outbox WHERE type = $1 AND family_id = $2 AND created_at >= $3 LIMIT 1", [type, familyId, since]);
+      return rows.length > 0;
     },
     async waiting() {
       const { rows } = await client.query<WaitingRow>(

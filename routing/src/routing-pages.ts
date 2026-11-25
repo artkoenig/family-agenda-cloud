@@ -34,12 +34,17 @@ export function cancelPathOf(pathname: string): Language | undefined {
   return LANGUAGES.find((language) => CONTRACT_PATHS.cancel[language] === pathname);
 }
 
+/** The language of the page a Subscription is withdrawn from on (#230), if this is its path. */
+export function withdrawPathOf(pathname: string): Language | undefined {
+  return LANGUAGES.find((language) => CONTRACT_PATHS.withdraw[language] === pathname);
+}
+
 /**
  * The page to come back to after a sign-in, as the browser asks for it: only the exact path of a
  * Routing module's page, so that a link to central sign-in sends nobody anywhere else.
  */
 export function wayBackOf(asked: string | null): string | undefined {
-  return asked !== null && (orderPathOf(asked) || cancelPathOf(asked)) ? asked : undefined;
+  return asked !== null && (orderPathOf(asked) || cancelPathOf(asked) || withdrawPathOf(asked)) ? asked : undefined;
 }
 
 /** Where a page sends a browser that is not signed in; the callback sends it back to the page. */

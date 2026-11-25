@@ -9,7 +9,11 @@ import {
   END_DATE_FIELD,
   escape,
   nothingToCancelPage,
+  nothingToWithdrawPage,
+  noWithdrawHolderPage,
   UNDERSTOOD_FIELD,
+  withdrawFailedPage,
+  withdrawHolderPage,
   withdrawPage,
   withdrawReceiptPage,
 } from "../../src/contract-pages";
@@ -199,6 +203,11 @@ describe("the receipts", () => {
       const pages = [
         cancelReceiptPage(language, { holder: erika, contract: monthly, receivedAt, endsOn: receivedAt }),
         withdrawReceiptPage(language, { holder: erika, contract: monthly, receivedAt }),
+        withdrawPage(language, { holder: erika, contract: monthly, csrf }),
+        withdrawHolderPage(language, "Erika Muster"),
+        nothingToWithdrawPage(language),
+        noWithdrawHolderPage(language),
+        withdrawFailedPage(language),
       ];
       for (const html of pages) expect(linesOf(html).join("\n")).not.toMatch(/bestätigt|wirksam|gültig|confirmed|valid/i);
     }
@@ -292,6 +301,10 @@ describe("the legal footer", () => {
     "/cancel failed": (language: "de" | "en") => cancelFailedPage(language),
     "/cancel receipt": (language: "de" | "en") => cancelReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date(), endsOn: new Date() }),
     "/withdraw": (language: "de" | "en") => withdrawPage(language, { holder: erika, contract: monthly, csrf }),
+    "/withdraw holder": (language: "de" | "en") => withdrawHolderPage(language, "Erika Muster"),
+    "/withdraw nothing": (language: "de" | "en") => nothingToWithdrawPage(language),
+    "/withdraw no holder": (language: "de" | "en") => noWithdrawHolderPage(language),
+    "/withdraw failed": (language: "de" | "en") => withdrawFailedPage(language),
     "/withdraw receipt": (language: "de" | "en") => withdrawReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date() }),
     "/delete": (language: "de" | "en") => deletePage(language, { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null, csrf }),
   };
@@ -364,5 +377,49 @@ describe("what /cancel shows instead of its form", () => {
     ]);
     expect(linesOf(cancelFailedPage("en"))[1]).toBe("We could not take your declaration just now. Nothing was changed. Please try again in a few minutes.");
     expect(cancelFailedPage("en")).toContain('<a href="mailto:');
+  });
+});
+
+describe("/withdraw for whom there is no form", () => {
+  it("is the holder's name for another Admin, and no form", () => {
+    expect(linesOf(withdrawHolderPage("de", "Erika Muster"))).toEqual(["Vertrag widerrufen", "Vertragsinhaber: Erika Muster"]);
+    expect(linesOf(withdrawHolderPage("en", "Erika Muster"))).toEqual(["Withdraw from the contract", "Contract holder: Erika Muster"]);
+    expect(withdrawHolderPage("de", "<b>Erika</b>")).toContain("&lt;b&gt;Erika&lt;/b&gt;");
+    expect(withdrawHolderPage("de", "Erika Muster")).not.toMatch(/<form|<button/);
+  });
+
+  it("says so if there is no Subscription to withdraw from", () => {
+    expect(linesOf(nothingToWithdrawPage("de"))).toEqual(["Vertrag widerrufen", "Für diese Familie gibt es kein Abonnement, das widerrufen werden kann."]);
+    expect(linesOf(nothingToWithdrawPage("en"))).toEqual(["Withdraw from the contract", "This family has no subscription that could be withdrawn from."]);
+    expect(nothingToWithdrawPage("de")).not.toMatch(/<form|<button/);
+  });
+
+  it("gives the support's address where no holder is recorded", () => {
+    expect(linesOf(noWithdrawHolderPage("de"))).toEqual([
+      "Vertrag widerrufen",
+      "Für diese Familie ist nicht hinterlegt, wer den Vertrag widerrufen kann.",
+      "Fragen? Schreiben Sie uns: support@family-agenda.cloud",
+    ]);
+    expect(linesOf(noWithdrawHolderPage("en"))).toEqual([
+      "Withdraw from the contract",
+      "There is no record of who can withdraw from the contract for this family.",
+      "Questions? Write to us: support@family-agenda.cloud",
+    ]);
+    expect(noWithdrawHolderPage("en")).toContain('<a href="mailto:');
+    expect(noWithdrawHolderPage("de")).not.toMatch(/<form|<button/);
+  });
+
+  it("asks to try again if the declaration could not be taken, and says how to reach us", () => {
+    expect(linesOf(withdrawFailedPage("de"))).toEqual([
+      "Das hat gerade nicht geklappt",
+      "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuchen Sie es in einigen Minuten erneut.",
+      "Fragen? Schreiben Sie uns: support@family-agenda.cloud",
+    ]);
+    expect(linesOf(withdrawFailedPage("en"))).toEqual([
+      "That did not work just now",
+      "We could not take your declaration just now. Please try again in a few minutes.",
+      "Questions? Write to us: support@family-agenda.cloud",
+    ]);
+    expect(withdrawFailedPage("en")).toContain('<a href="mailto:');
   });
 });

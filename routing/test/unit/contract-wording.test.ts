@@ -5,7 +5,9 @@ import {
   CONTRACT_LINKS,
   CONTRACT_PATHS,
   contractOf,
+  berlinDayOf,
   dateAfter,
+  daysAfter,
   dateOf,
   deleterLine,
   holderLine,
@@ -45,6 +47,14 @@ describe("dates, times and amounts", () => {
     // 00:30 on 25 October in Berlin; 24 hours later it is still 25 October there.
     expect(dateAfter(new Date("2026-10-24T22:30:00Z"), 1, "de")).toBe("26.10.2026");
     expect(dateAfter(new Date("2026-12-20T10:00:00Z"), 14, "en")).toBe("3 January 2027");
+  });
+
+  it("names a day as Berlin counts it, and the noon of a day so many days after it", () => {
+    expect(berlinDayOf(lateEvening)).toBe("2026-03-06");
+    expect(berlinDayOf(new Date("2026-07-01T21:59:59Z"))).toBe("2026-07-01");
+    expect(berlinDayOf(new Date("2026-07-01T22:00:00Z"))).toBe("2026-07-02");
+    expect(daysAfter(lateEvening, 14)).toEqual(new Date("2026-03-20T12:00:00Z"));
+    expect(daysAfter(new Date("2026-10-24T22:30:00Z"), 1)).toEqual(new Date("2026-10-26T12:00:00Z"));
   });
 
   it("writes euros with cents, after the number in German and before it in English", () => {
