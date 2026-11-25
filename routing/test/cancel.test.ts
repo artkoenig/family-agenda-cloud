@@ -152,6 +152,16 @@ describe("/cancel", () => {
     expect((await own.request("/cancel")).body).toContain("kein Abonnement");
   });
 
+  it("says so too if the Subscription has ended at Stripe and the Directory does not know yet", async () => {
+    await subscribed();
+    stripe.subscriptions.set("sub_1", stripeSubscription(familyId, "sub_1", { status: "canceled", ended_at: seconds("2026-11-19T00:00:00Z") }));
+    const own = await signedIn();
+    const page = await own.request("/cancel");
+    expect(page.status).toBe(200);
+    expect(page.body).toContain("kein Abonnement");
+    expect(page.body).not.toContain("<form");
+  });
+
   it("offers the ends of the billing periods from the current one on", async () => {
     await subscribed({ billing_cycle_anchor: seconds("2026-06-09T10:00:00Z") });
     const own = await signedIn();

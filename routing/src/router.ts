@@ -103,7 +103,7 @@ export async function startRouter(
     await directoryPool.end();
     throw error;
   });
-  const setup: RouterSetup = { config, directory, log, pool, signIn, order: stripe?.order ?? null, cancel: stripe?.cancel ?? null, stripeEvents: stripe?.events ?? null };
+  const setup: RouterSetup = { config, directory, log, pool, signIn, order: stripe.order, cancel: stripe.cancel, stripeEvents: stripe.events };
   const server = createServer((incoming, outgoing) => {
     route(setup, incoming, outgoing).catch((error: unknown) => {
       log.error("Routing a request failed", { reason: reasonOf(error) });
@@ -118,18 +118,20 @@ export async function startRouter(
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => { resolve(); }));
       await directoryPool.end();
-      await stripe?.close();
+      await stripe.close();
     },
   };
 }
 
 type StripeSurroundings = Pick<StripeEventsSetup, "config" | "directoryPool" | "log" | "resolve" | "now"> & { directory: Directory };
 
-/** What the order and Stripe's webhook work with, and the Scheduler's queues they need; null unless Stripe is configured. */
+const WITHOUT_STRIPE = { order: null, cancel: null, events: null, close: async (): Promise<void> => {} };
+
+/** What the order and Stripe's webhook work with, and the Scheduler's queues they need; none of them unless Stripe is configured. */
 async function openStripe({ directory, ...shared }: StripeSurroundings, connectStripe: (secretKey: string) => StripePort) {
   const { config, now } = shared;
   const { stripe: settings, idpManagement: idp } = config;
-  if (!settings || !idp) return null;
+  if (!settings || !idp) return WITHOUT_STRIPE;
   const stripe = connectStripe(settings.secretKey);
   await checkPrices(stripe, settings.prices);
   const portal = await stripe.portalConfiguration();
@@ -198,7 +200,7 @@ const formOf = (incoming: IncomingMessage) => async (): Promise<URLSearchParams 
 
 /** Answers a request for `/cancel`. */
 async function cancelRequest(cancel: CancelSetup, language: Language, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const { status, headers, body } = await answerCancel({ method: incoming.method, language, cookie: incoming.headers.cookie, form: formOf(incoming) }, cancel);
+  const { status, headers, body } = await answerCancel({ method: incoming.method ?? "", language, cookie: incoming.headers.cookie, form: formOf(incoming) }, cancel);
   // What was posted and not read would stay on the connection.
   if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);

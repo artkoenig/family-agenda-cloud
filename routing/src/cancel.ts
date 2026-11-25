@@ -46,7 +46,7 @@ export type CancelSetup = {
 };
 
 /** A browser's request for `/cancel`; `form` reads what it posts, undefined if that is too long. */
-export type CancelRequest = { method: string | undefined; language: Language; cookie: string | undefined; form: () => Promise<URLSearchParams | undefined> };
+export type CancelRequest = { method: string; language: Language; cookie: string | undefined; form: () => Promise<URLSearchParams | undefined> };
 
 /** The Router's answer. */
 export type CancelAnswer = { status: number; headers: Record<string, string>; body: string };
@@ -64,7 +64,7 @@ type Live = { subscription: StripeSubscription; contract: Contract; endDates: [E
 /** Answers a request for `/cancel`. */
 export async function answerCancel(request: CancelRequest, setup: CancelSetup): Promise<CancelAnswer> {
   const { language } = request;
-  if (!METHODS.includes(request.method ?? "")) return { status: 405, headers: { ...NO_STORE, allow: METHODS.join(", ") }, body: "" };
+  if (!METHODS.includes(request.method)) return { status: 405, headers: { ...NO_STORE, allow: METHODS.join(", ") }, body: "" };
   const posted = request.method === "POST";
   const now = setup.now();
   const session = sessionOf(setup.config.operatorKey, cookiesOf(request.cookie), now);
@@ -83,8 +83,8 @@ async function answerVisit(setup: CancelSetup, language: Language, session: Rout
   const record = await setup.directory.subscriptionOf(entry.familyId);
   if (!record) return html(200, nothingToCancelPage(language));
   const holder = await person(setup.idp, record.holder);
-  if (record.holder !== session.userId) return html(other, cancelHolderPage(language, nameOf(holder) ?? record.holder));
   if (!holder) throw new Error(`The holder ${record.holder} of a Subscription is gone from Logto`);
+  if (record.holder !== session.userId) return html(other, cancelHolderPage(language, nameOf(holder, record.holder)));
   return answer({ setup, language, entry, record, holder, csrf: session.csrf, now });
 }
 
@@ -95,10 +95,11 @@ async function isAdmin({ idp }: CancelSetup, { organizationId, userId }: Routing
   return (await organizations(idp).admins(organizationId)).some((admin) => admin.userId === userId);
 }
 
-const nameOf = (found: LogtoPerson | undefined): string | null => found?.name ?? found?.email ?? null;
+/** The person's name, else their address, else their id at Logto. */
+const nameOf = ({ name, email }: LogtoPerson, userId: string): string => name ?? email ?? userId;
 
 /** The holder as the pages and the mail name them. */
-const personOf = ({ record, holder }: Visit): Person => ({ name: nameOf(holder) ?? record.holder, email: holder.email ?? "" });
+const personOf = ({ record, holder }: Visit): Person => ({ name: nameOf(holder, record.holder), email: holder.email ?? "" });
 
 /** `/cancel`: the form, or the pending Cancellation with the button that takes it back. */
 async function shown(visit: Visit): Promise<CancelAnswer> {
@@ -121,9 +122,14 @@ async function liveOf({ setup, entry, record, now }: Visit): Promise<Live | unde
   const subscription = await setup.stripe.subscription(record.subscriptionId);
   const { billing, orderedAt } = recordOf(subscription, record);
   if (hasEnded(subscription) || billing === null) return undefined;
-  const familyName = (entry.organizationId === null ? null : await organizations(setup.idp).name(entry.organizationId)) ?? entry.familyId;
-  const contract = { billing, familyName, orderedOn: orderedAt ?? record.orderedAt ?? now };
+  const contract = { billing, familyName: await familyNameOf(setup, entry), orderedOn: orderedAt ?? record.orderedAt ?? now };
   return { subscription, contract, endDates: endDatesOf(cancellableOf(subscription, billing, entry, now), now) };
+}
+
+/** The Family's name at Logto, else its id. */
+async function familyNameOf({ idp }: CancelSetup, { organizationId, familyId }: DirectoryEntry): Promise<string> {
+  if (organizationId === null) return familyId;
+  return (await organizations(idp).name(organizationId)) ?? familyId;
 }
 
 /**
