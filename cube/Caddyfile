@@ -26,8 +26,9 @@ app.family-agenda.cloud {
 	header X-Robots-Tag "noindex, nofollow"
 
 	# The landing page's design system for central sign-in's pages (routing/src/sign-in-pages.ts):
-	# only its stylesheets and fonts, open before launch too. Family ids are UUIDs, so /design is free.
-	@design path /design/tokens.css /design/design.css /design/fonts/*
+	# only its stylesheets and fonts, and the contract pages' script (routing/src/contract-pages.ts),
+	# open before launch too. Family ids are UUIDs, so /design is free.
+	@design path /design/tokens.css /design/design.css /design/contract.js /design/fonts/*
 	handle @design {
 		uri strip_prefix /design
 		root * /srv/site

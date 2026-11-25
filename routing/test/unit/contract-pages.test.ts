@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  cancelFailedPage,
+  cancelHolderPage,
+  cancelledPage,
   cancelPage,
   cancelReceiptPage,
   deletePage,
   END_DATE_FIELD,
   escape,
+  nothingToCancelPage,
   UNDERSTOOD_FIELD,
   withdrawPage,
   withdrawReceiptPage,
@@ -15,6 +19,10 @@ import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "../../src/legal-footer";
 const erika = { name: "Erika Muster", email: "erika@example.org" };
 const monthly: Contract = { billing: "monthly", familyName: "Muster", orderedOn: new Date("2026-03-05T09:05:00Z") };
 const ends = [new Date("2026-05-05T08:05:00Z"), new Date("2026-04-05T08:05:00Z"), new Date("2026-06-05T08:05:00Z")] as const;
+
+const csrf = "tok-en_1";
+const token = '<form method="post">\n<input type="hidden" name="csrf" value="tok-en_1">\n';
+const script = '<script src="/design/contract.js" defer></script>';
 
 /** The part of the page between two tags. */
 function between(html: string, open: string, close: string): string {
@@ -45,7 +53,7 @@ function tagsOf(html: string): string[] {
 }
 
 describe("the /cancel page", () => {
-  const values = { holder: erika, contract: monthly, endDates: ends };
+  const values = { holder: erika, contract: monthly, endDates: ends, csrf };
 
   it("shows the § 312k fields, the end dates with the earliest chosen, and „jetzt kündigen“, in German", () => {
     const html = cancelPage("de", values);
@@ -64,7 +72,7 @@ describe("the /cancel page", () => {
       `<select id="${END_DATE_FIELD}" name="end"><option value="2026-04-05T08:05:00.000Z" selected>05.04.2026</option><option value="2026-05-05T08:05:00.000Z">05.05.2026</option>`,
     );
     expect(html).toContain('<label for="end">Kündigen zum:</label>');
-    expect(html).toContain('<form method="post">');
+    expect(html).toContain(`${token}<dl class="fields">`);
     expect(html).toContain('<button class="fam-button fam-button--primary" type="submit">jetzt kündigen</button></p>');
   });
 
@@ -85,7 +93,7 @@ describe("the /cancel page", () => {
   it("holds nothing beyond its fields, the button and the legal footer: no link, offer or explanation", () => {
     for (const language of ["de", "en"] as const) {
       const html = cancelPage(language, values);
-      expect(tagsOf(html)).toEqual(["h1", "form", "dl", ...Array<string[]>(4).fill(["div", "dt", "dd"]).flat(), "div", "dt", "label", "dd", "select", "option", "option", "option", "p", "button", ...(language === "en" ? ["span"] : [])]);
+      expect(tagsOf(html)).toEqual(["h1", "form", "input", "dl", ...Array<string[]>(4).fill(["div", "dt", "dd"]).flat(), "div", "dt", "label", "dd", "select", "option", "option", "option", "p", "button", ...(language === "en" ? ["span"] : [])]);
       expect(between(html, "<body", "</body>").match(/<a /g)).toHaveLength(3);
       expect(html.match(/<button/g)).toHaveLength(1);
       expect(html).not.toContain("<script");
@@ -128,8 +136,9 @@ describe("the /cancel receipt", () => {
       "Print / save as PDF",
     ]);
     expect(cancelReceiptPage("de", values)).toContain(
-      '<p class="action no-print"><button class="fam-button fam-button--secondary" type="button" onclick="window.print()">Drucken / als PDF speichern</button></p>',
+      '<p class="action no-print"><button class="fam-button fam-button--secondary" type="button" data-print>Drucken / als PDF speichern</button></p>',
     );
+    expect(cancelReceiptPage("de", values)).toContain(`</style>\n${script}\n</head>`);
     expect(cancelReceiptPage("en", values)).toContain("<title>We have received your cancellation. · Family Agenda</title>");
     // On paper, without the button and the footer.
     expect(cancelReceiptPage("de", values)).toContain("@media print{.no-print{display:none}");
@@ -138,7 +147,7 @@ describe("the /cancel receipt", () => {
 });
 
 describe("the /withdraw page", () => {
-  const values = { holder: erika, contract: { ...monthly, billing: "yearly" } as const };
+  const values = { holder: erika, contract: { ...monthly, billing: "yearly" } as const, csrf };
 
   it("shows the holder, the contract and „Widerruf bestätigen“", () => {
     expect(linesOf(withdrawPage("de", values))).toEqual([
@@ -155,7 +164,8 @@ describe("the /withdraw page", () => {
       "Contract: Family Agenda, yearly, family Muster, ordered on 5 March 2026",
       'Widerruf bestätigen (German for "confirm withdrawal")',
     ]);
-    expect(withdrawPage("de", values)).toContain('<form method="post">');
+    expect(withdrawPage("de", values)).toContain(`${token}<dl class="fields">`);
+    expect(withdrawPage("de", values)).not.toContain("<script");
     expect(withdrawPage("de", values)).toContain('<button class="fam-button fam-button--primary" type="submit">Widerruf bestätigen</button></p>');
     expect(withdrawPage("en", values)).toContain('<span class="note">(German for &quot;confirm withdrawal&quot;)</span>');
   });
@@ -196,7 +206,7 @@ describe("the receipts", () => {
 });
 
 describe("the /delete page", () => {
-  const values = { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null };
+  const values = { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null, csrf };
 
   const deleteLines = {
     de: [
@@ -228,16 +238,17 @@ describe("the /delete page", () => {
   it("lists what goes when and offers the Export first; without a Subscription, nothing about one", () => {
     expect(linesOf(deletePage("de", values))).toEqual([...deleteLines.de, ...confirm.de]);
     expect(linesOf(deletePage("en", values))).toEqual([...deleteLines.en, ...confirm.en]);
-    expect(deletePage("de", values)).toContain('<a class="fam-button fam-button--secondary" href="/f-1/admin/export">Export herunterladen</a></p>\n<form method="post">');
+    expect(deletePage("de", values)).toContain(`<a class="fam-button fam-button--secondary" href="/f-1/admin/export">Export herunterladen</a></p>\n${token}<p class="understood">`);
   });
 
   it("enables „Familie endgültig löschen“ only once the checkbox is ticked", () => {
     const html = deletePage("de", values);
     expect(html).toContain(
-      `<input type="checkbox" id="${UNDERSTOOD_FIELD}" name="understood" required onchange="this.form.elements.namedItem('delete').disabled=!this.checked"> <label for="understood">`,
+      `<input type="checkbox" id="${UNDERSTOOD_FIELD}" name="understood" required data-enables="delete"> <label for="understood">`,
     );
     expect(html).toContain('<button class="fam-button fam-button--danger" type="submit" name="delete" disabled>Familie endgültig löschen</button>');
-    expect(html).toContain('<form method="post">');
+    expect(html).toContain(`</style>\n${script}\n</head>`);
+    expect(html).not.toMatch(/ on[a-z]+=/);
   });
 
   it("says a running Subscription is cancelled with it", () => {
@@ -274,11 +285,15 @@ describe("the /delete page", () => {
 
 describe("the legal footer", () => {
   const pages = {
-    "/cancel": (language: "de" | "en") => cancelPage(language, { holder: erika, contract: monthly, endDates: ends }),
+    "/cancel": (language: "de" | "en") => cancelPage(language, { holder: erika, contract: monthly, endDates: ends, csrf }),
+    "/cancel cancelled": (language: "de" | "en") => cancelledPage(language, { endsOn: new Date(), csrf }),
+    "/cancel holder": (language: "de" | "en") => cancelHolderPage(language, "Erika Muster"),
+    "/cancel nothing": (language: "de" | "en") => nothingToCancelPage(language),
+    "/cancel failed": (language: "de" | "en") => cancelFailedPage(language),
     "/cancel receipt": (language: "de" | "en") => cancelReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date(), endsOn: new Date() }),
-    "/withdraw": (language: "de" | "en") => withdrawPage(language, { holder: erika, contract: monthly }),
+    "/withdraw": (language: "de" | "en") => withdrawPage(language, { holder: erika, contract: monthly, csrf }),
     "/withdraw receipt": (language: "de" | "en") => withdrawReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date() }),
-    "/delete": (language: "de" | "en") => deletePage(language, { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null }),
+    "/delete": (language: "de" | "en") => deletePage(language, { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null, csrf }),
   };
   const footers = { de: legalFooterHtml("de"), en: legalFooterHtml("en") };
 
@@ -289,6 +304,7 @@ describe("the legal footer", () => {
         expect(between(html, "</main>", "</body>").trim()).toBe(footers[language]);
         expect(html).toContain(LEGAL_FOOTER_STYLE);
         expect(html).not.toMatch(/href="\/(impressum|datenschutz|agb|en\/)/);
+        expect(html).not.toMatch(/ on[a-z]+=/);
       });
     }
   }
@@ -306,16 +322,47 @@ describe("escaping", () => {
     const holder = { name: evil, email: evil };
     const contract = { ...monthly, familyName: evil };
     const pages = [
-      cancelPage("de", { holder, contract, endDates: ends }),
+      cancelPage("de", { holder, contract, endDates: ends, csrf: evil }),
+      cancelHolderPage("en", evil),
       cancelReceiptPage("en", { holder, contract, receivedAt: new Date(), endsOn: new Date() }),
-      withdrawPage("en", { holder, contract }),
+      withdrawPage("en", { holder, contract, csrf: evil }),
       withdrawReceiptPage("de", { holder, contract, receivedAt: new Date() }),
-      deletePage("de", { familyName: evil, exportHref: evil, subscription: { withdrawalPeriodEndsOn: new Date() } }),
+      deletePage("de", { familyName: evil, exportHref: evil, subscription: { withdrawalPeriodEndsOn: new Date() }, csrf: evil }),
     ];
-    expect(pages[4]).toContain(`href="&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;"`);
+    expect(pages[5]).toContain(`href="&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;"`);
     for (const html of pages) {
-      expect(html).not.toContain("<script");
+      expect(html).not.toContain("<script>");
       expect(html).toContain("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;");
     }
+  });
+});
+
+describe("what /cancel shows instead of its form", () => {
+  it("is the pending Cancellation's end and the button that takes it back", () => {
+    const endsOn = new Date("2026-04-05T08:05:00Z");
+    expect(linesOf(cancelledPage("de", { endsOn, csrf }))).toEqual(["Kündigung", "Gekündigt zum 05.04.2026", "Kündigung zurücknehmen"]);
+    expect(linesOf(cancelledPage("en", { endsOn, csrf }))).toEqual(["Cancellation", "Cancelled with effect from 5 April 2026", "Kündigung zurücknehmen (undo cancellation)"]);
+    expect(cancelledPage("de", { endsOn, csrf })).toContain(`${token}<p class="action"><button class="fam-button fam-button--primary" type="submit" name="undo" value="1">Kündigung zurücknehmen</button></p>\n</form>`);
+  });
+
+  it("is the holder's name for another Admin, and no form", () => {
+    expect(linesOf(cancelHolderPage("de", "Erika Muster"))).toEqual(["Kündigung", "Vertragsinhaber: Erika Muster"]);
+    expect(linesOf(cancelHolderPage("en", "Erika Muster"))).toEqual(["Cancellation", "Contract holder: Erika Muster"]);
+    expect(cancelHolderPage("de", "Erika Muster")).not.toMatch(/<form|<button/);
+  });
+
+  it("says so if no Subscription runs", () => {
+    expect(linesOf(nothingToCancelPage("de"))).toEqual(["Kündigung", "Für diese Familie läuft kein Abonnement, das gekündigt werden kann."]);
+    expect(linesOf(nothingToCancelPage("en"))).toEqual(["Cancellation", "This family has no running subscription that could be cancelled."]);
+  });
+
+  it("says that nothing changed if the declaration could not be taken, and how to reach us", () => {
+    expect(linesOf(cancelFailedPage("de"))).toEqual([
+      "Das hat gerade nicht geklappt",
+      "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Es wurde nichts geändert. Bitte versuchen Sie es in einigen Minuten erneut.",
+      "Fragen? Schreiben Sie uns: support@family-agenda.cloud",
+    ]);
+    expect(linesOf(cancelFailedPage("en"))[1]).toBe("We could not take your declaration just now. Nothing was changed. Please try again in a few minutes.");
+    expect(cancelFailedPage("en")).toContain('<a href="mailto:');
   });
 });

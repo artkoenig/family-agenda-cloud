@@ -29,6 +29,13 @@ export type StripePort = {
   cancelSubscription(id: string): Promise<StripeSubscription>;
   /** Refunds in full whatever was paid for the Subscription, and not refunded before. */
   refundSubscription(id: string): Promise<void>;
+  /**
+   * Ends the Subscription at exactly `end`, or never if that is null, prorating nothing, and adds to
+   * its metadata; answers it as it is then.
+   */
+  setEnd(id: string, end: Date | null, metadata: Record<string, string>, idempotencyKey: string): Promise<StripeSubscription>;
+  /** Pays back so much of the Subscription's last paid invoice by a credit note, unless it was before. */
+  refundUnused(id: string, cents: number): Promise<void>;
   /** Sets the languages of the Customer's invoices and mails from Stripe. */
   setCustomerLocales(customerId: string, locales: string[]): Promise<void>;
   /** The id of the Portal's configuration (`PORTAL_FEATURES`), which it creates or brings up to date. */
@@ -52,6 +59,9 @@ const PORTAL_FEATURES: Stripe.BillingPortal.ConfigurationCreateParams.Features =
 
 /** Tells the Routing module's configuration of the Portal from any other. */
 const PORTAL_METADATA = { integration: "family-agenda-portal" };
+
+/** Marks the credit note that pays back the unused months of a cancelled yearly Subscription (#229). */
+const UNUSED_METADATA = "unusedMonthsOf";
 
 /** The id of what Stripe names by its id alone, or expanded. */
 export const idOf = (reference: string | { id: string }): string => (typeof reference === "string" ? reference : reference.id);
@@ -90,6 +100,16 @@ export function stripePort(secretKey: string, at?: StripeHost): StripePort {
           await refund(stripe, payment);
         }
       }
+    },
+    setEnd: (id, end, metadata, idempotencyKey) =>
+      stripe.subscriptions.update(id, { cancel_at: end === null ? "" : Math.floor(end.getTime() / 1000), proration_behavior: "none", metadata }, { idempotencyKey }),
+    async refundUnused(id, cents) {
+      const [invoice] = (await stripe.invoices.list({ subscription: id, status: "paid", limit: 1 })).data;
+      if (invoice?.id === undefined) throw new Error(`Stripe's Subscription ${id} has no paid invoice to pay back from`);
+      for await (const { metadata } of stripe.creditNotes.list({ invoice: invoice.id, limit: 100 })) {
+        if (metadata?.[UNUSED_METADATA] === id) return;
+      }
+      await stripe.creditNotes.create({ invoice: invoice.id, amount: cents, refund_amount: cents, metadata: { [UNUSED_METADATA]: id } }, { idempotencyKey: `unused:${id}` });
     },
     async setCustomerLocales(customerId, locales) {
       await stripe.customers.update(customerId, { preferred_locales: locales });

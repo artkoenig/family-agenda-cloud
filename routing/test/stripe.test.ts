@@ -4,7 +4,7 @@ import { afterEach, expect, it } from "vitest";
 import { signedEvent, stripePort } from "../src/stripe";
 import { signed } from "./support/stand-in-stripe";
 
-type Call = { method: string | undefined; path: string; body: string; version: string | string[] | undefined; authorization: string | undefined };
+type Call = { method: string | undefined; path: string; body: string; version: string | string[] | undefined; authorization: string | undefined; idempotencyKey?: string | string[] | undefined };
 let server: Server | undefined;
 afterEach(() => server?.close());
 
@@ -16,7 +16,7 @@ async function stripeAnswering(answers: Record<string, unknown>) {
     incoming.on("data", (chunk: Buffer) => (body += chunk.toString()));
     incoming.on("end", () => {
       const path = incoming.url ?? "";
-      calls.push({ method: incoming.method, path, body, version: incoming.headers["stripe-version"], authorization: incoming.headers.authorization });
+      calls.push({ method: incoming.method, path, body, version: incoming.headers["stripe-version"], authorization: incoming.headers.authorization, idempotencyKey: incoming.headers["idempotency-key"] });
       const answered = answers[`${incoming.method ?? ""} ${path}`];
       const status = answered !== null && typeof answered === "object" && "error" in answered ? 400 : 200;
       outgoing.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(answered));
@@ -84,6 +84,30 @@ it("refunds every payment of a Subscription", async () => {
   await port.refundSubscription("sub_1");
   answers["POST /v1/refunds"] = { error: { type: "invalid_request_error", code: "resource_missing", message: "No such payment" } };
   await expect(port.refundSubscription("sub_1")).rejects.toThrow("No such payment");
+});
+
+it("sets a Subscription's end to the second, prorating nothing, and clears it", async () => {
+  const { calls, port } = await stripeAnswering({ "POST /v1/subscriptions/sub_1": { id: "sub_1", cancel_at: 1_800_000_000 } });
+  expect(await port.setEnd("sub_1", new Date(1_800_000_000_000), { cancellationRefundCents: "415" }, "cancel:1")).toMatchObject({ cancel_at: 1_800_000_000 });
+  expect(calls.at(-1)).toMatchObject({ body: "cancel_at=1800000000&proration_behavior=none&metadata[cancellationRefundCents]=415", idempotencyKey: "cancel:1" });
+  await port.setEnd("sub_1", null, { cancellationRefundCents: "" }, "undo:1");
+  expect(calls.at(-1)).toMatchObject({ body: "cancel_at=&proration_behavior=none&metadata[cancellationRefundCents]=", idempotencyKey: "undo:1" });
+});
+
+it("pays back unused months from the last paid invoice by a credit note, once", async () => {
+  const answers: Record<string, unknown> = {
+    "GET /v1/invoices?subscription=sub_1&status=paid&limit=1": list({ id: "in_9" }),
+    "GET /v1/credit_notes?invoice=in_9&limit=100": list({ id: "cn_0", metadata: {} }, { id: "cn_n", metadata: null }),
+    "POST /v1/credit_notes": { id: "cn_1" },
+  };
+  const { calls, port } = await stripeAnswering(answers);
+  await port.refundUnused("sub_1", 415);
+  expect(calls.at(-1)).toMatchObject({ method: "POST", body: "invoice=in_9&amount=415&refund_amount=415&metadata[unusedMonthsOf]=sub_1", idempotencyKey: "unused:sub_1" });
+  answers["GET /v1/credit_notes?invoice=in_9&limit=100"] = list({ id: "cn_1", metadata: { unusedMonthsOf: "sub_1" } });
+  await port.refundUnused("sub_1", 415);
+  expect(calls.filter(({ method }) => method === "POST")).toHaveLength(1);
+  answers["GET /v1/invoices?subscription=sub_1&status=paid&limit=1"] = list();
+  await expect(port.refundUnused("sub_1", 415)).rejects.toThrow("has no paid invoice");
 });
 
 it("refuses to refund a payment it cannot", async () => {

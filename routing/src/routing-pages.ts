@@ -2,6 +2,7 @@
  * The paths of the Routing module's own pages that need to know who is signed in, and the way back
  * to one after a sign-in. No I/O.
  */
+import { CONTRACT_PATHS } from "./contract-wording";
 import type { Language } from "./sign-in-pages";
 
 /**
@@ -28,12 +29,17 @@ export function orderPathOf(pathname: string): OrderPath | undefined {
   return PAGES.flatMap((page) => LANGUAGES.map((language) => ({ page, language }))).find(({ page, language }) => ORDER_PATHS[page][language] === pathname);
 }
 
+/** The language of the page a Subscription is cancelled on (#229), if this is its path. */
+export function cancelPathOf(pathname: string): Language | undefined {
+  return LANGUAGES.find((language) => CONTRACT_PATHS.cancel[language] === pathname);
+}
+
 /**
  * The page to come back to after a sign-in, as the browser asks for it: only the exact path of a
  * Routing module's page, so that a link to central sign-in sends nobody anywhere else.
  */
 export function wayBackOf(asked: string | null): string | undefined {
-  return asked !== null && orderPathOf(asked) ? asked : undefined;
+  return asked !== null && (orderPathOf(asked) || cancelPathOf(asked)) ? asked : undefined;
 }
 
 /** Where a page sends a browser that is not signed in; the callback sends it back to the page. */
