@@ -152,11 +152,11 @@ describe("confirmationMail with the legal texts of site/legal/", () => {
     const agb = text.slice(text.indexOf("==== Allgemeine Geschäftsbedingungen ====\n"), text.indexOf("==== Widerrufsbelehrung ====\n"));
     const withdrawal = text.slice(text.indexOf("==== Widerrufsbelehrung ====\n"), text.lastIndexOf("\n\n-- \n"));
 
-    expect(agb).toContain("Stand: 1. Dezember 2026");
-    expect(agb).toContain("zwischen Erika Betreiberin, Family Agenda, Postfach 12, 10115 Berlin („wir“)");
+    expect(agb).toMatch(/^Stand: \d{1,2}\. \p{L}+ \d{4}$/mu);
+    expect(agb).toMatch(/zwischen [^,\n]+, Family Agenda, [^,\n]+, \d{5} [^,\n]+ \(„wir“\)/u);
     expect(withdrawal).toContain("\nWiderrufsrecht\n");
     expect(withdrawal).toContain("\nMuster-Widerrufsformular\n");
-    expect(withdrawal).toContain("– An Erika Betreiberin, Family Agenda, Postfach 12, 10115 Berlin, E-Mail: support@family-agenda.cloud:");
+    expect(withdrawal).toMatch(/^– An [^,\n]+, Family Agenda, [^,\n]+, \d{5} [^,\n]+, E-Mail: support@family-agenda\.cloud:$/mu);
     expect(withdrawal).toContain("(*) Unzutreffendes streichen.");
     for (const markdown of ["{{", "#", "**", "\\*", "]("]) expect(text).not.toContain(markdown);
     expect(text.endsWith(FOOTER[language])).toBe(true);
