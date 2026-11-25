@@ -220,7 +220,8 @@ html:not([data-scripted]) .lp-stage { width: 360px; }
   display: inline-block; border: 2px solid var(--hearth); background: var(--hearth-tint); color: var(--hearth-strong);
   padding: 10px var(--space-4); font-size: 15px; font-weight: 700; text-align: center; white-space: normal;
 }
-.lp .lp-footer__button:hover { background: var(--hearth); color: var(--on-hearth); }
+/* Disabled until the cancel and withdraw pages exist (launch checklist, 13b). */
+.lp .lp-footer__button:not([disabled]):hover { background: var(--hearth); color: var(--on-hearth); }
 .lp-footer__gloss { font-weight: 500; }
 
 /* Legal pages (site/legal/, built by routing/src/legal-pages.ts) --------- */

@@ -179,6 +179,10 @@ and legal texts are those of [#179](https://github.com/artkoenig/family-agenda-c
   2. `REGISTRATION=open` in the `.env`.
   3. The register buttons link again: revert the commit "Close the register buttons until registration opens"
      (`site/index.html`, `site/en/index.html`).
+     The contract buttons link again, once `/cancel` and `/withdraw` answer
+     ([#229](https://github.com/artkoenig/family-agenda-cloud/issues/229),
+     [#230](https://github.com/artkoenig/family-agenda-cloud/issues/230)): revert the commit "Disable the contract
+     links until their pages exist".
   4. `scripts/deploy.sh`; it must say `Registration is open`.
   5. The alert above 20 new Families a day is active ([#234](https://github.com/artkoenig/family-agenda-cloud/issues/234)).
 - **Threshold:** every register button links to `https://app.family-agenda.cloud/sign-in/register`, and a new address

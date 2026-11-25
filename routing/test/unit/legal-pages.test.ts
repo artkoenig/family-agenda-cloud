@@ -6,11 +6,11 @@ const page: LegalPage = { name: "test", paths: { de: "/test", en: "/en/test" }, 
 const landing = (footer: string) => `<body>\n  <main></main>\n\n${footer}\n\n  <script></script>\n</body>\n`;
 
 describe("footerHtml", () => {
-  it("links the German legal pages and the app's German cancel and withdraw pages as buttons", () => {
+  it("links the German legal pages and has the contract buttons, disabled", () => {
     expect(footerHtml("de", "en/")).toBe(`  <footer class="lp-footer">
     <nav class="lp-footer__contracts" aria-label="Verträge">
-      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/cancel">Verträge hier kündigen</a>
-      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/withdraw">Vertrag widerrufen</a>
+      <button class="fam-button lp-footer__button" type="button" disabled>Verträge hier kündigen</button>
+      <button class="fam-button lp-footer__button" type="button" disabled>Vertrag widerrufen</button>
     </nav>
     <span>Mit Liebe (und zu wenig Schlaf) von Eltern gemacht.</span>
     <nav class="lp-footer__links" aria-label="Rechtliches">
@@ -26,8 +26,8 @@ describe("footerHtml", () => {
   it("links the English pages, keeping the buttons' German labels with an English gloss", () => {
     expect(footerHtml("en", "/impressum")).toBe(`  <footer class="lp-footer">
     <nav class="lp-footer__contracts" aria-label="Contracts">
-      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/en/cancel"><span lang="de">Verträge hier kündigen</span> <span class="lp-footer__gloss">(cancel contracts here)</span></a>
-      <a class="fam-button lp-footer__button" href="https://app.family-agenda.cloud/en/withdraw"><span lang="de">Vertrag widerrufen</span> <span class="lp-footer__gloss">(withdraw from contract)</span></a>
+      <button class="fam-button lp-footer__button" type="button" disabled><span lang="de">Verträge hier kündigen</span> <span class="lp-footer__gloss">(cancel contracts here)</span></button>
+      <button class="fam-button lp-footer__button" type="button" disabled><span lang="de">Vertrag widerrufen</span> <span class="lp-footer__gloss">(withdraw from contract)</span></button>
     </nav>
     <span>Made with love (and too little sleep) by parents.</span>
     <nav class="lp-footer__links" aria-label="Legal">
