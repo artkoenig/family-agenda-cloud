@@ -25,6 +25,8 @@ confirm from a primary source. Both marks are carried over from the research and
 | Date | Change |
 | --- | --- |
 | 2026-11-25 | First version ([#239](https://github.com/artkoenig/family-agenda-cloud/issues/239)). Not yet accepted by the Operator ([#237](https://github.com/artkoenig/family-agenda-cloud/issues/237)). |
+| 2026-11-25 | No written confirmation is asked of IONOS on the AI Model Hub; facts and risk 5 rest on IONOS's documented statements (#237). |
+| 2026-11-25 | Accepted by the Operator in this version (#237). |
 
 **Re-check log** (Art. 35(11); the triggers are in [section 9](#9-re-check-triggers-art-3511))
 
@@ -51,7 +53,8 @@ questions of this check arise from activity 4. The readings below rest on these 
   launch (#198, item 2).
 - **Extraction:** each message is read once by an LLM, to find dates and tasks. The model is an open one that IONOS
   runs at its AI Model Hub in Germany; content is not stored and not used for training (record, activity 4 and the
-  measures table; `docs/research/ionos-ai-model-hub.md`). The written confirmation by IONOS is open (launch gate 12).
+  measures table; `docs/research/ionos-ai-model-hub.md`). These are IONOS's documented statements; the Operator asks
+  for no separate written confirmation (decided 2026-11-25, #237).
 - **Children** are Family Members without accounts. Only Admins sign in; parents enter the children's data, and many
   Items concern them.
 - **Art. 9 data arrive incidentally:** health data (a doctor's appointment) and data on religion (religious
@@ -235,7 +238,7 @@ state is in the record's
 | 2 | Source credentials leak | Admins; through the mailbox or portal behind them, children and third persons | Low | High: access to a whole mailbox or school portal | Source credentials are encrypted under the Family key, one per Family; a leaked Family key opens only that Family's credentials. Each plugin reaches only the hosts of its Source, through its Egress Proxy. Credentials are deleted with the Family. |
 | 3 | An Agenda Link leaks | Admins, children, third persons named in Items | Medium: the link is made to be passed on | Medium: one Agenda's Items can be read | An Agenda Link can be revoked by an Admin at any time; the policy says who can read with it (§ 4). TLS. |
 | 4 | Extraction makes a wrong Item or misses one | Admins, children | Medium | Low to medium: a missed or wrong date | Extraction decides nothing about persons. The policy says that it can be incomplete or wrong (§ 4). Admins can delete Items. The Sources are not changed, so the original mail stays with the Family. |
-| 5 | The LLM provider keeps content or moves it out of Germany | Admins, children, third persons | Low | High | The model runs at the IONOS AI Model Hub in Germany, under IONOS Cloud's processing agreement; content is not stored, and IONOS's terms for AI services prohibit use for training (§ 2.3). These are IONOS's documented statements; the written confirmation is asked and blocks stage (c) (gate 12). A provider or model outside Germany is a re-check trigger (section 9). |
+| 5 | The LLM provider keeps content or moves it out of Germany | Admins, children, third persons | Low | High | The model runs at the IONOS AI Model Hub in Germany, under IONOS Cloud's processing agreement; content is not stored, and IONOS's terms for AI services prohibit use for training (§ 2.3). These are IONOS's documented statements; the Operator asks for no separate written confirmation (decided 2026-11-25, #237). A provider or model outside Germany is a re-check trigger (section 9). |
 | 6 | The Operator views content | Admins, children, third persons | Low | Medium | The no-own-use rule (section 7; policy § 4; AGB § 10(3)): content is viewed only to fix a fault with an Admin's consent, or where the law requires it. |
 | 7 | Third persons do not know that their mails are processed | Third persons (teachers, clubs, senders) | High: it is the normal case | Low: their mail is read once to find dates and is shown only to the Family it was sent to | Public information under Art. 14 in policy § 5; telling each person would be disproportionate (Art. 14(5)(b), #196, item 7). Their rights, the objection under Art. 21 included, go through `support@`. No own use; the model stores nothing. |
 | 8 | Incidental Art. 9 data (health, religion) are processed | Children, Admins, third persons | High that such data occur | Medium | They are processed only to show them to the Family, which had them in its own mailbox or calendar already. No own use. The model runs in Germany and stores nothing. The policy says so openly (§ 4). Admins can delete Items. |

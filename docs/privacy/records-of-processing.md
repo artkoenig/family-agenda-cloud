@@ -25,6 +25,8 @@ changed alone. A fact that neither the policy nor a decision gives is marked `OP
 | Date | Change |
 | --- | --- |
 | 2026-11-25 | First version ([#238](https://github.com/artkoenig/family-agenda-cloud/issues/238)). Not yet accepted by the Operator (#237). |
+| 2026-11-25 | The alert mails go to the service's mailbox at IONOS, no longer to Gmail. No written confirmation is asked of IONOS on the AI Model Hub. The open items are closed (#237). |
+| 2026-11-25 | Accepted by the Operator in this version (#237). |
 
 ## How to read it
 
@@ -65,21 +67,17 @@ Policy § 2, § 8.
     ([#208](https://github.com/artkoenig/family-agenda-cloud/issues/208)).
 - **Recipients:**
   - IONOS Cloud GmbH, Berlin: the Cube (Frankfurt) and the backup bucket (Berlin). Processor.
-  - IONOS SE, Montabaur: sends the alert mails through the service's mailbox. Processor.
-  - Google Ireland Limited, Dublin: the alert mails arrive in the Operator's own mailbox at Gmail
-    (`OPERATOR_ALERT_ADDRESS` in the Cube's `.env`, read 2026-11-25). Policy § 2 ("Fehlermeldungen"), § 9.
-    Recorded as an **independent controller**: a consumer Gmail mailbox runs under Google's own terms, and Google
-    offers no processing agreement for it ([processing-agreements.md](processing-agreements.md)). This is the
-    record's reading, not a decision; a mailbox with an agreement (IONOS, or Google Workspace) would end the question.
+  - IONOS SE, Montabaur: sends the alert mails through the service's mailbox, and they arrive in that same mailbox
+    (`OPERATOR_ALERT_ADDRESS` in the Cube's `.env` is `support@family-agenda.cloud`, set 2026-11-25). Processor.
+    Policy § 2 ("Fehlermeldungen"), § 9.
   - No recipient: healthchecks.io. The heartbeat ping carries no personal data
     ([#192](https://github.com/artkoenig/family-agenda-cloud/issues/192), amendment).
   - The website loads nothing from third parties and uses no analytics or tracking, so there is no further recipient.
-- **Third-country transfers:** none by the service. The alert mails in the Gmail mailbox can go to Google LLC in
-  the US, under the adequacy decision for the EU-US Data Privacy Framework.
+- **Third-country transfers:** none.
 - **Erasure:**
   - Server and container logs: 14 days.
   - Backups: 14 days; a deleted Family's last copy is gone 14 days after its deletion at the latest.
-  - `OPEN:` how long alert mails stay in the Operator's mailbox.
+  - Alert mails in the mailbox: after reading, after 30 days at the latest.
 
 ## 2. Registration and sign-in
 
@@ -175,8 +173,8 @@ Policy § 4, § 5, § 8.
   - On deletion: the Family's database, its key and its Admins' accounts at once; stored files at once, their older
     versions after 14 days; backups 14 days after the deletion at the latest.
   - The Directory keeps one entry without name or email address (id, time zone, dates).
-  - `OPEN:` how long IONOS keeps the AI Model Hub's metadata per request (time, model, token counts). IONOS
-    publishes no period; asked in `docs/correspondence/2026-11-ionos-ai-model-hub-request.md`, no reply filed.
+  - The AI Model Hub's metadata per request (time, model, token counts) at IONOS: period not known to the Operator.
+    IONOS publishes none, and the Operator does not ask (decided 2026-11-25, #237); IONOS's privacy policy applies.
 
 ## 5. Trial, Subscription and payment
 
@@ -236,7 +234,7 @@ Policy § 7, § 8.
 | IONOS Cloud GmbH, Greifswalder Str. 207, 10405 Berlin | Processor | 1 to 6 | None |
 | IONOS SE, Elgendorfer Str. 57, 56410 Montabaur | Processor | 1, 2, 6 | None |
 | Stripe Payments Europe, Limited, 1 Grand Canal Street Lower, Dublin 2, Ireland | Processor for payment processing; independent controller for fraud prevention and identity checks | 5 | US: Stripe, LLC (DPF, in addition SCC) |
-| Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland | Independent controller | 1, the mailbox for the alert mails; 3, only with Google sign-in | US: Google LLC, Google's own transfer (DPF) |
+| Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland | Independent controller | 3, only with Google sign-in | US: Google LLC, Google's own transfer (DPF) |
 
 There are no other transfers to countries outside the EU. The Sources' hosts are not recipients.
 
@@ -250,7 +248,7 @@ Only measures that are in place or decided. "Decided" means a launch gate still 
 | **Encryption of credentials:** Source credentials are encrypted under the Family key, one per Family; the Operator key wraps every Family key and database password in the Directory. A leaked Family key opens only that Family's credentials. | In place |
 | **Outbound allowlist:** each plugin reaches the internet only through its Egress Proxy, which allows only the hosts of the Source it fetches. | In place |
 | **Control by the Family:** an Agenda Link can be revoked; Admins can delete single Items and the whole Family; the Export serves Art. 20. | In place |
-| **AI model:** Extraction runs on an open model at the IONOS AI Model Hub in Germany; content is not stored. Use for training is prohibited by IONOS's terms for AI services (§ 2.3). Location and non-storage are IONOS's documented statements; the written confirmation is asked and blocks stage (c) (launch gate 12). | In place; confirmation open |
+| **AI model:** Extraction runs on an open model at the IONOS AI Model Hub in Germany; content is not stored. Use for training is prohibited by IONOS's terms for AI services (§ 2.3). Location and non-storage are IONOS's documented statements. The Operator asks for no separate written confirmation (decided 2026-11-25, #237). | In place |
 | **Transport encryption:** TLS for every address of the service, by Caddy. | In place |
 | **Backups:** continuous, kept 14 days, in a bucket in Berlin apart from the Cube in Frankfurt; noncurrent versions of stored files are deleted after 14 days. Public access to both buckets is blocked. | In place |
 | **Abuse protection at registration:** the Cap CAPTCHA and the limit of three sign-in mails per address and hour ([#195](https://github.com/artkoenig/family-agenda-cloud/issues/195)). | Decided; live before registration opens (gate 13b) |
@@ -264,9 +262,6 @@ self-run sign-in service and Caddy send telemetry.
 
 ## Open items
 
-Each is the Operator's to fill in (#237); none is decided here.
-
-1. Activity 1: how long alert mails stay in the Operator's mailbox at Gmail.
-2. Activity 1: Google is recorded as independent controller for that mailbox, with no agreement. To confirm, or to
-   move the alert mails to a mailbox under an agreement.
-3. Activity 4: the retention of the AI Model Hub's request metadata at IONOS.
+None. The three items of the first version were closed by the Operator on 2026-11-25 (#237): the alert mails moved
+to the mailbox at IONOS and stay 30 days at the latest, and the retention of the AI Model Hub's request metadata is
+recorded as not known.

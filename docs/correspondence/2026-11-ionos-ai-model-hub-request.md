@@ -1,8 +1,8 @@
 # Request to IONOS: AI Model Hub for a hosted service
 
-Ticket: [Get IONOS's written word on serving Families through the AI Model Hub](https://github.com/artkoenig/family-agenda-cloud/issues/62). Sent by the maintainer; reply filed below.
+Ticket: [Get IONOS's written word on serving Families through the AI Model Hub](https://github.com/artkoenig/family-agenda-cloud/issues/62). **Not sent.** The Operator decided on 2026-11-25 to ask for no written confirmation ([#237](https://github.com/artkoenig/family-agenda-cloud/issues/237)); the privacy documents rest on IONOS's published terms and documentation. The draft is kept for the record. Its question 4 names the agreement in v7.4; the version in force is "Version 11/2026" (`docs/privacy/processing-agreements.md`).
 
-## Message (German)
+## Draft message (German)
 
 **Betreff:** AI Model Hub – Nutzung aus einem SaaS-Backend, Verarbeitungsort, Metadaten, AVV (Vertrag 39683376)
 
@@ -17,7 +17,3 @@ ich plane einen gehosteten Dienst für Familien: Er liest E-Mails und PDF-Anhän
 
 Vielen Dank und freundliche Grüße
 Artjom König
-
-## Reply
-
-<!-- date, channel, ticket number, the answers per question, file of the PDF/mail if any -->

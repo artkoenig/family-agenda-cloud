@@ -20,7 +20,7 @@ When you open family-agenda.cloud, our web server processes your IP address, the
 - Legal basis: Art. 6(1)(f) GDPR; our interest is secure operation.
 - Retention: server logs are deleted after 14 days.
 
-**Error alerts.** When an error occurs in operation, we receive an email with a shortened line from the server log. IP addresses and identifiers are masked in it; only the identifier of the family concerned stays readable. These emails go to a mailbox at Gmail (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland); data may go to Google LLC in the US (adequacy decision EU-US Data Privacy Framework). Legal basis: Art. 6(1)(f) GDPR.
+**Error alerts.** When an error occurs in operation, we receive an email with a shortened line from the server log. IP addresses and identifiers are masked in it; only the identifier of the family concerned stays readable. These emails go to our mailbox at IONOS SE (section 9) and are deleted after reading, after 30 days at the latest. Legal basis: Art. 6(1)(f) GDPR.
 
 The website loads nothing from third parties (fonts are on our server), sets no cookies and uses no analytics or tracking tools. If you pick the language by hand, your browser remembers that choice locally; it is not sent to us.
 
@@ -97,7 +97,7 @@ Legal basis: Art. 6(1)(b) GDPR.
 - Backups: 14 days after deletion at the latest
 - Server logs: 14 days
 - Sign-in logs: 30 days
-- Email send jobs, bounce messages: 30 days
+- Email send jobs, bounce messages, error alerts: 30 days
 - Directory of families: an entry without name or email address remains (identifier, time zone, dates)
 - Invoices at Stripe: 8 years from the end of the calendar year
 
@@ -106,9 +106,9 @@ Admins can delete the family themselves at any time. Before that they can downlo
 ## 9 Recipients
 
 - **IONOS Cloud GmbH**, Greifswalder Str. 207, 10405 Berlin, Germany: servers, storage, backups and the AI model, all in Germany. Processor.
-- **IONOS SE**, Elgendorfer Str. 57, 56410 Montabaur, Germany: sending email. Processor.
+- **IONOS SE**, Elgendorfer Str. 57, 56410 Montabaur, Germany: sending email and our mailbox. Processor.
 - **Stripe** (section 6): payment processing; transfer to the US.
-- **Google** (sections 2 and 3): mailbox for our error alerts; sign-in with Google, only if you choose it; transfer to the US.
+- **Google** (section 3): sign-in with Google, only if you choose it; transfer to the US.
 
 There are no other transfers to countries outside the EU. The providers of the sources are not recipients: we fetch from them, on your family's behalf, what the family has given access to.
 

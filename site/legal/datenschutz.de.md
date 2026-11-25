@@ -18,7 +18,7 @@ Beim Aufruf von family-agenda.cloud verarbeitet unser Webserver Ihre IP-Adresse,
 - Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO; unser Interesse ist ein sicherer Betrieb.
 - Speicherdauer: Server-Protokolle werden nach 14 Tagen gelöscht.
 
-**Fehlermeldungen.** Tritt im Betrieb ein Fehler auf, erhalten wir eine E-Mail mit einer gekürzten Zeile aus dem Server-Protokoll. IP-Adressen und Kennungen sind darin unkenntlich gemacht; nur die Kennung der betroffenen Familie bleibt lesbar. Diese E-Mails gehen an ein Postfach bei Gmail (Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland); Daten können an Google LLC in den USA gehen (Angemessenheitsbeschluss EU-US Data Privacy Framework). Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO.
+**Fehlermeldungen.** Tritt im Betrieb ein Fehler auf, erhalten wir eine E-Mail mit einer gekürzten Zeile aus dem Server-Protokoll. IP-Adressen und Kennungen sind darin unkenntlich gemacht; nur die Kennung der betroffenen Familie bleibt lesbar. Diese E-Mails gehen an unser Postfach bei IONOS SE (Abschnitt 9) und werden nach dem Lesen gelöscht, spätestens nach 30 Tagen. Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO.
 
 Die Website lädt nichts von Dritten (Schriften liegen auf unserem Server), setzt keine Cookies und verwendet weder Analyse- noch Tracking-Werkzeuge. Wählen Sie die Sprache von Hand, merkt sich Ihr Browser diese Wahl lokal; sie wird nicht an uns übertragen.
 
@@ -95,7 +95,7 @@ Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO.
 - Sicherungskopien: spätestens 14 Tage nach Löschung
 - Server-Protokolle: 14 Tage
 - Anmeldeprotokolle: 30 Tage
-- E-Mail-Versandaufträge, Unzustellbarkeitsmeldungen: 30 Tage
+- E-Mail-Versandaufträge, Unzustellbarkeitsmeldungen, Fehlermeldungen: 30 Tage
 - Verzeichnis der Familien: ein Eintrag ohne Namen und E-Mail-Adresse bleibt (Kennung, Zeitzone, Datumsangaben)
 - Rechnungen bei Stripe: 8 Jahre ab Ende des Kalenderjahres
 
@@ -104,9 +104,9 @@ Admins können die Familie jederzeit selbst löschen. Vorher können sie einen E
 ## 9 Empfänger
 
 - **IONOS Cloud GmbH**, Greifswalder Str. 207, 10405 Berlin: Server, Speicher, Sicherungen und das KI-Modell, alles in Deutschland. Auftragsverarbeiter.
-- **IONOS SE**, Elgendorfer Str. 57, 56410 Montabaur: E-Mail-Versand. Auftragsverarbeiter.
+- **IONOS SE**, Elgendorfer Str. 57, 56410 Montabaur: E-Mail-Versand und unser Postfach. Auftragsverarbeiter.
 - **Stripe** (Abschnitt 6): Zahlungsabwicklung; Übermittlung in die USA.
-- **Google** (Abschnitte 2 und 3): Postfach für unsere Fehlermeldungen; Anmeldung mit Google, nur wenn Sie sie wählen; Übermittlung in die USA.
+- **Google** (Abschnitt 3): Anmeldung mit Google, nur wenn Sie sie wählen; Übermittlung in die USA.
 
 Weitere Übermittlungen in Länder außerhalb der EU gibt es nicht. Die Anbieter der Quellen sind keine Empfänger: Wir rufen dort im Auftrag Ihrer Familie ab, was sie freigegeben hat.
 
