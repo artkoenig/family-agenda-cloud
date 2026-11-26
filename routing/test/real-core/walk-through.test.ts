@@ -66,9 +66,13 @@ describe.skipIf(!real.url)("Two Families on the core", () => {
       [first, second].sort().map((familyId) => ({ family_id: familyId, status: "active" })),
     );
 
-    // The first has a founder, and with Stripe configured its Context names the Contract section (#267).
+    // The first has a founder, and with Stripe and central sign-in configured its Context names the
+    // Contract section (#267).
     await routing.directory("UPDATE family SET registered_by = 'u-founder' WHERE family_id = $1", [first]);
-    const router = await routing.startRouter({ ...withRealCore(), ...STRIPE_ENV }, undefined, standInStripe());
+    const client = await routing.run(["sign-in-client"]);
+    expect(client, client.stderr).toMatchObject({ exitCode: 0 });
+    const signIn = Object.fromEntries(client.stdout.trim().split("\n").map((line) => line.split(/=(.*)/s).slice(0, 2) as [string, string]));
+    const router = await routing.startRouter({ ...withRealCore(), OIDC_ISSUER_URL: routing.logto.issuer, ...signIn, ...STRIPE_ENV }, undefined, standInStripe());
     const health = await fetch(`${router.url}/api/health`);
     expect(await health.json()).toEqual({ status: "ok", version: expect.any(String) as unknown });
     for (const familyId of [first, second]) {
