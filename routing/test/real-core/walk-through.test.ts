@@ -1,6 +1,7 @@
 import { TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "../support/routing";
+import { standInStripe, STRIPE_ENV } from "../support/stand-in-stripe";
 
 /**
  * The walk-through against the core in supplied mode, not the stand-in: what the stand-in mirrors,
@@ -65,11 +66,13 @@ describe.skipIf(!real.url)("Two Families on the core", () => {
       [first, second].sort().map((familyId) => ({ family_id: familyId, status: "active" })),
     );
 
-    const router = await routing.startRouter(withRealCore());
+    // The first has a founder, and with Stripe configured its Context names the Contract section (#267).
+    await routing.directory("UPDATE family SET registered_by = 'u-founder' WHERE family_id = $1", [first]);
+    const router = await routing.startRouter({ ...withRealCore(), ...STRIPE_ENV }, undefined, standInStripe());
     const health = await fetch(`${router.url}/api/health`);
     expect(await health.json()).toEqual({ status: "ok", version: expect.any(String) as unknown });
     for (const familyId of [first, second]) {
-      // The core opens each Family with its own Context, its Organization included: no setup page.
+      // The core opens each Family with its own Context, its Organization and sections included: no setup page.
       const setup = await fetch(`${router.url}/${familyId}/setup`, { redirect: "manual" });
       expect(setup.status, await setup.text()).toBe(404);
     }
