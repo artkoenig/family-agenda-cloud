@@ -1,11 +1,11 @@
 /**
  * The Contract section of the Admin area (#267): HTML for inside the core's main part, of the
  * classes a section may use, and never a whole page. The founder reads the Tariff, its term and the
- * Trial, with links to the pages that order, cancel and withdraw; everybody else, one line. Dates
- * are the Family's time zone's. No I/O.
+ * Trial, with links to the pages that order, cancel and withdraw; a browser without a session, the
+ * way to sign in. Dates are the Family's time zone's. No I/O.
  */
 import { escape } from "./contract-pages";
-import { CONTRACT_LINKS, CONTRACT_PATHS, dateAfterIn, dateIn, daysBetween, DELETED_AFTER_DAYS, holderLine, type Billing, type Language } from "./contract-wording";
+import { CONTRACT_LINKS, CONTRACT_PATHS, dateAfterIn, dateIn, daysBetween, DELETED_AFTER_DAYS, type Billing, type Language } from "./contract-wording";
 import type { LockReason } from "./directory";
 import { CONTRACT_SECTION_PATH, ORDER_PATHS, signInPathFor } from "./routing-pages";
 import { isWithinWithdrawalPeriod } from "./withdrawal-period";
@@ -42,7 +42,6 @@ type Words = {
   daysLeft: (days: number) => string;
   order: string;
   signIn: { line: string; link: string };
-  noAccess: string;
 };
 
 const WORDS: Record<Language, Words> = {
@@ -68,7 +67,6 @@ const WORDS: Record<Language, Words> = {
     daysLeft: (days) => (days === 0 ? "heute" : `noch ${days} ${days === 1 ? "Tag" : "Tage"}`),
     order: "Abo bestellen",
     signIn: { line: "Bitte melden Sie sich an, um den Vertrag zu sehen.", link: "Anmelden" },
-    noAccess: "Nur Admins der Familie können diese Seite sehen.",
   },
   en: {
     title: "Contract",
@@ -92,7 +90,6 @@ const WORDS: Record<Language, Words> = {
     daysLeft: (days) => (days === 0 ? "today" : `${days} ${days === 1 ? "day" : "days"} left`),
     order: "Order subscription",
     signIn: { line: "Please sign in to see the contract.", link: "Sign in" },
-    noAccess: "Only the family's admins can see this page.",
   },
 };
 
@@ -111,16 +108,6 @@ export function contractSectionHtml(language: Language, contract: SectionContrac
 export function signInSectionHtml(language: Language): string {
   const { line, link } = WORDS[language].signIn;
   return fragment(language, `<p>${escape(line)}</p>${actions([button(signInPathFor(CONTRACT_SECTION_PATH), link, "primary")])}`);
-}
-
-/** What an Admin who is not the founder reads: who holds the contract. */
-export function holderSectionHtml(language: Language, holderName: string): string {
-  return fragment(language, `<p>${escape(holderLine(holderName, language))}</p>`);
-}
-
-/** What somebody who is no Admin of the Family reads. */
-export function noAccessSectionHtml(language: Language): string {
-  return fragment(language, `<p>${escape(WORDS[language].noAccess)}</p>`);
 }
 
 function rowsOf(reading: Reading): Row[] {

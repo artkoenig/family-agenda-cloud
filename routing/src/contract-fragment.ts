@@ -2,13 +2,13 @@
  * The fragment of the Contract section (#267), which the browser loads into the Family's Admin area
  * from the Router, with the session of central sign-in.
  *
- * - Never a redirect and never a whole page, but 200 with a line where there is no card: the core
- *   shows nothing else. Without a session that line links the sign-in, which comes back to the section.
- * - Only the founder reads the card, whom alone the core lists the section for. Another Admin reads
- *   who holds the contract; who is no Admin, or of a Family that does not run, that the page is for Admins.
+ * - Never a redirect and never a whole page. Without a session, 200 and a line that links the
+ *   sign-in, which comes back to the section: the founder's session may have run out.
+ * - Only the founder who is an Admin of a Family that runs reads the card: the core lists the
+ *   section for the founder alone. Everybody else gets 403.
  * - Everything is read from the Directory, and names from Logto: Stripe is not asked.
  */
-import { contractSectionHtml, holderSectionHtml, noAccessSectionHtml, signInSectionHtml } from "./contract-section";
+import { contractSectionHtml, signInSectionHtml } from "./contract-section";
 import { html, isAdmin, nameOf, runs, type ContractAnswer, type ContractRequest, type ContractSetup } from "./contract-visit";
 import { cookiesOf } from "./cookies";
 import type { Language } from "./contract-wording";
@@ -18,6 +18,8 @@ import { sessionOf } from "./routing-session";
 
 const METHODS = ["GET", "HEAD"];
 
+const REFUSED: ContractAnswer = { status: 403, headers: { "cache-control": "no-store" }, body: "" };
+
 /** Answers a request for `/contract`. */
 export async function answerContractSection({ method, language, cookie }: ContractRequest, setup: ContractSetup): Promise<ContractAnswer> {
   if (!METHODS.includes(method)) return { status: 405, headers: { "cache-control": "no-store", allow: METHODS.join(", ") }, body: "" };
@@ -25,17 +27,8 @@ export async function answerContractSection({ method, language, cookie }: Contra
   const session = sessionOf(setup.config.operatorKey, cookiesOf(cookie), now);
   if (!session) return html(200, signInSectionHtml(language));
   const entry = await setup.directory.findByOrganization(session.organizationId);
-  if (!entry || !runs(entry) || !(await isAdmin(setup, session))) return html(200, noAccessSectionHtml(language));
-  if (entry.registeredBy !== session.userId) return html(200, await holderOf(setup, language, entry));
+  if (!entry || !runs(entry) || entry.registeredBy !== session.userId || !(await isAdmin(setup, session))) return REFUSED;
   return html(200, await cardOf(setup, language, entry, session.userId, now));
-}
-
-/** What another Admin reads: the holder of the Subscription, or before there is one the founder, who alone may order. */
-async function holderOf(setup: ContractSetup, language: Language, { familyId, registeredBy }: DirectoryEntry): Promise<string> {
-  const subscription = await setup.directory.lastSubscriptionOf(familyId);
-  const holder = subscription?.holder ?? registeredBy;
-  const name = holder === null ? null : await personName(setup, holder);
-  return name === null ? noAccessSectionHtml(language) : holderSectionHtml(language, name);
 }
 
 async function cardOf(setup: ContractSetup, language: Language, entry: DirectoryEntry, founder: string, now: Date): Promise<string> {

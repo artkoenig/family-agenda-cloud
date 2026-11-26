@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contractSectionHtml, holderSectionHtml, noAccessSectionHtml, signInSectionHtml, type SectionContract } from "../../src/contract-section";
+import { contractSectionHtml, signInSectionHtml, type SectionContract } from "../../src/contract-section";
 import type { Language } from "../../src/sign-in-pages";
 
 const now = new Date("2026-11-20T10:00:00Z");
@@ -149,23 +149,11 @@ describe("the Contract section without a card", () => {
     expect(signInSectionHtml("en")).toContain(">Sign in</a>");
   });
 
-  it("names the holder, escaped", () => {
-    expect(holderSectionHtml("de", "<b>E</b>")).toContain("Vertragsinhaber: &lt;b&gt;E&lt;/b&gt;");
-    expect(holderSectionHtml("en", "Erika")).toContain("Contract holder: Erika");
-  });
-
-  it("tells who is no Admin so", () => {
-    expect(noAccessSectionHtml("de")).toContain("Nur Admins der Familie können diese Seite sehen.");
-    expect(noAccessSectionHtml("en")).toContain("Only the family&#39;s admins can see this page.");
-  });
-
   it("is a fragment of the core's own classes", () => {
     const fragments = (["de", "en"] as const).flatMap((language) => [
       contractSectionHtml(language, orderedInTrial),
       contractSectionHtml(language, inTrial),
       signInSectionHtml(language),
-      holderSectionHtml(language, "E"),
-      noAccessSectionHtml(language),
     ]);
     for (const fragment of fragments) {
       expect(fragment).toMatch(/^<div class="fam-sheet">/);

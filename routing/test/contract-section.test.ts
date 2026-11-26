@@ -115,13 +115,9 @@ describe("/contract", () => {
     expect(page.body).not.toContain("<html");
   });
 
-  it("shows neither the Trial nor the way to order to another Admin, but the founder's name", async () => {
+  it("refuses another Admin, for whom the core lists no section", async () => {
     await inTrial();
-    const page = await (await signedIn("u-2")).request("/contract");
-    expect(page.status).toBe(200);
-    expect(page.body).toContain("Vertragsinhaber: Anna Muster");
-    expect(page.body).not.toContain("<dl");
-    expect(page.body).not.toContain("href");
+    expect(await (await signedIn("u-2")).request("/contract")).toMatchObject({ status: 403, body: "", cacheControl: "no-store" });
   });
 
   it("shows the founder the running Subscription, without asking Stripe", async () => {
@@ -135,17 +131,10 @@ describe("/contract", () => {
     expect((await (await signedIn()).request("/contract")).body).not.toContain('href="/withdraw"');
   });
 
-  it("names another holder, escaped, to the founder and to the other Admins", async () => {
+  it("names another holder to the founder, escaped", async () => {
     await subscribed(MONTHLY);
     await routing.directory("UPDATE subscription SET holder = 'u-2'");
     expect((await (await signedIn()).request("/contract")).body).toContain("<dt>Bestellt von</dt><dd>&lt;b&gt;Berta&lt;/b&gt;</dd>");
-    expect((await (await signedIn("u-2")).request("/en/contract")).body).toContain("Contract holder: &lt;b&gt;Berta&lt;/b&gt;");
-  });
-
-  it("keeps naming the holder of a Subscription that ended", async () => {
-    await subscribed(MONTHLY);
-    await routing.directory("UPDATE subscription SET holder = 'u-2', status = 'canceled'");
-    expect((await (await signedIn("u-2")).request("/contract")).body).toContain("&lt;b&gt;Berta&lt;/b&gt;");
   });
 
   it("shows a Locked Family since when, why, when it is deleted, and the way to order", async () => {
@@ -161,16 +150,12 @@ describe("/contract", () => {
     expect((await (await signedIn()).request("/contract")).body).toContain("01.12.2026");
   });
 
-  it("shows nothing to one who is no Admin any more, nor of a Family that does not run", async () => {
+  it("refuses the founder who is no Admin any more, and a Family that does not run", async () => {
     await inTrial();
     const own = await signedIn();
     await routing.directory("UPDATE family SET status = 'suspended' WHERE family_id = $1", [familyId]);
     const refused = async () => {
-      const page = await own.request("/contract");
-      expect(page.status).toBe(200);
-      expect(page.body).toContain("Nur Admins");
-      expect(page.body).not.toContain("Anna Muster");
-      expect(page.body).not.toContain("<dl");
+      expect(await own.request("/contract")).toMatchObject({ status: 403, body: "" });
     };
     await refused();
     await routing.directory("UPDATE family SET status = 'active' WHERE family_id = $1", [familyId]);
@@ -178,13 +163,12 @@ describe("/contract", () => {
     await refused();
   });
 
-  it("stands a holder who is gone from Logto, and a Family without a founder", async () => {
+  it("stands a holder who is gone from Logto, and refuses a Family without a founder", async () => {
     await subscribed(MONTHLY);
     await routing.directory("UPDATE subscription SET holder = 'u-gone'");
     expect((await (await signedIn()).request("/contract")).body).not.toContain("Bestellt von");
-    expect(await (await signedIn("u-2")).request("/contract")).toMatchObject({ status: 200 });
     await routing.directory("DELETE FROM subscription");
     await routing.directory("UPDATE family SET registered_by = NULL");
-    expect((await (await signedIn()).request("/contract")).body).toContain("Nur Admins");
+    expect(await (await signedIn()).request("/contract")).toMatchObject({ status: 403 });
   });
 });
