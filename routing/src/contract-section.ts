@@ -175,11 +175,10 @@ function linksOf({ language, words, contract }: Reading): string[] {
   if (!subscription) return lock || runningTrialEnd(contract) ? [button(ORDER_PATHS.order[language], words.order, "primary")] : [];
   const { orderedAt } = subscription;
   const pages: ("cancel" | "withdraw")[] = orderedAt && isWithinWithdrawalPeriod(orderedAt, now) ? ["cancel", "withdraw"] : ["cancel"];
-  return pages.map((page) => button(CONTRACT_PATHS[page][language], CONTRACT_LINKS[language][page], "secondary", ' lang="de"'));
+  return pages.map((page) => button(CONTRACT_PATHS[page][language], CONTRACT_LINKS[language][page], "secondary"));
 }
 
-const button = (href: string, label: string, kind: "primary" | "secondary", attributes = ""): string =>
-  `<a class="fam-button fam-button--${kind}" href="${escape(href)}"${attributes}>${escape(label)}</a>`;
+const button = (href: string, label: string, kind: "primary" | "secondary"): string => `<a class="fam-button fam-button--${kind}" href="${escape(href)}">${escape(label)}</a>`;
 
 const actions = (links: string[]): string => (links.length === 0 ? "" : `<div class="fam-group__actions">${links.join("")}</div>`);
 

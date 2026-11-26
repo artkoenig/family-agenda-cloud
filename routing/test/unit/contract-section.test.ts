@@ -63,12 +63,10 @@ describe("the Contract section", () => {
     expect(withdrawable("2026-11-05T10:00:00Z")).toEqual(["/cancel"]);
   });
 
-  it("keeps the German labels of cancelling and withdrawing in both languages", () => {
-    for (const language of ["de", "en"] as const) {
-      const html = contractSectionHtml(language, orderedInTrial);
-      expect(html).toMatch(/<a [^>]*lang="de"[^>]*>Verträge hier kündigen<\/a>/);
-      expect(html).toMatch(/<a [^>]*lang="de"[^>]*>Vertrag widerrufen<\/a>/);
-    }
+  it("labels cancelling and withdrawing in the page's language", () => {
+    expect(contractSectionHtml("de", orderedInTrial)).toMatch(/>Verträge hier kündigen<\/a>[\s\S]*>Vertrag widerrufen<\/a>/);
+    expect(contractSectionHtml("en", orderedInTrial)).toMatch(/>Cancel contracts here<\/a>[\s\S]*>Withdraw from contract<\/a>/);
+    expect(contractSectionHtml("en", orderedInTrial)).not.toContain('lang="de"');
   });
 
   it("shows when a cancelled Subscription ends instead of its renewal", () => {

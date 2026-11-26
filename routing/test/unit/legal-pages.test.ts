@@ -23,11 +23,11 @@ describe("footerHtml", () => {
   </footer>`);
   });
 
-  it("links the English pages, keeping the buttons' German labels with an English gloss", () => {
+  it("links the English pages and labels the contract buttons in English", () => {
     expect(footerHtml("en", "/impressum")).toBe(`  <footer class="lp-footer">
     <nav class="lp-footer__contracts" aria-label="Contracts">
-      <button class="fam-button lp-footer__button" type="button" disabled><span lang="de">Verträge hier kündigen</span> <span class="lp-footer__gloss">(cancel contracts here)</span></button>
-      <button class="fam-button lp-footer__button" type="button" disabled><span lang="de">Vertrag widerrufen</span> <span class="lp-footer__gloss">(withdraw from contract)</span></button>
+      <button class="fam-button lp-footer__button" type="button" disabled>Cancel contracts here</button>
+      <button class="fam-button lp-footer__button" type="button" disabled>Withdraw from contract</button>
     </nav>
     <span>Made with love (and too little sleep) by parents.</span>
     <nav class="lp-footer__links" aria-label="Legal">

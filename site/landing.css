@@ -222,7 +222,6 @@ html:not([data-scripted]) .lp-stage { width: 360px; }
 }
 /* Disabled until the cancel and withdraw pages exist (launch checklist, 13b). */
 .lp .lp-footer__button:not([disabled]):hover { background: var(--hearth); color: var(--on-hearth); }
-.lp-footer__gloss { font-weight: 500; }
 
 /* Legal pages (site/legal/, built by routing/src/legal-pages.ts) --------- */
 .lp-legal { max-width: calc(var(--content-width) + 2 * var(--space-5)); margin: 0 auto; padding: var(--space-7) var(--space-5); font-size: 17px; line-height: 27px; overflow-wrap: break-word; }

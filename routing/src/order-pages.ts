@@ -3,9 +3,9 @@
  * Stripe's Checkout; and `/subscription`, on the way to Stripe's Portal (#227); the English ones under `/en` (`ORDER_PATHS`). In the landing page's design
  * system, like the contract pages. Every value is escaped. No I/O.
  */
-import { escape, page, paragraphs, submit } from "./contract-pages";
+import { escape, page, paragraphs, submit, support, toFamily } from "./contract-pages";
 import { amountOf, dateOf, holderLine, ordererLine, PRICE_CENTS, type Billing, type Language } from "./contract-wording";
-import { SIGN_OUT_PATH, SUPPORT_LINK } from "./sign-in-pages";
+import { SIGN_OUT_PATH } from "./sign-in-pages";
 
 /** The names of the fields `/order` posts. */
 export const BILLING_FIELD = "billing";
@@ -30,9 +30,7 @@ type Words = {
   noFounder: string;
   subscription: { title: string; none: string };
   noAccess: { title: string; line: string };
-  support: string;
   done: { title: string; mail: string };
-  toFamily: string;
   signOut: string;
 };
 
@@ -56,9 +54,7 @@ const WORDS: Record<Language, Words> = {
     noFounder: "Für diese Familie ist nicht hinterlegt, wer bestellen kann.",
     subscription: { title: "Abonnement", none: "Für diese Familie gibt es kein Abonnement." },
     noAccess: { title: "Kein Zugriff", line: "Nur Admins der Familie können diese Seite sehen." },
-    support: "Fragen? Schreiben Sie uns:",
     done: { title: "Danke für Ihre Bestellung.", mail: "Die Vertragsbestätigung kommt per E-Mail." },
-    toFamily: "Zur Familie",
     signOut: "Abmelden",
   },
   en: {
@@ -77,9 +73,7 @@ const WORDS: Record<Language, Words> = {
     noFounder: "It is not recorded who can order for this family.",
     subscription: { title: "Subscription", none: "This family has no subscription." },
     noAccess: { title: "No access", line: "Only the family's admins can see this page." },
-    support: "Questions? Write to us:",
     done: { title: "Thank you for your order.", mail: "The contract confirmation is on its way by email." },
-    toFamily: "To the family",
     signOut: "Sign out",
   },
 };
@@ -101,7 +95,7 @@ ${choice("monthly")}
 ${choice("yearly")}
 </fieldset>
 ${askName ? name : ""}${paragraphs([words.firstPayment(dateOf(firstPaymentAt, language))])}
-${submit({ label: words.button, note: null })}
+${submit(words.button)}
 </form>`,
     STYLE,
   );
@@ -153,11 +147,8 @@ export function noSubscriptionPage(language: Language, familyId: string): string
   return page(language, title, `${paragraphs([none])}\n${toFamily(language, familyId)}`);
 }
 
-const support = (language: Language): string => `<p>${escape(WORDS[language].support)} ${SUPPORT_LINK}</p>`;
-
 const link = (href: string, label: string): string => `<p class="action"><a class="fam-button fam-button--secondary" href="${escape(href)}">${escape(label)}</a></p>`;
 
-const toFamily = (language: Language, familyId: string): string => link(`/${familyId}/`, WORDS[language].toFamily);
 
 const STYLE = `
 .order,.choices{display:grid;gap:8px}

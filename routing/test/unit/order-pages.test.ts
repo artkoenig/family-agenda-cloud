@@ -54,12 +54,12 @@ describe("the pages without an order", () => {
     expect(html).toContain('href="/f-1/"');
     expect(html).not.toContain("<button");
     expect(textOf(orderedPage("de", "f-1", null))).toBe("Tarif bestellen Tarif bereits bestellt Zur Familie");
-    expect(textOf(orderedPage("en", "f-1", null))).toBe("Order the tariff Tariff already ordered To the family");
+    expect(textOf(orderedPage("en", "f-1", null))).toBe("Order the tariff Tariff already ordered Back to the family");
   });
 
   it("names who alone may order", () => {
     expect(textOf(onlyFounderOrdersPage("de", "f-1", "Anna"))).toBe("Tarif bestellen Bestellen kann nur: Anna Zur Familie");
-    expect(textOf(onlyFounderOrdersPage("en", "f-1", "Anna"))).toBe("Order the tariff Only Anna can order To the family");
+    expect(textOf(onlyFounderOrdersPage("en", "f-1", "Anna"))).toBe("Order the tariff Only Anna can order Back to the family");
   });
 
   it.each([noFounderPage("de", "f-1"), notOfferedPage("de", "f-1"), noAccessPage("de"), noFounderPage("en", "f-1"), notOfferedPage("en", "f-1"), noAccessPage("en")])(

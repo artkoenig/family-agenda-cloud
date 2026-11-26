@@ -123,7 +123,8 @@ export function amountOf(cents: number, language: Language): string {
   return language === "de" ? `${amount} €` : `€${amount}`;
 }
 
-const BILLING: Record<Language, Record<Billing, string>> = {
+/** How the pages and mails name a billing. */
+export const BILLING: Record<Language, Record<Billing, string>> = {
   de: { monthly: "monatlich", yearly: "jährlich" },
   en: { monthly: "monthly", yearly: "yearly" },
 };
@@ -138,10 +139,13 @@ export function orderedContractOf(contract: Contract, language: Language): strin
   return `${contractOf(contract, language)}, ${language === "de" ? "bestellt am" : "ordered on"} ${dateOf(contract.orderedOn, language)}`;
 }
 
-/** The links of the Admin area and the Locked page to the contract pages; their labels stay German but for deleting. */
+/**
+ * The links of the Admin area and the Locked page to the contract pages, in the page's language:
+ * § 312k and § 356a BGB name the German labels "or an equally unambiguous wording".
+ */
 export const CONTRACT_LINKS: Record<Language, Record<keyof typeof CONTRACT_PATHS, string>> = {
   de: { cancel: "Verträge hier kündigen", withdraw: "Vertrag widerrufen", delete: "Familie löschen" },
-  en: { cancel: "Verträge hier kündigen", withdraw: "Vertrag widerrufen", delete: "Delete family" },
+  en: { cancel: "Cancel contracts here", withdraw: "Withdraw from contract", delete: "Delete family" },
 };
 
 /** What other Admins see instead of the links to cancel and withdraw. */
@@ -159,15 +163,11 @@ export function ordererLine(ordererName: string, language: Language): string {
   return language === "de" ? `Bestellen kann nur: ${ordererName}` : `Only ${ordererName} can order`;
 }
 
-/**
- * What the holder sees after a Cancellation, shown as `<status> · <undo> <undoNote>`: the link to
- * take it back keeps its German label, which English explains in `undoNote`.
- */
-export type CancelledLine = { status: string; undo: string; undoNote: string | null };
+/** What the holder sees after a Cancellation: its status, and the label of the button that takes it back. */
+export type CancelledLine = { status: string; undo: string };
 
 export function cancelledLine(endsOn: Date, language: Language): CancelledLine {
-  const undo = "Kündigung zurücknehmen";
   return language === "de"
-    ? { status: `Gekündigt zum ${dateOf(endsOn, language)}`, undo, undoNote: null }
-    : { status: `Cancelled with effect from ${dateOf(endsOn, language)}`, undo, undoNote: "(undo cancellation)" };
+    ? { status: `Gekündigt zum ${dateOf(endsOn, language)}`, undo: "Kündigung zurücknehmen" }
+    : { status: `Cancelled with effect from ${dateOf(endsOn, language)}`, undo: "Undo cancellation" };
 }

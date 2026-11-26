@@ -39,13 +39,13 @@ export const LEGAL_PAGES: readonly LegalPage[] = [
 ];
 
 /**
- * The footer's contract buttons: German labels on English pages too, with a gloss. Disabled until the
- * app's cancel and withdraw pages exist (#229, #230; launch checklist, 13b).
+ * The footer's contract buttons, in the page's language, as the app labels its links (`CONTRACT_LINKS`).
+ * Disabled until the app's cancel and withdraw pages exist (#229, #230; launch checklist, 13b).
  */
-const CONTRACT_LINKS = [
-  { label: "Verträge hier kündigen", gloss: "cancel contracts here" },
-  { label: "Vertrag widerrufen", gloss: "withdraw from contract" },
-] as const;
+const CONTRACT_BUTTONS: Record<Language, readonly string[]> = {
+  de: ["Verträge hier kündigen", "Vertrag widerrufen"],
+  en: ["Cancel contracts here", "Withdraw from contract"],
+};
 
 /** What a page says around its content, per language. */
 const WORDS = {
@@ -53,8 +53,7 @@ const WORDS = {
   en: { other: "de", otherName: "Deutsch", site: "Page", legal: "Legal", contracts: "Contracts", home: "/en/", tagline: "Made with love (and too little sleep) by parents." },
 } as const;
 
-function contractButton(link: (typeof CONTRACT_LINKS)[number], language: Language): string {
-  const label = language === "de" ? link.label : `<span lang="de">${link.label}</span> <span class="lp-footer__gloss">(${link.gloss})</span>`;
+function contractButton(label: string): string {
   return `      <button class="fam-button lp-footer__button" type="button" disabled>${label}</button>`;
 }
 
@@ -64,7 +63,7 @@ export function footerHtml(language: Language, otherLanguageHref: string): strin
   return [
     `  <footer class="lp-footer">`,
     `    <nav class="lp-footer__contracts" aria-label="${words.contracts}">`,
-    ...CONTRACT_LINKS.map((link) => contractButton(link, language)),
+    ...CONTRACT_BUTTONS[language].map(contractButton),
     `    </nav>`,
     `    <span>${words.tagline}</span>`,
     `    <nav class="lp-footer__links" aria-label="${words.legal}">`,

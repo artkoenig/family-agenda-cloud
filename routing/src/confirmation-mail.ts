@@ -84,8 +84,8 @@ const WORDS: Record<Language, Words> = {
       `Withdrawal period: until and including ${withdrawUntil}`,
     ],
     links: [
-      `Cancel: ${APP_URL}${CONTRACT_PATHS.cancel.en} (button "Verträge hier kündigen")`,
-      `Withdraw: ${APP_URL}${CONTRACT_PATHS.withdraw.en} (button "Vertrag widerrufen")`,
+      `Cancel: ${APP_URL}${CONTRACT_PATHS.cancel.en} (button "Cancel contracts here")`,
+      `Withdraw: ${APP_URL}${CONTRACT_PATHS.withdraw.en} (button "Withdraw from contract")`,
       'Payment method and invoices: in the Admin area under "Subscription"',
     ],
     below:

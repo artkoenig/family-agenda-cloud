@@ -65,39 +65,43 @@ describe("the /cancel page", () => {
     expect(html).toContain("<title>Kündigung · Family Agenda</title>");
     expect(linesOf(html)).toEqual([
       "Kündigung",
-      "Art der Kündigung: ordentliche Kündigung",
-      "Name: Erika Muster",
-      "E-Mail für die Bestätigung: erika@example.org",
-      "Vertrag: Family Agenda, monatlich, Familie Muster, bestellt am 05.03.2026",
-      "Kündigen zum: [05.04.2026][05.05.2026][05.06.2026]",
+      "Art der Kündigung ordentliche Kündigung",
+      "Name Erika Muster",
+      "E-Mail für die Bestätigung erika@example.org",
+      "Vertrag Family Agenda, monatlich",
+      "Familie Muster",
+      "Bestellt am 05.03.2026",
+      "Kündigen zum [05.04.2026][05.05.2026][05.06.2026]",
       "jetzt kündigen",
     ]);
     expect(html).toContain(
       `<select id="${END_DATE_FIELD}" name="end"><option value="2026-04-05T08:05:00.000Z" selected>05.04.2026</option><option value="2026-05-05T08:05:00.000Z">05.05.2026</option>`,
     );
-    expect(html).toContain('<label for="end">Kündigen zum:</label>');
+    expect(html).toContain('<dt><label for="end">Kündigen zum</label></dt>');
     expect(html).toContain(`${token}<dl class="fields">`);
     expect(html).toContain('<button class="fam-button fam-button--primary" type="submit">jetzt kündigen</button></p>');
   });
 
-  it("keeps the German button on the English page and says what it means", () => {
+  it("names its fields and its button in English on the English page", () => {
     const html = cancelPage("en", values);
     expect(html).toContain('<html lang="en">');
     expect(linesOf(html)).toEqual([
       "Cancellation",
-      "Type of cancellation: ordinary cancellation",
-      "Name: Erika Muster",
-      "Email for the confirmation: erika@example.org",
-      "Contract: Family Agenda, monthly, family Muster, ordered on 5 March 2026",
-      "Cancel with effect from: [5 April 2026][5 May 2026][5 June 2026]",
-      'jetzt kündigen (German for "cancel now")',
+      "Type of cancellation ordinary cancellation",
+      "Name Erika Muster",
+      "Email for the confirmation erika@example.org",
+      "Contract Family Agenda, monthly",
+      "Family Muster",
+      "Ordered on 5 March 2026",
+      "Cancel with effect from [5 April 2026][5 May 2026][5 June 2026]",
+      "Cancel now",
     ]);
   });
 
   it("holds nothing beyond its fields, the button and the legal footer: no link, offer or explanation", () => {
     for (const language of ["de", "en"] as const) {
       const html = cancelPage(language, values);
-      expect(tagsOf(html)).toEqual(["h1", "form", "input", "dl", ...Array<string[]>(4).fill(["div", "dt", "dd"]).flat(), "div", "dt", "label", "dd", "select", "option", "option", "option", "p", "button", ...(language === "en" ? ["span"] : [])]);
+      expect(tagsOf(html)).toEqual(["h1", "form", "input", "dl", ...Array<string[]>(6).fill(["div", "dt", "dd"]).flat(), "div", "dt", "label", "dd", "select", "option", "option", "option", "p", "button"]);
       expect(between(html, "<body", "</body>").match(/<a /g)).toHaveLength(3);
       expect(html.match(/<button/g)).toHaveLength(1);
       expect(html).not.toContain("<script");
@@ -123,30 +127,38 @@ describe("the /cancel receipt", () => {
   const values = { holder: erika, contract: monthly, receivedAt: new Date("2026-03-10T17:42:00Z"), endsOn: new Date("2026-04-05T08:05:00Z") };
 
   it("acknowledges the Cancellation, to print or save as PDF", () => {
-    expect(linesOf(cancelReceiptPage("de", values))).toEqual([
+    expect(linesOf(cancelReceiptPage("de", "f-1", values))).toEqual([
       "Ihre Kündigung ist bei uns eingegangen.",
-      "Eingegangen am 10.03.2026 um 18:42 Uhr.",
-      "Inhalt: Ordentliche Kündigung des Vertrags Family Agenda, monatlich, Familie Muster, durch Erika Muster, zum 05.04.2026.",
-      "Der Vertrag endet am 05.04.2026.",
+      "Eingegangen am 10.03.2026, 18:42 Uhr",
+      "Art der Kündigung ordentliche Kündigung",
+      "Vertrag Family Agenda, monatlich",
+      "Familie Muster",
+      "Bestellt am 05.03.2026",
+      "Erklärt von Erika Muster",
+      "Vertragsende 05.04.2026",
       "Eine Bestätigung geht an erika@example.org.",
-      "Drucken / als PDF speichern",
+      "Drucken / als PDF speichern Zur Familie",
     ]);
-    expect(linesOf(cancelReceiptPage("en", values))).toEqual([
+    expect(linesOf(cancelReceiptPage("en", "f-1", values))).toEqual([
       "We have received your cancellation.",
-      "Received on 10 March 2026 at 18:42 (Berlin time).",
-      "Content: ordinary cancellation of the contract Family Agenda, monthly, family Muster, by Erika Muster, with effect from 5 April 2026.",
-      "The contract ends on 5 April 2026.",
+      "Received on 10 March 2026, 18:42 (Berlin time)",
+      "Type of cancellation ordinary cancellation",
+      "Contract Family Agenda, monthly",
+      "Family Muster",
+      "Ordered on 5 March 2026",
+      "Declared by Erika Muster",
+      "Contract ends on 5 April 2026",
       "A confirmation is on its way to erika@example.org.",
-      "Print / save as PDF",
+      "Print / save as PDF Back to the family",
     ]);
-    expect(cancelReceiptPage("de", values)).toContain(
-      '<p class="action no-print"><button class="fam-button fam-button--secondary" type="button" data-print>Drucken / als PDF speichern</button></p>',
+    expect(cancelReceiptPage("de", "f-1", values)).toContain(
+      '<p class="action actions no-print"><button class="fam-button fam-button--secondary" type="button" data-print>Drucken / als PDF speichern</button> <a class="fam-button fam-button--secondary" href="/f-1/">Zur Familie</a></p>',
     );
-    expect(cancelReceiptPage("de", values)).toContain(`</style>\n${script}\n</head>`);
-    expect(cancelReceiptPage("en", values)).toContain("<title>We have received your cancellation. · Family Agenda</title>");
+    expect(cancelReceiptPage("de", "f-1", values)).toContain(`</style>\n${script}\n</head>`);
+    expect(cancelReceiptPage("en", "f-1", values)).toContain("<title>We have received your cancellation. · Family Agenda</title>");
     // On paper, without the button and the footer.
-    expect(cancelReceiptPage("de", values)).toContain("@media print{.no-print{display:none}");
-    expect(cancelReceiptPage("de", values)).toContain("@media print{.legal{display:none}}");
+    expect(cancelReceiptPage("de", "f-1", values)).toContain("@media print{.no-print{display:none}");
+    expect(cancelReceiptPage("de", "f-1", values)).toContain("@media print{.legal{display:none}}");
   });
 });
 
@@ -154,24 +166,30 @@ describe("the /withdraw page", () => {
   const values = { holder: erika, contract: { ...monthly, billing: "yearly" } as const, csrf };
 
   it("shows the holder, the contract and „Widerruf bestätigen“", () => {
-    expect(linesOf(withdrawPage("de", values))).toEqual([
+    expect(linesOf(withdrawPage("de", "f-1", values))).toEqual([
       "Vertrag widerrufen",
-      "Name: Erika Muster",
-      "E-Mail für die Eingangsbestätigung: erika@example.org",
-      "Vertrag: Family Agenda, jährlich, Familie Muster, bestellt am 05.03.2026",
+      "Name Erika Muster",
+      "E-Mail für die Eingangsbestätigung erika@example.org",
+      "Vertrag Family Agenda, jährlich",
+      "Familie Muster",
+      "Bestellt am 05.03.2026",
       "Widerruf bestätigen",
+      "Zur Familie",
     ]);
-    expect(linesOf(withdrawPage("en", values))).toEqual([
-      "Withdraw from the contract",
-      "Name: Erika Muster",
-      "Email for the acknowledgement: erika@example.org",
-      "Contract: Family Agenda, yearly, family Muster, ordered on 5 March 2026",
-      'Widerruf bestätigen (German for "confirm withdrawal")',
+    expect(linesOf(withdrawPage("en", "f-1", values))).toEqual([
+      "Withdraw from contract",
+      "Name Erika Muster",
+      "Email for the acknowledgement erika@example.org",
+      "Contract Family Agenda, yearly",
+      "Family Muster",
+      "Ordered on 5 March 2026",
+      "Confirm withdrawal",
+      "Back to the family",
     ]);
-    expect(withdrawPage("de", values)).toContain(`${token}<dl class="fields">`);
-    expect(withdrawPage("de", values)).not.toContain("<script");
-    expect(withdrawPage("de", values)).toContain('<button class="fam-button fam-button--primary" type="submit">Widerruf bestätigen</button></p>');
-    expect(withdrawPage("en", values)).toContain('<span class="note">(German for &quot;confirm withdrawal&quot;)</span>');
+    expect(withdrawPage("de", "f-1", values)).toContain(`${token}<dl class="fields">`);
+    expect(withdrawPage("de", "f-1", values)).not.toContain("<script");
+    expect(withdrawPage("de", "f-1", values)).toContain('<button class="fam-button fam-button--primary" type="submit">Widerruf bestätigen</button></p>');
+    expect(withdrawPage("de", "f-1", values)).toContain('</form>\n<p class="back"><a href="/f-1/">Zur Familie</a></p>');
   });
 });
 
@@ -179,19 +197,27 @@ describe("the /withdraw receipt", () => {
   const values = { holder: erika, contract: monthly, receivedAt: new Date("2026-03-10T17:42:00Z") };
 
   it("acknowledges the Withdrawal, to print or save as PDF", () => {
-    expect(linesOf(withdrawReceiptPage("de", values))).toEqual([
+    expect(linesOf(withdrawReceiptPage("de", "f-1", values))).toEqual([
       "Ihr Widerruf ist bei uns eingegangen.",
-      "Eingegangen am 10.03.2026 um 18:42 Uhr.",
-      "Inhalt: Widerruf des Vertrags Family Agenda, monatlich, Familie Muster, bestellt am 05.03.2026, durch Erika Muster.",
+      "Eingegangen am 10.03.2026, 18:42 Uhr",
+      "Erklärung Widerruf des Vertrags",
+      "Vertrag Family Agenda, monatlich",
+      "Familie Muster",
+      "Bestellt am 05.03.2026",
+      "Erklärt von Erika Muster",
       "Eine Eingangsbestätigung geht an erika@example.org.",
-      "Drucken / als PDF speichern",
+      "Drucken / als PDF speichern Zur Familie",
     ]);
-    expect(linesOf(withdrawReceiptPage("en", values))).toEqual([
+    expect(linesOf(withdrawReceiptPage("en", "f-1", values))).toEqual([
       "We have received your withdrawal.",
-      "Received on 10 March 2026 at 18:42 (Berlin time).",
-      "Content: withdrawal from the contract Family Agenda, monthly, family Muster, ordered on 5 March 2026, by Erika Muster.",
+      "Received on 10 March 2026, 18:42 (Berlin time)",
+      "Declaration Withdrawal from the contract",
+      "Contract Family Agenda, monthly",
+      "Family Muster",
+      "Ordered on 5 March 2026",
+      "Declared by Erika Muster",
       "An acknowledgement is on its way to erika@example.org.",
-      "Print / save as PDF",
+      "Print / save as PDF Back to the family",
     ]);
   });
 });
@@ -201,12 +227,12 @@ describe("the receipts", () => {
     const receivedAt = new Date();
     for (const language of ["de", "en"] as const) {
       const pages = [
-        cancelReceiptPage(language, { holder: erika, contract: monthly, receivedAt, endsOn: receivedAt }),
-        withdrawReceiptPage(language, { holder: erika, contract: monthly, receivedAt }),
-        withdrawPage(language, { holder: erika, contract: monthly, csrf }),
-        withdrawHolderPage(language, "Erika Muster"),
-        nothingToWithdrawPage(language),
-        noWithdrawHolderPage(language),
+        cancelReceiptPage(language, "f-1", { holder: erika, contract: monthly, receivedAt, endsOn: receivedAt }),
+        withdrawReceiptPage(language, "f-1", { holder: erika, contract: monthly, receivedAt }),
+        withdrawPage(language, "f-1", { holder: erika, contract: monthly, csrf }),
+        withdrawHolderPage(language, "f-1", "Erika Muster"),
+        nothingToWithdrawPage(language, "f-1"),
+        noWithdrawHolderPage(language, "f-1"),
         withdrawFailedPage(language),
       ];
       for (const html of pages) expect(linesOf(html).join("\n")).not.toMatch(/bestätigt|wirksam|gültig|confirmed|valid/i);
@@ -284,28 +310,28 @@ describe("the /delete page", () => {
     ]);
     expect(linesOf(deletePage("en", withdrawable))).toEqual([
       ...deleteLines.en,
-      "Deleting also cancels your subscription at the earliest possible date. We refund nothing beyond that. Instead, you can withdraw from the contract until 19 March 2026 and get everything you paid back: Vertrag widerrufen.",
+      "Deleting also cancels your subscription at the earliest possible date. We refund nothing beyond that. Instead, you can withdraw from the contract until 19 March 2026 and get everything you paid back: Withdraw from contract.",
       ...confirm.en,
     ]);
     expect(deletePage("de", withdrawable)).toContain('<a href="/withdraw">Vertrag widerrufen</a>.</p>');
-    expect(deletePage("en", withdrawable)).toContain('<a href="/en/withdraw">Vertrag widerrufen</a>.</p>');
+    expect(deletePage("en", withdrawable)).toContain('<a href="/en/withdraw">Withdraw from contract</a>.</p>');
   });
 });
 
 describe("the legal footer", () => {
   const pages = {
     "/cancel": (language: "de" | "en") => cancelPage(language, { holder: erika, contract: monthly, endDates: ends, csrf }),
-    "/cancel cancelled": (language: "de" | "en") => cancelledPage(language, { endsOn: new Date(), csrf }),
-    "/cancel holder": (language: "de" | "en") => cancelHolderPage(language, "Erika Muster"),
-    "/cancel nothing": (language: "de" | "en") => nothingToCancelPage(language),
+    "/cancel cancelled": (language: "de" | "en") => cancelledPage(language, "f-1", { endsOn: new Date(), csrf }),
+    "/cancel holder": (language: "de" | "en") => cancelHolderPage(language, "f-1", "Erika Muster"),
+    "/cancel nothing": (language: "de" | "en") => nothingToCancelPage(language, "f-1"),
     "/cancel failed": (language: "de" | "en") => cancelFailedPage(language),
-    "/cancel receipt": (language: "de" | "en") => cancelReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date(), endsOn: new Date() }),
-    "/withdraw": (language: "de" | "en") => withdrawPage(language, { holder: erika, contract: monthly, csrf }),
-    "/withdraw holder": (language: "de" | "en") => withdrawHolderPage(language, "Erika Muster"),
-    "/withdraw nothing": (language: "de" | "en") => nothingToWithdrawPage(language),
-    "/withdraw no holder": (language: "de" | "en") => noWithdrawHolderPage(language),
+    "/cancel receipt": (language: "de" | "en") => cancelReceiptPage(language, "f-1", { holder: erika, contract: monthly, receivedAt: new Date(), endsOn: new Date() }),
+    "/withdraw": (language: "de" | "en") => withdrawPage(language, "f-1", { holder: erika, contract: monthly, csrf }),
+    "/withdraw holder": (language: "de" | "en") => withdrawHolderPage(language, "f-1", "Erika Muster"),
+    "/withdraw nothing": (language: "de" | "en") => nothingToWithdrawPage(language, "f-1"),
+    "/withdraw no holder": (language: "de" | "en") => noWithdrawHolderPage(language, "f-1"),
     "/withdraw failed": (language: "de" | "en") => withdrawFailedPage(language),
-    "/withdraw receipt": (language: "de" | "en") => withdrawReceiptPage(language, { holder: erika, contract: monthly, receivedAt: new Date() }),
+    "/withdraw receipt": (language: "de" | "en") => withdrawReceiptPage(language, "f-1", { holder: erika, contract: monthly, receivedAt: new Date() }),
     "/delete": (language: "de" | "en") => deletePage(language, { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null, csrf }),
   };
   const footers = { de: legalFooterHtml("de"), en: legalFooterHtml("en") };
@@ -336,10 +362,10 @@ describe("escaping", () => {
     const contract = { ...monthly, familyName: evil };
     const pages = [
       cancelPage("de", { holder, contract, endDates: ends, csrf: evil }),
-      cancelHolderPage("en", evil),
-      cancelReceiptPage("en", { holder, contract, receivedAt: new Date(), endsOn: new Date() }),
-      withdrawPage("en", { holder, contract, csrf: evil }),
-      withdrawReceiptPage("de", { holder, contract, receivedAt: new Date() }),
+      cancelHolderPage("en", "f-1", evil),
+      cancelReceiptPage("en", "f-1", { holder, contract, receivedAt: new Date(), endsOn: new Date() }),
+      withdrawPage("en", "f-1", { holder, contract, csrf: evil }),
+      withdrawReceiptPage("de", "f-1", { holder, contract, receivedAt: new Date() }),
       deletePage("de", { familyName: evil, exportHref: evil, subscription: { withdrawalPeriodEndsOn: new Date() }, csrf: evil }),
     ];
     expect(pages[5]).toContain(`href="&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;"`);
@@ -353,20 +379,20 @@ describe("escaping", () => {
 describe("what /cancel shows instead of its form", () => {
   it("is the pending Cancellation's end and the button that takes it back", () => {
     const endsOn = new Date("2026-04-05T08:05:00Z");
-    expect(linesOf(cancelledPage("de", { endsOn, csrf }))).toEqual(["Kündigung", "Gekündigt zum 05.04.2026", "Kündigung zurücknehmen"]);
-    expect(linesOf(cancelledPage("en", { endsOn, csrf }))).toEqual(["Cancellation", "Cancelled with effect from 5 April 2026", "Kündigung zurücknehmen (undo cancellation)"]);
-    expect(cancelledPage("de", { endsOn, csrf })).toContain(`${token}<p class="action"><button class="fam-button fam-button--primary" type="submit" name="undo" value="1">Kündigung zurücknehmen</button></p>\n</form>`);
+    expect(linesOf(cancelledPage("de", "f-1", { endsOn, csrf }))).toEqual(["Kündigung", "Gekündigt zum 05.04.2026", "Kündigung zurücknehmen", "Zur Familie"]);
+    expect(linesOf(cancelledPage("en", "f-1", { endsOn, csrf }))).toEqual(["Cancellation", "Cancelled with effect from 5 April 2026", "Undo cancellation", "Back to the family"]);
+    expect(cancelledPage("de", "f-1", { endsOn, csrf })).toContain(`${token}<p class="action"><button class="fam-button fam-button--primary" type="submit" name="undo" value="1">Kündigung zurücknehmen</button></p>\n</form>\n<p class="action"><a class="fam-button fam-button--secondary" href="/f-1/">Zur Familie</a></p>`);
   });
 
   it("is the holder's name for another Admin, and no form", () => {
-    expect(linesOf(cancelHolderPage("de", "Erika Muster"))).toEqual(["Kündigung", "Vertragsinhaber: Erika Muster"]);
-    expect(linesOf(cancelHolderPage("en", "Erika Muster"))).toEqual(["Cancellation", "Contract holder: Erika Muster"]);
-    expect(cancelHolderPage("de", "Erika Muster")).not.toMatch(/<form|<button/);
+    expect(linesOf(cancelHolderPage("de", "f-1", "Erika Muster"))).toEqual(["Kündigung", "Vertragsinhaber: Erika Muster", "Zur Familie"]);
+    expect(linesOf(cancelHolderPage("en", "f-1", "Erika Muster"))).toEqual(["Cancellation", "Contract holder: Erika Muster", "Back to the family"]);
+    expect(cancelHolderPage("de", "f-1", "Erika Muster")).not.toMatch(/<form|<button/);
   });
 
   it("says so if no Subscription runs", () => {
-    expect(linesOf(nothingToCancelPage("de"))).toEqual(["Kündigung", "Für diese Familie läuft kein Abonnement, das gekündigt werden kann."]);
-    expect(linesOf(nothingToCancelPage("en"))).toEqual(["Cancellation", "This family has no running subscription that could be cancelled."]);
+    expect(linesOf(nothingToCancelPage("de", "f-1"))).toEqual(["Kündigung", "Für diese Familie läuft kein Abonnement, das gekündigt werden kann.", "Zur Familie"]);
+    expect(linesOf(nothingToCancelPage("en", "f-1"))).toEqual(["Cancellation", "This family has no running subscription that could be cancelled.", "Back to the family"]);
   });
 
   it("says that nothing changed if the declaration could not be taken, and how to reach us", () => {
@@ -382,31 +408,33 @@ describe("what /cancel shows instead of its form", () => {
 
 describe("/withdraw for whom there is no form", () => {
   it("is the holder's name for another Admin, and no form", () => {
-    expect(linesOf(withdrawHolderPage("de", "Erika Muster"))).toEqual(["Vertrag widerrufen", "Vertragsinhaber: Erika Muster"]);
-    expect(linesOf(withdrawHolderPage("en", "Erika Muster"))).toEqual(["Withdraw from the contract", "Contract holder: Erika Muster"]);
-    expect(withdrawHolderPage("de", "<b>Erika</b>")).toContain("&lt;b&gt;Erika&lt;/b&gt;");
-    expect(withdrawHolderPage("de", "Erika Muster")).not.toMatch(/<form|<button/);
+    expect(linesOf(withdrawHolderPage("de", "f-1", "Erika Muster"))).toEqual(["Vertrag widerrufen", "Vertragsinhaber: Erika Muster", "Zur Familie"]);
+    expect(linesOf(withdrawHolderPage("en", "f-1", "Erika Muster"))).toEqual(["Withdraw from contract", "Contract holder: Erika Muster", "Back to the family"]);
+    expect(withdrawHolderPage("de", "f-1", "<b>Erika</b>")).toContain("&lt;b&gt;Erika&lt;/b&gt;");
+    expect(withdrawHolderPage("de", "f-1", "Erika Muster")).not.toMatch(/<form|<button/);
   });
 
   it("says so if there is no Subscription to withdraw from", () => {
-    expect(linesOf(nothingToWithdrawPage("de"))).toEqual(["Vertrag widerrufen", "Für diese Familie gibt es kein Abonnement, das widerrufen werden kann."]);
-    expect(linesOf(nothingToWithdrawPage("en"))).toEqual(["Withdraw from the contract", "This family has no subscription that could be withdrawn from."]);
-    expect(nothingToWithdrawPage("de")).not.toMatch(/<form|<button/);
+    expect(linesOf(nothingToWithdrawPage("de", "f-1"))).toEqual(["Vertrag widerrufen", "Für diese Familie gibt es kein Abonnement, das widerrufen werden kann.", "Zur Familie"]);
+    expect(linesOf(nothingToWithdrawPage("en", "f-1"))).toEqual(["Withdraw from contract", "This family has no subscription that could be withdrawn from.", "Back to the family"]);
+    expect(nothingToWithdrawPage("de", "f-1")).not.toMatch(/<form|<button/);
   });
 
   it("gives the support's address where no holder is recorded", () => {
-    expect(linesOf(noWithdrawHolderPage("de"))).toEqual([
+    expect(linesOf(noWithdrawHolderPage("de", "f-1"))).toEqual([
       "Vertrag widerrufen",
       "Für diese Familie ist nicht hinterlegt, wer den Vertrag widerrufen kann.",
       "Fragen? Schreiben Sie uns: support@family-agenda.cloud",
+      "Zur Familie",
     ]);
-    expect(linesOf(noWithdrawHolderPage("en"))).toEqual([
-      "Withdraw from the contract",
+    expect(linesOf(noWithdrawHolderPage("en", "f-1"))).toEqual([
+      "Withdraw from contract",
       "There is no record of who can withdraw from the contract for this family.",
       "Questions? Write to us: support@family-agenda.cloud",
+      "Back to the family",
     ]);
-    expect(noWithdrawHolderPage("en")).toContain('<a href="mailto:');
-    expect(noWithdrawHolderPage("de")).not.toMatch(/<form|<button/);
+    expect(noWithdrawHolderPage("en", "f-1")).toContain('<a href="mailto:');
+    expect(noWithdrawHolderPage("de", "f-1")).not.toMatch(/<form|<button/);
   });
 
   it("asks to try again if the declaration could not be taken, and says how to reach us", () => {
