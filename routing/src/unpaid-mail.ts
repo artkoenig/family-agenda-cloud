@@ -3,15 +3,12 @@
  * the last retry failed. Plain text, for the outbox. No I/O.
  */
 import { contractMail, type ContractMail, type Imprint, type Paragraph } from "./contract-mails";
-import { dateAfter, dateOf, type Language, type Person } from "./contract-wording";
+import { dateAfter, dateOf, DELETED_AFTER_DAYS, type Language, type Person } from "./contract-wording";
 import { APP_URL } from "./legal-pages";
 import { ORDER_PATHS } from "./routing-pages";
 
 /** A Family locked at `lockedAt` as its Subscription, which `holder` holds, is not paid. */
 export type UnpaidMailValues = { holder: Person; familyName: string; lockedAt: Date };
-
-/** How many days after it was locked a Family is deleted (#228). */
-const DELETED_AFTER_DAYS = 30;
 
 type Facts = { familyName: string; locked: string; deleted: string; link: string };
 

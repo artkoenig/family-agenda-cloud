@@ -37,7 +37,7 @@ The Routing module's entrance for web requests, which finds a request's Family b
 _Avoid_: Load balancer, front door
 
 **Central sign-in**:
-The Router's sign-in from the landing page, with its own Logto client, which finds the person's Family by the Organization their ID token claims and sends them into it, or to a page saying it is being prepared or not available, which gives the support contact and **Abmelden** (ending Logto's session, back to the landing page); the core then signs them in itself. For a person whose ID token claims no Organization, it has a core run their PostRegister again, as Logto never sends a lost one twice.
+The Router's sign-in, from the landing page or a page that needs to know who is signed in (the order, the Contract section), with its own Logto client, which finds the person's Family by the Organization their ID token claims and sends them into it, or to a page saying it is being prepared or not available, which gives the support contact and **Abmelden** (ending Logto's session, back to the landing page); the core then signs them in itself. A person sent from such a page comes back to it. For a person whose ID token claims no Organization, it has a core run their PostRegister again, as Logto never sends a lost one twice.
 _Avoid_: Login portal, SSO hub
 
 **Directory**:
@@ -75,7 +75,7 @@ The key, one per Family, that encrypts that Family's Source credentials; a leake
 _Avoid_: Tenant key
 
 **Context**:
-What a core is given to serve one Family for one request or run: its Family id, database, family key, the blob directory (the folder its blob location lies in, named by the Family id), time zone, public address with the path prefix, and Organization id.
+What a core is given to serve one Family for one request or run: its Family id, database, family key, the blob directory (the folder its blob location lies in, named by the Family id), time zone, public address with the path prefix, Organization id, and the sections it adds to the Admin area (the Contract section).
 _Avoid_: Tenant config, session, request context
 
 **Operator key**:
@@ -107,6 +107,10 @@ _Avoid_: Test phase, free plan
 **Locked**:
 A Family whose Trial ended without an order, or whose Subscription ended, was withdrawn or went unpaid: kept but not served, its Admins can only order, download a backup or delete it, and it is deleted 30 days after it was locked. Unlike a suspended Family, which the Operator stops by hand, an order unlocks it.
 _Avoid_: Expired, suspended (the Operator's), inactive
+
+**Contract section**:
+The section „Vertrag“ of a Family's Admin area, which only its founder is shown: Tariff, term and Trial, with links to the pages to order, cancel and withdraw. The Router serves its content as a fragment, HTML the browser loads into the core's page.
+_Avoid_: Subscription page, billing page
 
 **Cancellation**:
 The Subscription's holder ending it at the end of a billing period they choose; the Family is served until then and Locked after.

@@ -4,7 +4,7 @@ import { clearCookie, cookiesOf, setCookie } from "./cookies";
 import { signInClaims, type SignInClaims } from "./id-token";
 import { landingOf, type FindByOrganization, type Landing } from "./landing";
 import type { PostRegisterAgain } from "./post-register";
-import { wayBackOf } from "./routing-pages";
+import { CONTRACT_SECTION_PATH, wayBackOf } from "./routing-pages";
 import { clearSessionCookie, sessionCookie } from "./routing-session";
 import { signInCallbackUrl, signOutRedirectUrl } from "./sign-in-client";
 import { openCookie, sealCookie } from "./sign-in-cookie";
@@ -34,6 +34,8 @@ import { INVITATION_PATH, languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, t
  * The callback also sets the session of the Routing module's own pages (`routing-session.ts`),
  * which Abmelden clears. Such a page that finds none sends the browser to `/sign-in?back=<its
  * path>`: a person whose Family is there then comes back to the page instead of the Family.
+ * The Contract section (#267) links `back` to its page below the Family's address, which the callback
+ * puts the Family id before.
  *
  * A claim that is stale, because the person left the Organization between the ID token and the
  * callback, still sends them to the Family, whose core refuses them: accepted, no special case.
@@ -169,10 +171,11 @@ async function callback(context: Context, query: URLSearchParams): Promise<SignI
   return cameBack(answer, ended.transaction.back);
 }
 
-/** The answer, but back at the page the person came from if they would go into their Family. */
+/** The answer, but back at the page the person came from, be it a section of their Family's Admin area, if they would go into their Family. */
 function cameBack(answer: SignInAnswer, back: string | undefined): SignInAnswer {
   if (back === undefined || answer.landing?.page !== "family") return answer;
-  return { ...answer, headers: { ...answer.headers, location: back } };
+  const location = back === CONTRACT_SECTION_PATH ? `/${answer.landing.familyId}${back}` : back;
+  return { ...answer, headers: { ...answer.headers, location } };
 }
 
 type EndedSignIn = { transaction: Transaction; code: string };

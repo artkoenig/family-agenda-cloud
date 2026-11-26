@@ -1,4 +1,5 @@
 import { createCipheriv, hkdfSync, randomBytes } from "node:crypto";
+import type { Language } from "./sign-in-pages";
 
 /**
  * The Family's Context, as the core opens it in supplied mode: what database to open, with which
@@ -23,9 +24,18 @@ export type ContextClaims = {
    * refuses a Context naming another one (403 `organization-id-differs`).
    */
   organizationId?: string;
+  /** The platform's own sections in the Admin area; the core takes 5 at most, and no empty field. */
+  sections?: AdminSection[];
   /** Milliseconds since the epoch; the core refuses the Context from then on. */
   expiresAt: number;
 };
+
+/**
+ * A section of the platform's own in the core's Admin area, at `/admin/sections/<id>`: the core
+ * shows the HTML the browser loads from `src` in the Family Language, an address at `publicUrl`'s
+ * origin, and lists it for the one Admin `onlyFor` (an OIDC subject), or for all without it.
+ */
+export type AdminSection = { id: string; label: Record<Language, string>; onlyFor?: string; src: Record<Language, string> };
 
 /** The header a core reads the sealed Context from. */
 export const CONTEXT_HEADER = "X-Family-Context";

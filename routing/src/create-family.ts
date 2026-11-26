@@ -137,6 +137,8 @@ function newFamily(config: Config, { familyId, timeZone, organizationId }: Creat
     blobLocation: blobLocationOf(config, familyId),
     timeZone: timeZone ?? config.defaultTimeZone,
     organizationId,
+    // Recorded once the Family is active; the core shows nobody a section until then.
+    registeredBy: null,
     familyKey: drawFamilyKey(),
     databasePassword: drawDatabasePassword(),
   };

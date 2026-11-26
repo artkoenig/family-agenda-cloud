@@ -1,6 +1,7 @@
 import { TestClock } from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setUpRouting, type TestRouting } from "../support/routing";
+import { standInStripe, STRIPE_ENV } from "../support/stand-in-stripe";
 
 /**
  * The walk-through against the core in supplied mode, not the stand-in: what the stand-in mirrors,
@@ -65,11 +66,17 @@ describe.skipIf(!real.url)("Two Families on the core", () => {
       [first, second].sort().map((familyId) => ({ family_id: familyId, status: "active" })),
     );
 
-    const router = await routing.startRouter(withRealCore());
+    // The first has a founder, and with Stripe and central sign-in configured its Context names the
+    // Contract section (#267).
+    await routing.directory("UPDATE family SET registered_by = 'u-founder' WHERE family_id = $1", [first]);
+    const client = await routing.run(["sign-in-client"]);
+    expect(client, client.stderr).toMatchObject({ exitCode: 0 });
+    const signIn = Object.fromEntries(client.stdout.trim().split("\n").map((line) => line.split(/=(.*)/s).slice(0, 2) as [string, string]));
+    const router = await routing.startRouter({ ...withRealCore(), OIDC_ISSUER_URL: routing.logto.issuer, ...signIn, ...STRIPE_ENV }, undefined, standInStripe());
     const health = await fetch(`${router.url}/api/health`);
     expect(await health.json()).toEqual({ status: "ok", version: expect.any(String) as unknown });
     for (const familyId of [first, second]) {
-      // The core opens each Family with its own Context, its Organization included: no setup page.
+      // The core opens each Family with its own Context, its Organization and sections included: no setup page.
       const setup = await fetch(`${router.url}/${familyId}/setup`, { redirect: "manual" });
       expect(setup.status, await setup.text()).toBe(404);
     }
