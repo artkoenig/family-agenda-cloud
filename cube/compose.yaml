@@ -336,6 +336,10 @@ services:
       PUBLIC_URL: https://app.family-agenda.cloud
       FAMILY_WEBHOOK_SECRET: ${FAMILY_WEBHOOK_SECRET:?}
       RECEIVER_PORT: "8081"
+      # Records the founder the new Family's Organization names, who alone sees the Contract section (#267).
+      IDP_MANAGEMENT_ENDPOINT: http://logto:3001
+      IDP_MANAGEMENT_CLIENT_ID: ${IDP_MANAGEMENT_CLIENT_ID:?}
+      IDP_MANAGEMENT_CLIENT_SECRET: ${IDP_MANAGEMENT_CLIENT_SECRET:?}
     networks: [pool, directory]
     healthcheck:
       test: ["CMD", "node", "-e", "require('node:net').connect(8081, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
