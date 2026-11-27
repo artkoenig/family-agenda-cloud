@@ -14,15 +14,15 @@ type Facts = { familyName: string; locked: string; deleted: string; link: string
 
 const WORDS: Record<Language, { subject: string; paragraphs: (facts: Facts) => Paragraph[] }> = {
   de: {
-    subject: "Ihre Familie ist gesperrt: Zahlung ausgeblieben – Family Agenda",
+    subject: "Deine Familie ist gesperrt: Zahlung ausgeblieben – Family Agenda Cloud",
     paragraphs: ({ familyName, locked, deleted, link }) => [
-      [`die Zahlung für Ihr Abonnement ist trotz mehrerer Versuche ausgeblieben. Ihre Familie ${familyName} ist deshalb seit dem ${locked} gesperrt.`],
+      [`die Zahlung für dein Abonnement ist trotz mehrerer Versuche ausgeblieben. Deine Familie ${familyName} ist deshalb seit dem ${locked} gesperrt.`],
       [`Sobald die offene Rechnung bezahlt ist, ist sie sofort wieder freigeschaltet: ${link}`],
       [`Ohne Zahlung löschen wir die Familie am ${deleted} mit allen Daten. Einen Export können Admins bis dahin im Admin-Bereich herunterladen.`],
     ],
   },
   en: {
-    subject: "Your family is locked: payment missing – Family Agenda",
+    subject: "Your family is locked: payment missing – Family Agenda Cloud",
     paragraphs: ({ familyName, locked, deleted, link }) => [
       [`The payment for your subscription has not arrived despite several attempts. Your family ${familyName} has therefore been locked since ${locked}.`],
       [`As soon as the open invoice is paid, it is unlocked at once: ${link}`],

@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 /** The Directory's schema version now. */
-const LATEST = 15;
+const LATEST = 16;
 
 /** The columns of a Family that #225 added. */
 const TRIAL_COLUMNS = ["lock_reason", "locked_at", "registered_by", "trial_starts_at"];
@@ -158,6 +158,7 @@ describe("A Directory without the mail outbox", () => {
       "last_error",
       "sent_at",
       "body_html",
+      "attachments",
     ]);
     expect(await routing.directory("SELECT max(version) AS version FROM directory_migration")).toEqual([{ version: LATEST }]);
     expect(await routing.run(["families"])).toMatchObject({ exitCode: 0, stdout: before.stdout });
@@ -185,5 +186,18 @@ describe("The command line", () => {
     expect(result.stderr).toContain("Unknown command roll-out");
     expect(result.stderr).not.toContain("CORE_VERSION");
     expect(routing.env).not.toHaveProperty("CORE_VERSION");
+  });
+});
+
+describe("A Directory whose outbox holds mails without attachments", () => {
+  it("migrates: its mails stay, with none", async () => {
+    await routing.run(["migrate"]);
+    await routing.directory("ALTER TABLE mail_outbox DROP COLUMN attachments");
+    await routing.directory("DELETE FROM directory_migration WHERE version >= 16");
+    await routing.directory("INSERT INTO mail_outbox (type, mail_from, reply_to, mail_to, subject, body) VALUES ('cancellation', 'a', 'b', 'c', 'd', 'e')");
+
+    expect(await routing.run(["migrate"])).toMatchObject({ exitCode: 0 });
+
+    expect(await routing.directory("SELECT body, attachments FROM mail_outbox")).toEqual([{ body: "e", attachments: null }]);
   });
 });

@@ -4,7 +4,7 @@ import type pg from "pg";
 import { systemClock, type Clock } from "pg-boss";
 import type { SmtpSettings } from "./config";
 import { describe, type Log } from "./log";
-import type { OutboxMail } from "./outbox";
+import { attachmentsOf, type OutboxMail, type StoredAttachment } from "./outbox";
 import { HOURLY_LIMIT, nextAttemptAt, sendsAlert, smtpReasonOf, sweptBefore, withoutAddresses } from "./outbox-policy";
 
 /**
@@ -58,7 +58,7 @@ export function smtpTransport(smtp: SmtpSettings, ca?: string): MailTransport {
   });
   return {
     async send(mail) {
-      await transporter.sendMail({ from: mail.from, replyTo: mail.replyTo, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+      await transporter.sendMail({ from: mail.from, replyTo: mail.replyTo, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html, attachments: mail.attachments?.map((attachment) => ({ ...attachment })) });
     },
     close() {
       transporter.close();
@@ -84,6 +84,7 @@ type ClaimedRow = {
   subject: string;
   body: string;
   body_html: string | null;
+  attachments: StoredAttachment[] | null;
   attempts: number;
 };
 
@@ -119,7 +120,7 @@ async function claim(client: pg.ClientBase, now: Date): Promise<ClaimedRow[]> {
               WHERE id IN (SELECT id FROM mail_outbox
                             WHERE sent_at IS NULL AND next_attempt_at <= $1 AND (claimed_until IS NULL OR claimed_until <= $1)
                             ORDER BY next_attempt_at, id LIMIT $2 FOR UPDATE SKIP LOCKED)
-              RETURNING id, type, family_id, mail_from, reply_to, mail_to, subject, body, body_html, attempts`,
+              RETURNING id, type, family_id, mail_from, reply_to, mail_to, subject, body, body_html, attachments, attempts`,
             [now, room, CLAIM_MINUTES],
           )
         : { rows: [] };
@@ -137,7 +138,8 @@ async function deliver({ client, transport, log, now }: Sending, row: ClaimedRow
   const label = { mailId: row.id, type: row.type, ...(row.family_id === null ? {} : { familyId: row.family_id }), attempts };
   try {
     const html = row.body_html === null ? {} : { html: row.body_html };
-    await transport.send({ from: row.mail_from, replyTo: row.reply_to, to: row.mail_to, subject: row.subject, text: row.body, ...html });
+    const attachments = row.attachments === null ? {} : { attachments: attachmentsOf(row.attachments) };
+    await transport.send({ from: row.mail_from, replyTo: row.reply_to, to: row.mail_to, subject: row.subject, text: row.body, ...html, ...attachments });
   } catch (error) {
     const retryAt = nextAttemptAt(now(), attempts);
     await client.query("UPDATE mail_outbox SET attempts = $2, next_attempt_at = $3, last_error = $4, claimed_until = NULL WHERE id = $1", [

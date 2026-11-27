@@ -55,7 +55,7 @@ const completed = (id: string, session: object = {}): Event => ({
 const at = (id: string, changes: Parameters<typeof stripeSubscription>[2] = {}) => stripe.subscriptions.set(id, stripeSubscription(familyId, id, changes));
 const lock = (reason: LockReason) => routing.provisioned((work) => lockFamily(work, familyId, reason, new Date("2026-11-10T10:00:00Z")));
 const rowsOf = () => routing.directory("SELECT * FROM subscription ORDER BY subscription_id");
-const mails = () => routing.directory("SELECT type, mail_to, subject, body FROM mail_outbox WHERE type IN ('confirmation', 'unpaid') ORDER BY created_at, id");
+const mails = () => routing.directory("SELECT type, mail_to, subject, body, body_html, attachments FROM mail_outbox WHERE type IN ('confirmation', 'unpaid') ORDER BY created_at, id");
 const handledEvents = async () => (await routing.directory("SELECT event_id FROM stripe_event")).length;
 async function familyRow() {
   const [row] = await routing.directory("SELECT status, lock_reason, locked_at FROM family WHERE family_id = $1", [familyId]);
@@ -153,8 +153,8 @@ describe("Stripe's webhook", () => {
     expect(await familyRow()).toMatchObject({ lock_reason: "unpaid", locked_at: now });
     const sent = await mails();
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ type: "unpaid", mail_to: expect.stringContaining("u-1@example.com") as unknown, subject: "Ihre Familie ist gesperrt: Zahlung ausgeblieben – Family Agenda" });
-    expect(sent[0]!["body"]).toContain("Ihre Familie Family org_1 ist deshalb seit dem 20.11.2026 gesperrt.");
+    expect(sent[0]).toMatchObject({ type: "unpaid", mail_to: expect.stringContaining("u-1@example.com") as unknown, subject: "Deine Familie ist gesperrt: Zahlung ausgeblieben – Family Agenda Cloud" });
+    expect(sent[0]!["body"]).toContain("Deine Familie Family org_1 ist deshalb seit dem 20.11.2026 gesperrt.");
     at("sub_1");
     expect(await post(invoice("paid", "sub_1"))).toBe(200);
     expect(await familyRow()).toMatchObject({ status: "active", lock_reason: null });
@@ -179,7 +179,7 @@ describe("Stripe's webhook", () => {
     expect(routing.log()).toContain("A Subscription runs of a Family that is deleted or not prepared");
   });
 
-  it("sends the confirmation once, with the legal texts, and has the invoices in German", async () => {
+  it("sends the confirmation once, in Family Agenda's look with the legal texts attached, and has the invoices in German", async () => {
     at("sub_1");
     expect(await post(completed("sub_1", { locale: "en" }))).toBe(200);
     expect(await post(completed("sub_1", { locale: "en" }))).toBe(200);
@@ -188,9 +188,12 @@ describe("Stripe's webhook", () => {
     expect(sent[0]).toMatchObject({ type: "confirmation", mail_to: expect.stringContaining("u-1@example.com") as unknown });
     const body = String(sent[0]!["body"]);
     expect(body).toContain("Anna Muster");
-    expect(body).toContain("Muster-Widerrufsformular");
-    expect(body).toContain("Allgemeine Geschäftsbedingungen");
     expect(body).toContain("Postflex 1, 12345 Musterstadt");
+    expect(String(sent[0]!["body_html"])).toContain("Anna Muster");
+    expect((sent[0]!["attachments"] as { filename: string; contentType: string }[]).map(({ filename, contentType }) => [filename, contentType])).toEqual([
+      ["Family-Agenda-Cloud-AGB.pdf", "application/pdf"],
+      ["Family-Agenda-Cloud-Widerrufsbelehrung.pdf", "application/pdf"],
+    ]);
     expect(stripe.customerLocales.get("cus_sub_1")).toEqual(["de"]);
   });
 

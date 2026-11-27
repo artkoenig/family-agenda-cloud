@@ -9,8 +9,28 @@ import { isMailType } from "./outbox-policy";
  * waits for the mail server nor fails with it. `routing send-mail` sends what is in it.
  */
 
-/** A mail as the outbox sends it: plain text, UTF-8, from `from` with Reply-To `replyTo`; `html` is the same mail for programs that show HTML. */
-export type OutboxMail = ContractMail & { html?: string };
+/** A file a mail carries, such as a PDF. */
+export type MailAttachment = { filename: string; contentType: string; content: Buffer };
+
+/**
+ * A mail as the outbox sends it: plain text, UTF-8, from `from` with Reply-To `replyTo`; `html` is
+ * the same mail for programs that show HTML; `attachments` the files it carries.
+ */
+export type OutboxMail = ContractMail & { html?: string; attachments?: readonly MailAttachment[] };
+
+/** The attachments as the outbox keeps them, their content in Base64; null for none. */
+export function storedAttachments(attachments: readonly MailAttachment[] | undefined): string | null {
+  if (!attachments || attachments.length === 0) return null;
+  return JSON.stringify(attachments.map(({ filename, contentType, content }) => ({ filename, contentType, content: content.toString("base64") })));
+}
+
+/** The attachments the outbox kept, as `storedAttachments` wrote them. */
+export function attachmentsOf(stored: readonly StoredAttachment[] | null): MailAttachment[] {
+  return (stored ?? []).map(({ filename, contentType, content }) => ({ filename, contentType, content: Buffer.from(content, "base64") }));
+}
+
+/** An attachment in the outbox's `attachments` column. */
+export type StoredAttachment = { filename: string; contentType: string; content: string };
 
 /**
  * What the log names a mail by, as it never names its address, subject or text: its type, such
@@ -45,9 +65,9 @@ export function outbox(client: Pick<pg.ClientBase, "query">): Outbox {
     async enqueue(mail, { type, familyId }) {
       if (!isMailType(type)) throw new Error("A mail's type is lower-case words joined by hyphens");
       const { rows } = await client.query<{ id: string }>(
-        `INSERT INTO mail_outbox (type, family_id, mail_from, reply_to, mail_to, subject, body, body_html)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [type, familyId ?? null, mail.from, mail.replyTo, mail.to, mail.subject, mail.text, mail.html ?? null],
+        `INSERT INTO mail_outbox (type, family_id, mail_from, reply_to, mail_to, subject, body, body_html, attachments)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [type, familyId ?? null, mail.from, mail.replyTo, mail.to, mail.subject, mail.text, mail.html ?? null, storedAttachments(mail.attachments)],
       );
       const [row] = rows as [{ id: string }];
       return row.id;

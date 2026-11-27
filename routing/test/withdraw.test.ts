@@ -221,7 +221,7 @@ describe("/withdraw", () => {
     expect(await recorded()).toMatchObject({ status: "canceled", ended_at: new Date(1_790_000_000_000) });
     const sent = await mails();
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ mail_to: "u-1@example.com", subject: "Eingangsbestätigung Ihres Widerrufs – Family Agenda" });
+    expect(sent[0]).toMatchObject({ mail_to: "u-1@example.com", subject: "Eingangsbestätigung deines Widerrufs – Family Agenda Cloud" });
     expect(sent[0]!.body).toContain("insgesamt 4,99 €");
     expect(sent[0]!.body).not.toMatch(/bestätigt|wirksam|gültig/);
 
@@ -361,7 +361,7 @@ describe("/withdraw", () => {
     expect(receipt.status).toBe(200);
     expect(receipt.body).not.toMatch(/confirmed|valid/);
     const [mail] = await mails();
-    expect(mail).toMatchObject({ subject: "Acknowledgement of your withdrawal – Family Agenda" });
+    expect(mail).toMatchObject({ subject: "Acknowledgement of your withdrawal – Family Agenda Cloud" });
     expect(mail!.body).toContain("€4.99 in total");
     expect(mail!.body).not.toMatch(/confirmed|valid/);
   });
@@ -373,7 +373,7 @@ describe("/withdraw", () => {
     stripe.failCancels = true;
     const answer = await own.submit();
     expect(answer.status).toBe(502);
-    expect(answer.body).toContain("Bitte versuchen Sie es in einigen Minuten erneut.");
+    expect(answer.body).toContain("Bitte versuch es in einigen Minuten erneut.");
     expect(await recorded()).toMatchObject({ status: "active", ended_at: null });
     expect(await mails()).toEqual([]);
     stripe.failCancels = false;

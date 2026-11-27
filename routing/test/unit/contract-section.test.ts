@@ -142,7 +142,7 @@ describe("the Contract section without a card", () => {
   it("links the sign-in that comes back to it", () => {
     expect(signInSectionHtml("de")).toContain('href="/sign-in?back=%2Fadmin%2Fsections%2Fcontract"');
     expect(signInSectionHtml("de")).toContain(">Anmelden</a>");
-    expect(signInSectionHtml("de")).toContain("Bitte melden Sie sich an");
+    expect(signInSectionHtml("de")).toContain("Bitte melde dich an");
     expect(signInSectionHtml("en")).toContain("Please sign in");
     expect(signInSectionHtml("en")).toContain(">Sign in</a>");
   });

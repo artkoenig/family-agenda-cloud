@@ -38,7 +38,7 @@ export function firstPayment(family: OrderingFamily, now: Date): FirstPayment {
 const SHARED: Record<Language, { ai: string; offer: string; withdrawal: string }> = {
   de: {
     ai: "Wichtig: Termine in E-Mails und Dokumenten erkennt ein KI-Modell. Die Erkennung kann unvollständig oder fehlerhaft sein.",
-    offer: "Family Agenda Cloud für Ihre Familie: jedes Mitglied mit eigener Agenda, Stundenplan, Kalender, E-Mails und Dokumente als Quellen, Betrieb in Deutschland.",
+    offer: "Family Agenda Cloud für deine Familie: jedes Mitglied mit eigener Agenda, Stundenplan, Kalender, E-Mails und Dokumente als Quellen, Betrieb in Deutschland.",
     withdrawal: "14 Tage Widerrufsrecht; bei Widerruf erstatten wir alles Gezahlte.",
   },
   en: {
