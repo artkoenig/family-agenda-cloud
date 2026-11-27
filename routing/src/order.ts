@@ -1,24 +1,24 @@
 /**
- * The order (#226): a Family's founder chooses the billing on `/order` and is sent to Stripe's
- * hosted Checkout; `/subscription` takes the Contract holder to Stripe's Portal (#227). Nothing here changes the Directory but the founder recorded when first needed
+ * The order (#226): `/order` sends a Family's founder to Stripe's hosted Checkout, where they choose
+ * the billing, the yearly one being the monthly Price's upsell; `/subscription` takes the Contract holder to Stripe's Portal (#227). Nothing here changes the Directory but the founder recorded when first needed
  * (`founderOf`): it learns of the order from Stripe's webhooks alone (#227).
  *
  * - Without a session the browser goes to central sign-in and comes back.
  * - Only an Admin of the Family sees anything, only its founder may order, and only in its Trial
  *   or while it is Locked.
- * - A founder Logto has no name of enters it; it is kept at Logto, where every page and mail reads
- *   the Contract holder's name.
+ * - Checkout asks a founder Logto has no name of for it; the webhook keeps it at Logto, where every
+ *   page and mail reads the Contract holder's name.
  * - A Family has one open Checkout Session at most: those before are expired first.
  */
-import { firstPayment, type OrderingFamily } from "./checkout-texts";
-import { mailLanguageOf, type Billing, type Language } from "./contract-wording";
+import type { OrderingFamily } from "./checkout-texts";
+import { mailLanguageOf, type Language } from "./contract-wording";
 import type { Config, StripeSettings } from "./config";
 import { cookiesOf } from "./cookies";
 import type { Directory, DirectoryEntry } from "./directory";
 import { founderOf } from "./founder";
-import { person, setName, type IdpManagement, type LogtoPerson } from "./logto-management";
+import { person, type IdpManagement, type LogtoPerson } from "./logto-management";
 import { organizations } from "./organizations";
-import { BILLING_FIELD, NAME_FIELD, NAME_LIMIT, noAccessPage, noFounderPage, noSubscriptionPage, notOfferedPage, onlyFounderOrdersPage, orderDonePage, orderedPage, orderPage, subscriptionHolderPage } from "./order-pages";
+import { noAccessPage, noFounderPage, noSubscriptionPage, notOfferedPage, onlyFounderOrdersPage, orderDonePage, orderedPage, subscriptionHolderPage } from "./order-pages";
 import { checkoutSessionParams } from "./order-session";
 import { ORDER_PATHS, signInPathFor, type OrderPath } from "./routing-pages";
 import { sessionOf, type RoutingSession } from "./routing-session";
@@ -36,13 +36,14 @@ export type OrderSetup = {
   now: () => Date;
 };
 
-/** A browser's request for a page of the order; `form` reads what it posts, undefined if that is too long. */
-export type OrderRequest = { method: string | undefined; path: OrderPath; cookie: string | undefined; form: () => Promise<URLSearchParams | undefined> };
+/** A browser's request for a page of the order. */
+export type OrderRequest = { method: string | undefined; path: OrderPath; cookie: string | undefined };
 
 /** The Router's answer. */
 export type OrderAnswer = { status: number; headers: Record<string, string>; body: string };
 
-const METHODS: Record<OrderPath["page"], readonly string[]> = { order: ["GET", "HEAD", "POST"], done: ["GET", "HEAD"], subscription: ["GET"] };
+/** `/order` and `/subscription` take a GET alone: each makes a Session at Stripe. */
+const METHODS: Record<OrderPath["page"], readonly string[]> = { order: ["GET"], done: ["GET", "HEAD"], subscription: ["GET"] };
 
 const NO_STORE = { "cache-control": "no-store" };
 
@@ -54,15 +55,14 @@ export async function answerOrder(request: OrderRequest, setup: OrderSetup): Pro
   const { page, language } = request.path;
   const allowed = METHODS[page];
   if (!allowed.some((method) => method === request.method)) return { status: 405, headers: { ...NO_STORE, allow: allowed.join(", ") }, body: "" };
-  const posted = request.method === "POST";
   const now = setup.now();
   const session = sessionOf(setup.config.operatorKey, cookiesOf(request.cookie), now);
-  if (!session) return redirect(posted ? 303 : 302, signInPathFor(ORDER_PATHS[page][language]));
+  if (!session) return redirect(signInPathFor(ORDER_PATHS[page][language]));
   const visit = await visitOf(setup, language, session, now);
   if (!visit) return html(403, noAccessPage(language));
   if (page === "done") return html(200, orderDonePage(language, visit.entry.familyId));
   if (page === "subscription") return answerSubscription(visit);
-  return answerOrderPage(visit, posted ? request.form : undefined);
+  return answerOrderPage(visit);
 }
 
 /** The visit of a person signed in; undefined unless they are an Admin of a Family that can be ordered for. */
@@ -76,8 +76,8 @@ async function visitOf(setup: OrderSetup, language: Language, session: RoutingSe
 /** Whether the Family runs, Locked or not: not one being prepared, suspended or deleted. */
 const isOrderable = ({ status }: DirectoryEntry): boolean => status === "active" || status === "locked";
 
-/** `/order`, or the order if a form was posted. */
-async function answerOrderPage(visit: Visit, form: OrderRequest["form"] | undefined): Promise<OrderAnswer> {
+/** `/order`: the founder's way to Checkout, or why there is none. */
+async function answerOrderPage(visit: Visit): Promise<OrderAnswer> {
   const { setup, language, session, entry, now } = visit;
   const { familyId } = entry;
   const running = await setup.directory.subscriptionOf(familyId);
@@ -87,7 +87,7 @@ async function answerOrderPage(visit: Visit, form: OrderRequest["form"] | undefi
   const founder = await founderAtLogto(visit);
   if (!founder) return html(200, noFounderPage(language, familyId));
   if (founder.userId !== session.userId) return html(200, onlyFounderOrdersPage(language, familyId, nameOf(founder) ?? founder.userId));
-  return form ? postedOrder(visit, family, founder, form) : html(200, formOf(visit, family, founder));
+  return checkout(visit, family, founder);
 }
 
 /** `/subscription`: takes the Contract holder to Stripe's Portal, also while the Family is Locked. */
@@ -102,7 +102,7 @@ async function answerSubscription({ setup, language, session, entry }: Visit): P
     locale: language,
     return_url: `${setup.config.publicUrl}/${familyId}/`,
   });
-  return redirect(302, portal);
+  return redirect(portal);
 }
 
 /** The Family's founder as Logto keeps them; undefined if none is recorded, or they are no Admin any more. */
@@ -128,45 +128,26 @@ function orderingFamilyOf({ lockedAt, trialEndsAt }: DirectoryEntry, now: Date):
   return undefined;
 }
 
-function formOf({ language, now }: Visit, family: OrderingFamily, founder: LogtoPerson, invalid = false, billing: Billing = "monthly"): string {
-  return orderPage(language, { firstPaymentAt: firstPayment(family, now).dueAt, askName: founder.name === null, billing, invalid });
-}
-
-/** The founder's order: keeps their name if Logto has none, and sends them to the Checkout of a new Session. */
-async function postedOrder(visit: Visit, family: OrderingFamily, founder: LogtoPerson, readForm: OrderRequest["form"]): Promise<OrderAnswer> {
+/** Sends the founder to the Checkout of a new Session. */
+async function checkout(visit: Visit, family: OrderingFamily, founder: LogtoPerson): Promise<OrderAnswer> {
   const { setup, session, entry } = visit;
-  const form = await readForm();
-  if (!form) return { status: 413, headers: { ...NO_STORE, "content-type": "text/plain; charset=utf-8" }, body: "Too long\n" };
-  const billing = billingOf(form.get(BILLING_FIELD));
-  const name = founder.name ?? enteredName(form.get(NAME_FIELD));
-  if (billing === undefined || name === undefined) return html(400, formOf(visit, family, founder, true, billing));
-  if (founder.name === null) await setName(setup.idp, session.userId, name);
   const { stripe, prices, config } = setup;
   for (const open of await stripe.openSessions(entry.familyId)) await stripe.expireSession(open);
-  const checkout = await stripe.createSession(
+  const url = await stripe.createSession(
     checkoutSessionParams({
       familyId: entry.familyId,
       family,
-      holder: { userId: session.userId, email: founder.email },
-      billing,
-      price: prices[billing],
+      holder: { userId: session.userId, email: founder.email, name: founder.name },
+      monthlyPrice: prices.monthly,
       language: mailLanguageOf(founder.locale),
       pageLanguage: visit.language,
       publicUrl: config.publicUrl,
       now: visit.now,
     }),
   );
-  return redirect(303, checkout);
-}
-
-const billingOf = (posted: string | null): Billing | undefined => (posted === "monthly" || posted === "yearly" ? posted : undefined);
-
-/** The name entered, if it is one Logto takes. */
-function enteredName(posted: string | null): string | undefined {
-  const name = (posted ?? "").trim();
-  return name === "" || name.length > NAME_LIMIT ? undefined : name;
+  return redirect(url);
 }
 
 const html = (status: number, body: string): OrderAnswer => ({ status, headers: { ...NO_STORE, "content-type": "text/html; charset=utf-8" }, body });
 
-const redirect = (status: 302 | 303, location: string): OrderAnswer => ({ status, headers: { ...NO_STORE, location }, body: "" });
+const redirect = (location: string): OrderAnswer => ({ status: 302, headers: { ...NO_STORE, location }, body: "" });

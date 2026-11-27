@@ -194,6 +194,20 @@ describe("Stripe's webhook", () => {
     expect(stripe.customerLocales.get("cus_sub_1")).toEqual(["de"]);
   });
 
+  it("keeps the name asked for on Checkout at Logto if it has none, and confirms to it", async () => {
+    routing.logto.addMember("org_1", "u-2");
+    at("sub_1", { metadata: { familyId, holder: "u-2" } });
+    expect(await post(completed("sub_1", { customer_details: { name: "Billing Name", individual_name: "Berta Beispiel", email: "order@example.com" } }))).toBe(200);
+    expect(routing.logto.nameOf("u-2")).toBe("Berta Beispiel");
+    expect(String((await mails())[0]!["body"])).toContain("Berta Beispiel");
+  });
+
+  it("leaves a name Logto has alone", async () => {
+    at("sub_1");
+    expect(await post(completed("sub_1", { customer_details: { name: "Billing Name", individual_name: "Other Name", email: "order@example.com" } }))).toBe(200);
+    expect(routing.logto.nameOf("u-1")).toBe("Anna Muster");
+  });
+
   it("confirms to the address of the order if Logto no longer knows the holder", async () => {
     at("sub_1", { metadata: { familyId, holder: "u-gone" } });
     expect(await post(completed("sub_1"))).toBe(200);

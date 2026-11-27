@@ -4,7 +4,7 @@
  * (`mailLanguageOf`). The Checkout Session's creation spreads `checkoutTexts` into its create
  * params, and takes its `billing_cycle_anchor` from `firstPayment`. No I/O.
  */
-import { amountOf, dateOf, PRICE_CENTS, type Billing, type Language } from "./contract-wording";
+import { amountOf, dateOf, PRICE_CENTS, YEARLY_PER_MONTH_CENTS, type Billing, type Language } from "./contract-wording";
 
 /** The part of Stripe's Checkout Session create params these texts fill. */
 export type CheckoutTexts = {
@@ -34,7 +34,7 @@ export function firstPayment(family: OrderingFamily, now: Date): FirstPayment {
   return { billingCycleAnchor: family.trialEndsAt, dueAt: family.trialEndsAt };
 }
 
-/** The lines of the summary both billings share: first the AI sentence, then the offer, and last the right of withdrawal. */
+/** The lines of the summary around its terms: first the AI sentence, then the offer, and last the right of withdrawal. */
 const SHARED: Record<Language, { ai: string; offer: string; withdrawal: string }> = {
   de: {
     ai: "Wichtig: Termine in E-Mails und Dokumenten erkennt ein KI-Modell. Die Erkennung kann unvollständig oder fehlerhaft sein.",
@@ -48,28 +48,16 @@ const SHARED: Record<Language, { ai: string; offer: string; withdrawal: string }
   },
 };
 
-/** The lines of the summary on price, first payment, term and cancellation, from the price and the date formatted. */
-const TERMS: Record<Language, Record<Billing, (price: string, date: string) => string>> = {
-  de: {
-    monthly: (price, date) => `Preis: ${price} pro Monat inkl. USt.
-Erste Zahlung am ${date}, danach monatlich.
-Laufzeit: ein Monat, verlängert sich jeweils um einen Monat.
-Kündigung: jederzeit zum Monatsende, online im Admin-Bereich.`,
-    yearly: (price, date) => `Preis: ${price} pro Jahr inkl. USt.
-Erste Zahlung am ${date}, danach jährlich.
-Laufzeit: ein Jahr, verlängert sich jeweils um ein Jahr.
-Kündigung: zum Ende des ersten Jahres, danach jederzeit zum Monatsende mit anteiliger Erstattung, online im Admin-Bereich.`,
-  },
-  en: {
-    monthly: (price, date) => `Price: ${price} per month, VAT included.
-First payment on ${date}, then monthly.
-Term: one month, renewing for one month at a time.
-Cancellation: any time with effect from the end of the month, online in the Admin area.`,
-    yearly: (price, date) => `Price: ${price} per year, VAT included.
-First payment on ${date}, then yearly.
-Term: one year, renewing for one year at a time.
-Cancellation: with effect from the end of the first year, after that any time with effect from the end of the month with a pro-rata refund, online in the Admin area.`,
-  },
+/** The lines of the summary on price, first payment, term and cancellation of both billings, from the prices and the date formatted. */
+const TERMS: Record<Language, (prices: Record<Billing | "yearlyPerMonth", string>, date: string) => string> = {
+  de: ({ monthly, yearly, yearlyPerMonth }, date) => `Preis: ${monthly} pro Monat (Monatsabo) oder ${yearly} pro Jahr, entspricht ${yearlyPerMonth} pro Monat (Jahresabo), jeweils inkl. USt.
+Erste Zahlung am ${date}, danach monatlich bzw. jährlich.
+Laufzeit: ein Monat bzw. ein Jahr, verlängert sich jeweils um dieselbe Zeit.
+Kündigung: Monatsabo jederzeit zum Monatsende; Jahresabo zum Ende des ersten Jahres, danach jederzeit zum Monatsende mit anteiliger Erstattung; online im Admin-Bereich.`,
+  en: ({ monthly, yearly, yearlyPerMonth }, date) => `Price: ${monthly} per month (monthly subscription) or ${yearly} per year, equal to ${yearlyPerMonth} per month (yearly subscription), VAT included.
+First payment on ${date}, then monthly or yearly.
+Term: one month or one year, renewing for the same term at a time.
+Cancellation: monthly subscription any time with effect from the end of the month; yearly subscription with effect from the end of the first year, after that any time with effect from the end of the month with a pro-rata refund; online in the Admin area.`,
 };
 
 const TERMS_ACCEPTANCE: Record<Language, string> = {
@@ -77,20 +65,25 @@ const TERMS_ACCEPTANCE: Record<Language, string> = {
   en: "I agree to the [terms](https://family-agenda.cloud/agb) (German, binding; [English translation](https://family-agenda.cloud/en/terms)). I have read the [withdrawal policy](https://family-agenda.cloud/en/withdrawal) and the [privacy policy](https://family-agenda.cloud/en/privacy).",
 };
 
-/** The § 312j summary: the AI sentence first, so it is the most prominent line. */
-export function checkoutSummary(language: Language, billing: Billing, firstPaymentAt: Date): string {
+/**
+ * The § 312j summary: the AI sentence first, so it is the most prominent line. It names both
+ * billings, as the Admin switches between them on Checkout (its upsell), past this text.
+ */
+export function checkoutSummary(language: Language, firstPaymentAt: Date): string {
   const { ai, offer, withdrawal } = SHARED[language];
-  const terms = TERMS[language][billing](amountOf(PRICE_CENTS[billing], language), dateOf(firstPaymentAt, language));
+  const amount = (cents: number) => amountOf(cents, language);
+  const prices = { monthly: amount(PRICE_CENTS.monthly), yearly: amount(PRICE_CENTS.yearly), yearlyPerMonth: amount(YEARLY_PER_MONTH_CENTS) };
+  const terms = TERMS[language](prices, dateOf(firstPaymentAt, language));
   return `${ai}\n\n${offer}\n${terms}\n${withdrawal}`;
 }
 
-/** The texts of a Checkout Session in `language` for the Tariff billed `billing`, first paid at `firstPaymentAt`. */
-export function checkoutTexts(language: Language, billing: Billing, firstPaymentAt: Date): CheckoutTexts {
+/** The texts of a Checkout Session in `language` for the Tariff, first paid at `firstPaymentAt`. */
+export function checkoutTexts(language: Language, firstPaymentAt: Date): CheckoutTexts {
   return {
     locale: language,
     consent_collection: { terms_of_service: "required" },
     custom_text: {
-      submit: { message: checkoutSummary(language, billing, firstPaymentAt) },
+      submit: { message: checkoutSummary(language, firstPaymentAt) },
       terms_of_service_acceptance: { message: TERMS_ACCEPTANCE[language] },
     },
   };

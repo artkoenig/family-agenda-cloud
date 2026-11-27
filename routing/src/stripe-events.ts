@@ -20,7 +20,7 @@ import { inTransaction, isRunning, type DirectoryEntry } from "./directory";
 import { lockFamily, unlockFamily } from "./family-status";
 import { confirmationLegalTexts } from "./legal-site";
 import { reasonOf, type Log } from "./log";
-import { person, type IdpManagement, type LogtoPerson } from "./logto-management";
+import { NAME_LIMIT, person, setName, type IdpManagement, type LogtoPerson } from "./logto-management";
 import { organizations } from "./organizations";
 import { outbox } from "./outbox";
 import type { Resolve } from "./pool";
@@ -233,13 +233,22 @@ async function confirm(at: Case, session: CompletedSession): Promise<void> {
 async function confirmationOf(at: Case, session: CompletedSession) {
   const { handling, orderer, subscription } = at;
   const { billing, orderedAt } = recordOf(subscription, orderer);
-  const holder = personOf(await person(handling.idp, orderer.holder), session.customer_details);
+  const holder = personOf(await holderKeepingName(at, session), session.customer_details);
   if (!holder || billing === null) {
     handling.log.error("A contract confirmation could not be written", { familyId: orderer.familyId, subscription: subscription.id });
     return undefined;
   }
   const contract = { billing, familyName: await familyNameOf(at), orderedOn: orderedAt ?? handling.now() };
   return confirmationMail(mailLanguageOf(session.locale), { holder, contract, firstPaymentAt: firstPaymentOf(subscription, session) }, confirmationLegalTexts(), handling.settings.imprint);
+}
+
+/** The holder as Logto keeps them; writes the name Checkout asked for to Logto if it had none, cut to what Logto takes. */
+async function holderKeepingName({ handling, orderer }: Case, { customer_details }: CompletedSession): Promise<LogtoPerson | undefined> {
+  const found = await person(handling.idp, orderer.holder);
+  const name = customer_details?.individual_name?.trim().slice(0, NAME_LIMIT);
+  if (!found || found.name !== null || !name) return found;
+  await setName(handling.idp, orderer.holder, name);
+  return { ...found, name };
 }
 
 /** The holder as a mail's recipient: as Logto keeps them, or else as they ordered; undefined without an address. */

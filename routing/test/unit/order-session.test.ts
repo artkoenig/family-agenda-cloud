@@ -6,9 +6,8 @@ const now = new Date("2026-11-24T12:00:00Z");
 const order: Order = {
   familyId: "f-1",
   family: { case: "trial", trialEndsAt: new Date("2026-12-08T10:00:00.400Z") },
-  holder: { userId: "u-1", email: "anna@example.org" },
-  billing: "monthly",
-  price: "price_m",
+  holder: { userId: "u-1", email: "anna@example.org", name: "Anna Muster" },
+  monthlyPrice: "price_m",
   language: "de",
   pageLanguage: "de",
   publicUrl: "https://app.example",
@@ -17,7 +16,7 @@ const order: Order = {
 const seconds = (iso: string) => Date.parse(iso) / 1000;
 
 describe("the Checkout Session of an order", () => {
-  it("is a subscription paid first at the end of the Trial", () => {
+  it("is a subscription of the monthly Price, paid first at the end of the Trial, that cancels back to the Family", () => {
     expect(checkoutSessionParams(order)).toEqual({
       mode: "subscription",
       ui_mode: "hosted_page",
@@ -26,40 +25,43 @@ describe("the Checkout Session of an order", () => {
       client_reference_id: "f-1",
       metadata: { familyId: "f-1", holder: "u-1" },
       subscription_data: { metadata: { familyId: "f-1", holder: "u-1" }, billing_cycle_anchor: seconds("2026-12-08T10:00:01Z"), proration_behavior: "none" },
-      ...checkoutTexts("de", "monthly", new Date("2026-12-08T10:00:00.400Z")),
+      ...checkoutTexts("de", new Date("2026-12-08T10:00:00.400Z")),
       allowed_payment_method_types: ["card", "sepa_debit"],
       automatic_tax: { enabled: true },
       billing_address_collection: "required",
       customer_email: "anna@example.org",
       expires_at: seconds("2026-11-24T13:00:00Z"),
       success_url: "https://app.example/order/done",
-      cancel_url: "https://app.example/order",
+      cancel_url: "https://app.example/f-1/",
     });
   });
 
   it("is paid at once when the Trial is as good as over", () => {
     const params = checkoutSessionParams({ ...order, family: { case: "trial", trialEndsAt: new Date("2026-11-24T12:00:59Z") } });
     expect(params.subscription_data).toEqual({ metadata: { familyId: "f-1", holder: "u-1" } });
-    expect(params).toMatchObject(checkoutTexts("de", "monthly", now));
+    expect(params).toMatchObject(checkoutTexts("de", now));
   });
 
   it("is paid at once for a Locked Family", () => {
     const params = checkoutSessionParams({ ...order, family: { case: "locked" } });
     expect(params.subscription_data).toEqual({ metadata: { familyId: "f-1", holder: "u-1" } });
-    expect(params).toMatchObject(checkoutTexts("de", "monthly", now));
+    expect(params).toMatchObject(checkoutTexts("de", now));
   });
 
   it("speaks the holder's language and comes back to the page's", () => {
-    expect(checkoutSessionParams({ ...order, language: "de", pageLanguage: "en", billing: "yearly", price: "price_y" })).toMatchObject({
+    expect(checkoutSessionParams({ ...order, language: "de", pageLanguage: "en" })).toMatchObject({
       locale: "de",
-      line_items: [{ price: "price_y", quantity: 1 }],
       success_url: "https://app.example/en/order/done",
-      cancel_url: "https://app.example/en/order",
+      cancel_url: "https://app.example/f-1/",
     });
   });
 
+  it("asks for the holder's name if Logto has none", () => {
+    expect(checkoutSessionParams({ ...order, holder: { ...order.holder, name: null } })).toMatchObject({ name_collection: { individual: { enabled: true, optional: false } } });
+  });
+
   it("leaves the email to Stripe if Logto has none", () => {
-    expect(checkoutSessionParams({ ...order, holder: { userId: "u-1", email: null } })).not.toHaveProperty("customer_email");
+    expect(checkoutSessionParams({ ...order, holder: { ...order.holder, email: null } })).not.toHaveProperty("customer_email");
   });
 });
 

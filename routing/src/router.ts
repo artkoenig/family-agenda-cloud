@@ -62,8 +62,8 @@ type CoreRequest = {
  */
 const HELD_BODY_BYTES = 1024 * 1024;
 
-/** How much of a posted order the Router reads: more than any form of its has. */
-const ORDER_BYTES = 8 * 1024;
+/** How much of a posted form the Router reads: more than any form of its has. */
+const FORM_BYTES = 8 * 1024;
 
 /** How much of a Stripe event the Router reads: more than any has. */
 const STRIPE_EVENT_BYTES = 1024 * 1024;
@@ -195,9 +195,9 @@ async function signInRequest(setup: RouterSetup, signIn: SignInSetup, incoming: 
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
 }
 
-/** What a browser posts to a page of the order, to `/cancel` or to `/withdraw`; undefined if that is too long. */
+/** What a browser posts to `/cancel` or to `/withdraw`; undefined if that is too long. */
 const formOf = (incoming: IncomingMessage) => async (): Promise<URLSearchParams | undefined> => {
-  const body = await beginningOf(incoming, ORDER_BYTES);
+  const body = await beginningOf(incoming, FORM_BYTES);
   return body?.whole ? new URLSearchParams(Buffer.concat(body.chunks).toString()) : undefined;
 };
 
@@ -224,7 +224,7 @@ async function contractRequest(setup: CancelSetup, { answer, language }: Contrac
 
 /** Answers a request for a page of the order. */
 async function orderRequest(order: OrderSetup, path: OrderPath, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
-  const { status, headers, body } = await answerOrder({ method: incoming.method, path, cookie: incoming.headers.cookie, form: formOf(incoming) }, order);
+  const { status, headers, body } = await answerOrder({ method: incoming.method, path, cookie: incoming.headers.cookie }, order);
   // What was posted and not read would stay on the connection.
   if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
