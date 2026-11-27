@@ -104,14 +104,14 @@ const WORDS: Record<Language, Words> = {
       endDate: "Kündigen zum",
       button: "jetzt kündigen",
       receipt: {
-        title: "Ihre Kündigung ist bei uns eingegangen.",
+        title: "Deine Kündigung ist bei uns eingegangen.",
         ends: "Vertragsende",
         mail: (email) => `Eine Bestätigung geht an ${email}.`,
       },
       nothing: "Für diese Familie läuft kein Abonnement, das gekündigt werden kann.",
       failed: {
         title: "Das hat gerade nicht geklappt",
-        line: "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Es wurde nichts geändert. Bitte versuchen Sie es in einigen Minuten erneut.",
+        line: "Deine Erklärung konnte gerade nicht entgegengenommen werden. Es wurde nichts geändert. Bitte versuch es in einigen Minuten erneut.",
       },
     },
     withdraw: {
@@ -120,7 +120,7 @@ const WORDS: Record<Language, Words> = {
       email: "E-Mail für die Eingangsbestätigung",
       button: "Widerruf bestätigen",
       receipt: {
-        title: "Ihr Widerruf ist bei uns eingegangen.",
+        title: "Dein Widerruf ist bei uns eingegangen.",
         kind: ["Erklärung", "Widerruf des Vertrags"],
         mail: (email) => `Eine Eingangsbestätigung geht an ${email}.`,
       },
@@ -128,27 +128,27 @@ const WORDS: Record<Language, Words> = {
       noHolder: "Für diese Familie ist nicht hinterlegt, wer den Vertrag widerrufen kann.",
       failed: {
         title: "Das hat gerade nicht geklappt",
-        line: "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuchen Sie es in einigen Minuten erneut.",
+        line: "Deine Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuch es in einigen Minuten erneut.",
       },
     },
     contract: { contract: "Vertrag", family: "Familie", orderedOn: "Bestellt am" },
     receipt: { receivedAt: "Eingegangen am", by: "Erklärt von" },
-    support: "Fragen? Schreiben Sie uns:",
+    support: "Fragen? Schreib uns:",
     print: "Drucken / als PDF speichern",
     toFamily: "Zur Familie",
     delete: {
       title: "Familie löschen",
-      intro: (familyName) => `Wenn Sie die Familie ${familyName} löschen, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.`,
+      intro: (familyName) => `Wenn du die Familie ${familyName} löschst, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.`,
       when: "Was wann gelöscht wird:",
       stages: [
         "sofort: alle Agenden, Einträge, Quellen und ihre Zugangsdaten, gespeicherte Dateien und die Konten aller Admins",
         "nach spätestens 14 Tagen: die letzten Kopien in unseren Sicherungen",
         "nach 8 Jahren: Rechnungen, die wir aus steuerlichen Gründen aufbewahren müssen",
       ],
-      exportFirst: "Laden Sie vorher den Export herunter, wenn Sie Ihre Daten behalten möchten.",
+      exportFirst: "Lade vorher den Export herunter, wenn du deine Daten behalten möchtest.",
       exportButton: "Export herunterladen",
-      subscription: "Das Löschen kündigt zugleich Ihr Abonnement zum frühestmöglichen Zeitpunkt. Darüber hinaus erstatten wir nichts.",
-      withdrawInstead: (periodEnd) => `Sie können stattdessen bis zum ${periodEnd} den Vertrag widerrufen und erhalten dann alles Gezahlte zurück:`,
+      subscription: "Das Löschen kündigt zugleich dein Abonnement zum frühestmöglichen Zeitpunkt. Darüber hinaus erstatten wir nichts.",
+      withdrawInstead: (periodEnd) => `Du kannst stattdessen bis zum ${periodEnd} den Vertrag widerrufen und erhältst dann alles Gezahlte zurück:`,
       understood: "Ich verstehe, dass alle Daten der Familie endgültig gelöscht werden.",
       button: "Familie endgültig löschen",
     },
@@ -217,7 +217,7 @@ const WORDS: Record<Language, Words> = {
 function contractRows({ billing, familyName, orderedOn }: Contract, language: Language): Row[] {
   const words = WORDS[language].contract;
   return [
-    [words.contract, `Family Agenda, ${BILLING[language][billing]}`],
+    [words.contract, `Family Agenda Cloud, ${BILLING[language][billing]}`],
     [words.family, familyName],
     [words.orderedOn, dateOf(orderedOn, language)],
   ];
@@ -400,7 +400,7 @@ export function page(language: Language, title: string, body: string, style = ""
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>${escape(title)} · Family Agenda</title>
+<title>${escape(title)} · Family Agenda Cloud</title>
 <link rel="stylesheet" href="${DESIGN_PATH}/tokens.css">
 <link rel="stylesheet" href="${DESIGN_PATH}/design.css">
 <style>${STYLE}${style}</style>${scripted ? `\n<script src="${SCRIPT_PATH}" defer></script>` : ""}

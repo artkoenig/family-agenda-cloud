@@ -42,7 +42,7 @@ describe("confirmationMail", () => {
     const { html, attachments, ...mail } = await confirmationMail("de", values("monthly"), legal, imprint);
 
     expect(mail).toEqual({
-      from: "Family Agenda <support@family-agenda.cloud>",
+      from: "Family Agenda Cloud <support@family-agenda.cloud>",
       replyTo: "support@family-agenda.cloud",
       to: "erika@example.org",
       subject: "Danke für deine Bestellung – deine Vertragsbestätigung von Family Agenda Cloud",
@@ -95,7 +95,7 @@ Widerrufsfrist: bis einschließlich 19.03.2026
     const { html, attachments, ...mail } = await confirmationMail("en", values("monthly"), legal, imprint);
 
     expect(mail).toEqual({
-      from: "Family Agenda <support@family-agenda.cloud>",
+      from: "Family Agenda Cloud <support@family-agenda.cloud>",
       replyTo: "support@family-agenda.cloud",
       to: "erika@example.org",
       subject: "Thank you for your order – your Family Agenda Cloud contract confirmation",

@@ -132,12 +132,12 @@ export const BILLING: Record<Language, Record<Billing, string>> = {
   en: { monthly: "monthly", yearly: "yearly" },
 };
 
-/** The contract, e.g. `Family Agenda, monatlich, Familie Muster`. */
+/** The contract, e.g. `Family Agenda Cloud, monatlich, Familie Muster`. */
 export function contractOf({ billing, familyName }: Contract, language: Language): string {
-  return `Family Agenda, ${BILLING[language][billing]}, ${language === "de" ? "Familie" : "family"} ${familyName}`;
+  return `Family Agenda Cloud, ${BILLING[language][billing]}, ${language === "de" ? "Familie" : "family"} ${familyName}`;
 }
 
-/** The contract with its order date, e.g. `Family Agenda, monatlich, Familie Muster, bestellt am 05.03.2026`. */
+/** The contract with its order date, e.g. `Family Agenda Cloud, monatlich, Familie Muster, bestellt am 05.03.2026`. */
 export function orderedContractOf(contract: Contract, language: Language): string {
   return `${contractOf(contract, language)}, ${language === "de" ? "bestellt am" : "ordered on"} ${dateOf(contract.orderedOn, language)}`;
 }

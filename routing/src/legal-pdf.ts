@@ -12,9 +12,9 @@ const lexer = new Marked({ gfm: true, breaks: true, async: false });
 /** A piece of a line in one style. */
 type Run = { text: string; bold: boolean; italic: boolean; link?: string };
 
-const MARGIN = 62;
-const BODY = 10.5;
-const SIZES: Record<number, number> = { 1: 19, 2: 13, 3: 11.5 };
+const MARGIN = 50;
+const BODY = 10;
+const SIZES: Record<number, number> = { 1: 17, 2: 12, 3: 11 };
 const INK = "#2b221b";
 const LINK = "#a6421d";
 const INDENT = 16;
@@ -61,7 +61,7 @@ function write(doc: PDFKit.PDFDocument, runs: readonly Run[], x: number, width: 
   const last = runs.length - 1;
   runs.forEach((run, index) => {
     doc.font(fontOf(run)).fillColor(run.link ? LINK : INK);
-    const options = { width, continued: index < last, lineGap: size * 0.28, link: run.link ?? null, underline: run.link !== undefined };
+    const options = { width, continued: index < last, lineGap: size * 0.2, link: run.link ?? null, underline: run.link !== undefined };
     if (index === 0) doc.text(run.text, x, doc.y, options);
     else doc.text(run.text, options);
   });
@@ -75,14 +75,14 @@ function layout(doc: PDFKit.PDFDocument, tokens: readonly Token[], x: number) {
     switch (token.type) {
       case "heading": {
         const { depth, tokens: inner } = token as Tokens.Heading;
-        doc.moveDown(depth === 1 ? 0 : 0.6);
+        doc.moveDown(depth === 1 ? 0 : 0.5);
         write(doc, runsOf(inner, { bold: true, italic: false }), x, width, SIZES[depth] ?? BODY);
-        doc.moveDown(depth === 1 ? 0.7 : 0.35);
+        doc.moveDown(depth === 1 ? 0.5 : 0.25);
         break;
       }
       case "paragraph":
         write(doc, runsOf((token as Tokens.Paragraph).tokens), x, width, BODY);
-        doc.moveDown(0.6);
+        doc.moveDown(0.45);
         break;
       case "text":
         write(doc, runsOf([token]), x, width, BODY);

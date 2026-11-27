@@ -35,7 +35,7 @@ describe("the pages without an order", () => {
 
   it("thanks for the order and leads back into the Family", () => {
     const html = orderDonePage("de", "f-1");
-    expect(textOf(html)).toBe("Danke für Ihre Bestellung. Die Vertragsbestätigung kommt per E-Mail. Zur Familie");
+    expect(textOf(html)).toBe("Danke für deine Bestellung. Die Vertragsbestätigung kommt per E-Mail. Zur Familie");
     expect(html).toContain('href="/f-1/"');
     expect(textOf(orderDonePage("en", "f-1"))).toContain("Thank you for your order.");
   });

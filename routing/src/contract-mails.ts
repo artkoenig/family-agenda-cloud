@@ -19,7 +19,7 @@ import {
   type Settlement,
 } from "./contract-wording";
 
-export const MAIL_FROM = "Family Agenda <support@family-agenda.cloud>";
+export const MAIL_FROM = "Family Agenda Cloud <support@family-agenda.cloud>";
 export const MAIL_REPLY_TO = "support@family-agenda.cloud";
 
 /** A mail as the outbox sends it. */
@@ -100,67 +100,67 @@ type Words = {
 
 const WORDS: Record<Language, Words> = {
   de: {
-    greeting: (name) => `Guten Tag ${name},`,
+    greeting: (name) => `Hallo ${name},`,
     cancellation: {
-      subject: "Eingangsbestätigung Ihrer Kündigung – Family Agenda",
-      received: ({ date, time }) => `Ihre Kündigung ist am ${date} um ${time} bei uns eingegangen.`,
+      subject: "Eingangsbestätigung deiner Kündigung – Family Agenda Cloud",
+      received: ({ date, time }) => `Deine Kündigung ist am ${date} um ${time} bei uns eingegangen.`,
       content: (contract, end) => `Inhalt: Ordentliche Kündigung des Vertrags ${contract}, zum ${end}.`,
       ends: (end) => `Der Vertrag endet am ${end}.`,
     },
     withdrawal: {
-      subject: "Eingangsbestätigung Ihres Widerrufs – Family Agenda",
-      received: ({ date, time }) => `Ihr Widerruf ist am ${date} um ${time} bei uns eingegangen.`,
-      receivedLate: ({ date, time }) => `Ihre Erklärung ist am ${date} um ${time} bei uns eingegangen.`,
+      subject: "Eingangsbestätigung deines Widerrufs – Family Agenda Cloud",
+      received: ({ date, time }) => `Dein Widerruf ist am ${date} um ${time} bei uns eingegangen.`,
+      receivedLate: ({ date, time }) => `Deine Erklärung ist am ${date} um ${time} bei uns eingegangen.`,
       content: (orderedContract) => `Inhalt: Widerruf des Vertrags ${orderedContract}.`,
       withdrawn: (refund, deletedOn) => [
         [
-          `Das Abonnement endet damit sofort, und Ihre Familie ist gesperrt. Bereits gezahlte Beträge, insgesamt ${refund}, erstatten wir innerhalb von 14 Tagen auf Ihr Zahlungsmittel.`,
+          `Das Abonnement endet damit sofort, und deine Familie ist gesperrt. Bereits gezahlte Beträge, insgesamt ${refund}, erstatten wir innerhalb von 14 Tagen auf dein Zahlungsmittel.`,
         ],
         [
-          `Admins können im Admin-Bereich weiterhin einen Export herunterladen. Am ${deletedOn} löschen wir die Familie mit allen Daten. Möchten Sie weitermachen, können Sie bis dahin im Admin-Bereich neu bestellen.`,
+          `Admins können im Admin-Bereich weiterhin einen Export herunterladen. Am ${deletedOn} löschen wir die Familie mit allen Daten. Möchtest du weitermachen, kannst du bis dahin im Admin-Bereich neu bestellen.`,
         ],
       ],
       late: (periodEnd, end) =>
-        `Die Widerrufsfrist von 14 Tagen ist am ${periodEnd} abgelaufen. Wir behandeln Ihre Erklärung deshalb als ordentliche Kündigung zum frühestmöglichen Zeitpunkt: Der Vertrag endet am ${end}.`,
+        `Die Widerrufsfrist von 14 Tagen ist am ${periodEnd} abgelaufen. Wir behandeln deine Erklärung deshalb als ordentliche Kündigung zum frühestmöglichen Zeitpunkt: Der Vertrag endet am ${end}.`,
     },
     untilTheEnd: (ends, end, deletedOn) => ({
-      untilThen: `${ends} Bis dahin können alle Family Agenda wie gewohnt nutzen.`,
-      locked: `Ab dem ${end} ist Ihre Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am ${deletedOn} löschen wir die Familie mit allen Daten.`,
-      undo: `Sie können die Kündigung bis zum ${end} im Admin-Bereich zurücknehmen.`,
+      untilThen: `${ends} Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen.`,
+      locked: `Ab dem ${end} ist deine Familie gesperrt. Admins können bis dahin und während der Sperre im Admin-Bereich einen Export herunterladen. Am ${deletedOn} löschen wir die Familie mit allen Daten.`,
+      undo: `Du kannst die Kündigung bis zum ${end} im Admin-Bereich zurücknehmen.`,
     }),
     trial: "Es wird nichts berechnet.",
-    yearlyRefund: (refund) => `Den nicht genutzten Teil Ihres Jahresbeitrags, ${refund}, erstatten wir mit dem Vertragsende auf Ihr Zahlungsmittel.`,
+    yearlyRefund: (refund) => `Den nicht genutzten Teil deines Jahresbeitrags, ${refund}, erstatten wir mit dem Vertragsende auf dein Zahlungsmittel.`,
     deleted: {
-      subject: "Ihre Familie wurde gelöscht – Family Agenda",
-      byRecipient: (familyName, { date, time }) => `Sie haben die Familie ${familyName} am ${date} um ${time} gelöscht.`,
+      subject: "Deine Familie wurde gelöscht – Family Agenda Cloud",
+      byRecipient: (familyName, { date, time }) => `Du hast die Familie ${familyName} am ${date} um ${time} gelöscht.`,
       backups: (goneOn) => `Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am ${goneOn} entfernt.`,
-      subscription: (end) => `Ihr Abonnement ist zum ${end} gekündigt.`,
-      yearlyRefund: (refund) => `Den nicht genutzten Teil, ${refund}, erstatten wir auf Ihr Zahlungsmittel.`,
-      thanks: "Danke, dass Sie Family Agenda genutzt haben.",
+      subscription: (end) => `Dein Abonnement ist zum ${end} gekündigt.`,
+      yearlyRefund: (refund) => `Den nicht genutzten Teil, ${refund}, erstatten wir auf dein Zahlungsmittel.`,
+      thanks: "Danke, dass du Family Agenda Cloud genutzt hast.",
     },
     notice: {
-      subject: (familyName) => `Die Familie ${familyName} wurde gelöscht – Family Agenda`,
+      subject: (familyName) => `Die Familie ${familyName} wurde gelöscht – Family Agenda Cloud`,
       byAdmin: (admin, familyName, date) => `${admin} hat die Familie ${familyName} am ${date} gelöscht.`,
-      gone: "Ihr Zugang und alle Daten der Familie sind damit gelöscht.",
+      gone: "Dein Zugang und alle Daten der Familie sind damit gelöscht.",
     },
     automatic: (familyName, date) => `Wie angekündigt haben wir die Familie ${familyName} am ${date}, 30 Tage nach der Sperre, gelöscht.`,
     footer: [
       "-- ",
-      "Family Agenda · {{NAME}} · {{POSTFLEX_ADDRESS}}",
-      "Fragen? Antworten Sie einfach auf diese E-Mail oder schreiben Sie an support@family-agenda.cloud.",
+      "Family Agenda Cloud · {{NAME}} · {{POSTFLEX_ADDRESS}}",
+      "Fragen? Antworte einfach auf diese E-Mail oder schreib an support@family-agenda.cloud.",
       "Impressum: https://family-agenda.cloud/impressum",
     ],
   },
   en: {
     greeting: (name) => `Hello ${name},`,
     cancellation: {
-      subject: "Your cancellation has been received – Family Agenda",
+      subject: "Your cancellation has been received – Family Agenda Cloud",
       received: ({ date, time }) => `We received your cancellation on ${date} at ${time}.`,
       content: (contract, end) => `Content: ordinary cancellation of the contract ${contract}, with effect from ${end}.`,
       ends: (end) => `The contract ends on ${end}.`,
     },
     withdrawal: {
-      subject: "Acknowledgement of your withdrawal – Family Agenda",
+      subject: "Acknowledgement of your withdrawal – Family Agenda Cloud",
       received: ({ date, time }) => `We received your withdrawal on ${date} at ${time}.`,
       receivedLate: ({ date, time }) => `We received your statement on ${date} at ${time}.`,
       content: (orderedContract) => `Content: withdrawal from the contract ${orderedContract}.`,
@@ -174,29 +174,29 @@ const WORDS: Record<Language, Words> = {
         `The 14-day withdrawal period ended on ${periodEnd}. We therefore treat your statement as an ordinary cancellation at the earliest possible date: the contract ends on ${end}.`,
     },
     untilTheEnd: (ends, end, deletedOn) => ({
-      untilThen: `${ends} Until then everyone can use Family Agenda as usual.`,
+      untilThen: `${ends} Until then everyone can use Family Agenda Cloud as usual.`,
       locked: `From ${end} your family is locked. Admins can download an export in the Admin area until then and while the family is locked. On ${deletedOn} we delete the family with all its data.`,
       undo: `You can undo the cancellation in the Admin area until ${end}.`,
     }),
     trial: "Nothing will be charged.",
     yearlyRefund: (refund) => `We will refund the unused part of your yearly fee, ${refund}, to your payment method when the contract ends.`,
     deleted: {
-      subject: "Your family has been deleted – Family Agenda",
+      subject: "Your family has been deleted – Family Agenda Cloud",
       byRecipient: (familyName, { date, time }) => `You deleted the family ${familyName} on ${date} at ${time}.`,
       backups: (goneOn) => `All of the family's data has been deleted; the last copies in our backups will be removed by ${goneOn}.`,
       subscription: (end) => `Your subscription is cancelled with effect from ${end}.`,
       yearlyRefund: (refund) => `We will refund the unused part, ${refund}, to your payment method.`,
-      thanks: "Thank you for using Family Agenda.",
+      thanks: "Thank you for using Family Agenda Cloud.",
     },
     notice: {
-      subject: (familyName) => `The family ${familyName} has been deleted – Family Agenda`,
+      subject: (familyName) => `The family ${familyName} has been deleted – Family Agenda Cloud`,
       byAdmin: (admin, familyName, date) => `${admin} deleted the family ${familyName} on ${date}.`,
       gone: "Your access and all of the family's data have been deleted with it.",
     },
     automatic: (familyName, date) => `As announced, we deleted the family ${familyName} on ${date}, 30 days after it was locked.`,
     footer: [
       "-- ",
-      "Family Agenda · {{NAME}} · {{POSTFLEX_ADDRESS}}",
+      "Family Agenda Cloud · {{NAME}} · {{POSTFLEX_ADDRESS}}",
       "Questions? Just reply to this email or write to support@family-agenda.cloud.",
       "Imprint: https://family-agenda.cloud/en/imprint",
     ],

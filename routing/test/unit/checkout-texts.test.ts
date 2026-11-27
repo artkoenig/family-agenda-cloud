@@ -9,7 +9,7 @@ const firstPaymentAt = new Date("2026-03-19T23:30:00Z");
 const SUMMARIES: Record<Language, string> = {
   de: `Wichtig: Termine in E-Mails und Dokumenten erkennt ein KI-Modell. Die Erkennung kann unvollständig oder fehlerhaft sein.
 
-Family Agenda Cloud für Ihre Familie: jedes Mitglied mit eigener Agenda, Stundenplan, Kalender, E-Mails und Dokumente als Quellen, Betrieb in Deutschland.
+Family Agenda Cloud für deine Familie: jedes Mitglied mit eigener Agenda, Stundenplan, Kalender, E-Mails und Dokumente als Quellen, Betrieb in Deutschland.
 Preis: 4,99 € pro Monat (Monatsabo) oder 49,90 € pro Jahr, entspricht 4,16 € pro Monat (Jahresabo), jeweils inkl. USt.
 Erste Zahlung am 20.03.2026, danach monatlich bzw. jährlich.
 Laufzeit: ein Monat bzw. ein Jahr, verlängert sich jeweils um dieselbe Zeit.

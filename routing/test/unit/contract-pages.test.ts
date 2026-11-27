@@ -62,13 +62,13 @@ describe("the /cancel page", () => {
   it("shows the § 312k fields, the end dates with the earliest chosen, and „jetzt kündigen“, in German", () => {
     const html = cancelPage("de", values);
     expect(html).toContain('<html lang="de">');
-    expect(html).toContain("<title>Kündigung · Family Agenda</title>");
+    expect(html).toContain("<title>Kündigung · Family Agenda Cloud</title>");
     expect(linesOf(html)).toEqual([
       "Kündigung",
       "Art der Kündigung ordentliche Kündigung",
       "Name Erika Muster",
       "E-Mail für die Bestätigung erika@example.org",
-      "Vertrag Family Agenda, monatlich",
+      "Vertrag Family Agenda Cloud, monatlich",
       "Familie Muster",
       "Bestellt am 05.03.2026",
       "Kündigen zum [05.04.2026][05.05.2026][05.06.2026]",
@@ -90,7 +90,7 @@ describe("the /cancel page", () => {
       "Type of cancellation ordinary cancellation",
       "Name Erika Muster",
       "Email for the confirmation erika@example.org",
-      "Contract Family Agenda, monthly",
+      "Contract Family Agenda Cloud, monthly",
       "Family Muster",
       "Ordered on 5 March 2026",
       "Cancel with effect from [5 April 2026][5 May 2026][5 June 2026]",
@@ -128,10 +128,10 @@ describe("the /cancel receipt", () => {
 
   it("acknowledges the Cancellation, to print or save as PDF", () => {
     expect(linesOf(cancelReceiptPage("de", "f-1", values))).toEqual([
-      "Ihre Kündigung ist bei uns eingegangen.",
+      "Deine Kündigung ist bei uns eingegangen.",
       "Eingegangen am 10.03.2026, 18:42 Uhr",
       "Art der Kündigung ordentliche Kündigung",
-      "Vertrag Family Agenda, monatlich",
+      "Vertrag Family Agenda Cloud, monatlich",
       "Familie Muster",
       "Bestellt am 05.03.2026",
       "Erklärt von Erika Muster",
@@ -143,7 +143,7 @@ describe("the /cancel receipt", () => {
       "We have received your cancellation.",
       "Received on 10 March 2026, 18:42 (Berlin time)",
       "Type of cancellation ordinary cancellation",
-      "Contract Family Agenda, monthly",
+      "Contract Family Agenda Cloud, monthly",
       "Family Muster",
       "Ordered on 5 March 2026",
       "Declared by Erika Muster",
@@ -155,7 +155,7 @@ describe("the /cancel receipt", () => {
       '<p class="action actions no-print"><button class="fam-button fam-button--secondary" type="button" data-print>Drucken / als PDF speichern</button> <a class="fam-button fam-button--secondary" href="/f-1/">Zur Familie</a></p>',
     );
     expect(cancelReceiptPage("de", "f-1", values)).toContain(`</style>\n${script}\n</head>`);
-    expect(cancelReceiptPage("en", "f-1", values)).toContain("<title>We have received your cancellation. · Family Agenda</title>");
+    expect(cancelReceiptPage("en", "f-1", values)).toContain("<title>We have received your cancellation. · Family Agenda Cloud</title>");
     // On paper, without the button and the footer.
     expect(cancelReceiptPage("de", "f-1", values)).toContain("@media print{.no-print{display:none}");
     expect(cancelReceiptPage("de", "f-1", values)).toContain("@media print{.legal{display:none}}");
@@ -170,7 +170,7 @@ describe("the /withdraw page", () => {
       "Vertrag widerrufen",
       "Name Erika Muster",
       "E-Mail für die Eingangsbestätigung erika@example.org",
-      "Vertrag Family Agenda, jährlich",
+      "Vertrag Family Agenda Cloud, jährlich",
       "Familie Muster",
       "Bestellt am 05.03.2026",
       "Widerruf bestätigen",
@@ -180,7 +180,7 @@ describe("the /withdraw page", () => {
       "Withdraw from contract",
       "Name Erika Muster",
       "Email for the acknowledgement erika@example.org",
-      "Contract Family Agenda, yearly",
+      "Contract Family Agenda Cloud, yearly",
       "Family Muster",
       "Ordered on 5 March 2026",
       "Confirm withdrawal",
@@ -198,10 +198,10 @@ describe("the /withdraw receipt", () => {
 
   it("acknowledges the Withdrawal, to print or save as PDF", () => {
     expect(linesOf(withdrawReceiptPage("de", "f-1", values))).toEqual([
-      "Ihr Widerruf ist bei uns eingegangen.",
+      "Dein Widerruf ist bei uns eingegangen.",
       "Eingegangen am 10.03.2026, 18:42 Uhr",
       "Erklärung Widerruf des Vertrags",
-      "Vertrag Family Agenda, monatlich",
+      "Vertrag Family Agenda Cloud, monatlich",
       "Familie Muster",
       "Bestellt am 05.03.2026",
       "Erklärt von Erika Muster",
@@ -212,7 +212,7 @@ describe("the /withdraw receipt", () => {
       "We have received your withdrawal.",
       "Received on 10 March 2026, 18:42 (Berlin time)",
       "Declaration Withdrawal from the contract",
-      "Contract Family Agenda, monthly",
+      "Contract Family Agenda Cloud, monthly",
       "Family Muster",
       "Ordered on 5 March 2026",
       "Declared by Erika Muster",
@@ -246,12 +246,12 @@ describe("the /delete page", () => {
   const deleteLines = {
     de: [
       "Familie löschen",
-      "Wenn Sie die Familie Muster löschen, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.",
+      "Wenn du die Familie Muster löschst, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.",
       "Was wann gelöscht wird:",
       "sofort: alle Agenden, Einträge, Quellen und ihre Zugangsdaten, gespeicherte Dateien und die Konten aller Admins",
       "nach spätestens 14 Tagen: die letzten Kopien in unseren Sicherungen",
       "nach 8 Jahren: Rechnungen, die wir aus steuerlichen Gründen aufbewahren müssen",
-      "Laden Sie vorher den Export herunter, wenn Sie Ihre Daten behalten möchten.",
+      "Lade vorher den Export herunter, wenn du deine Daten behalten möchtest.",
       "Export herunterladen",
     ],
     en: [
@@ -290,7 +290,7 @@ describe("the /delete page", () => {
     const running = { ...values, subscription: { withdrawalPeriodEndsOn: null } };
     expect(linesOf(deletePage("de", running))).toEqual([
       ...deleteLines.de,
-      "Das Löschen kündigt zugleich Ihr Abonnement zum frühestmöglichen Zeitpunkt. Darüber hinaus erstatten wir nichts.",
+      "Das Löschen kündigt zugleich dein Abonnement zum frühestmöglichen Zeitpunkt. Darüber hinaus erstatten wir nichts.",
       ...confirm.de,
     ]);
     expect(linesOf(deletePage("en", running))).toEqual([
@@ -305,7 +305,7 @@ describe("the /delete page", () => {
     const withdrawable = { ...values, subscription: { withdrawalPeriodEndsOn: new Date("2026-03-19T09:05:00Z") } };
     expect(linesOf(deletePage("de", withdrawable))).toEqual([
       ...deleteLines.de,
-      "Das Löschen kündigt zugleich Ihr Abonnement zum frühestmöglichen Zeitpunkt. Darüber hinaus erstatten wir nichts. Sie können stattdessen bis zum 19.03.2026 den Vertrag widerrufen und erhalten dann alles Gezahlte zurück: Vertrag widerrufen.",
+      "Das Löschen kündigt zugleich dein Abonnement zum frühestmöglichen Zeitpunkt. Darüber hinaus erstatten wir nichts. Du kannst stattdessen bis zum 19.03.2026 den Vertrag widerrufen und erhältst dann alles Gezahlte zurück: Vertrag widerrufen.",
       ...confirm.de,
     ]);
     expect(linesOf(deletePage("en", withdrawable))).toEqual([
@@ -398,8 +398,8 @@ describe("what /cancel shows instead of its form", () => {
   it("says that nothing changed if the declaration could not be taken, and how to reach us", () => {
     expect(linesOf(cancelFailedPage("de"))).toEqual([
       "Das hat gerade nicht geklappt",
-      "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Es wurde nichts geändert. Bitte versuchen Sie es in einigen Minuten erneut.",
-      "Fragen? Schreiben Sie uns: support@family-agenda.cloud",
+      "Deine Erklärung konnte gerade nicht entgegengenommen werden. Es wurde nichts geändert. Bitte versuch es in einigen Minuten erneut.",
+      "Fragen? Schreib uns: support@family-agenda.cloud",
     ]);
     expect(linesOf(cancelFailedPage("en"))[1]).toBe("We could not take your declaration just now. Nothing was changed. Please try again in a few minutes.");
     expect(cancelFailedPage("en")).toContain('<a href="mailto:');
@@ -424,7 +424,7 @@ describe("/withdraw for whom there is no form", () => {
     expect(linesOf(noWithdrawHolderPage("de", "f-1"))).toEqual([
       "Vertrag widerrufen",
       "Für diese Familie ist nicht hinterlegt, wer den Vertrag widerrufen kann.",
-      "Fragen? Schreiben Sie uns: support@family-agenda.cloud",
+      "Fragen? Schreib uns: support@family-agenda.cloud",
       "Zur Familie",
     ]);
     expect(linesOf(noWithdrawHolderPage("en", "f-1"))).toEqual([
@@ -440,8 +440,8 @@ describe("/withdraw for whom there is no form", () => {
   it("asks to try again if the declaration could not be taken, and says how to reach us", () => {
     expect(linesOf(withdrawFailedPage("de"))).toEqual([
       "Das hat gerade nicht geklappt",
-      "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuchen Sie es in einigen Minuten erneut.",
-      "Fragen? Schreiben Sie uns: support@family-agenda.cloud",
+      "Deine Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuch es in einigen Minuten erneut.",
+      "Fragen? Schreib uns: support@family-agenda.cloud",
     ]);
     expect(linesOf(withdrawFailedPage("en"))).toEqual([
       "That did not work just now",

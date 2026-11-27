@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { invitationMail } from "../../src/invitation-mail";
 
 const LINK = "https://app.family-agenda.cloud/sign-in/invitation?one_time_token=tok&login_hint=anna%40example.org";
-const ENVELOPE = { from: "Family Agenda <support@family-agenda.cloud>", replyTo: "support@family-agenda.cloud", to: "anna@example.org" };
+const ENVELOPE = { from: "Family Agenda Cloud <support@family-agenda.cloud>", replyTo: "support@family-agenda.cloud", to: "anna@example.org" };
 
 describe("invitationMail", () => {
   it("invites in German, saying that it is a trial run", () => {

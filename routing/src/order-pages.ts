@@ -26,7 +26,7 @@ const WORDS: Record<Language, Words> = {
     noFounder: "Für diese Familie ist nicht hinterlegt, wer bestellen kann.",
     subscription: { title: "Abonnement", none: "Für diese Familie gibt es kein Abonnement." },
     noAccess: { title: "Kein Zugriff", line: "Nur Admins der Familie können diese Seite sehen." },
-    done: { title: "Danke für Ihre Bestellung.", mail: "Die Vertragsbestätigung kommt per E-Mail." },
+    done: { title: "Danke für deine Bestellung.", mail: "Die Vertragsbestätigung kommt per E-Mail." },
     signOut: "Abmelden",
   },
   en: {

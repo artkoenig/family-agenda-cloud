@@ -240,7 +240,7 @@ describe("The order", () => {
     const before = await entry();
     const done = await own.request("/order/done");
     expect(done).toMatchObject({ status: 200 });
-    expect(done.body).toContain("Danke für Ihre Bestellung.");
+    expect(done.body).toContain("Danke für deine Bestellung.");
     expect(done.body).toContain(`href="/${familyId}/"`);
     expect(await entry()).toEqual(before);
     expect(await routing.directory("SELECT * FROM subscription")).toEqual([]);

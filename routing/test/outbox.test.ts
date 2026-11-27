@@ -105,7 +105,7 @@ describe("A mail put in the outbox", () => {
       {
         envelopeFrom: "support@family-agenda.cloud",
         envelopeTo: ["anna.mueller@example.org"],
-        from: '"Family Agenda" <support@family-agenda.cloud>',
+        from: '"Family Agenda Cloud" <support@family-agenda.cloud>',
         replyTo: "support@family-agenda.cloud",
         to: "anna.mueller@example.org",
         subject: "Ihre Kündigung ist eingegangen",

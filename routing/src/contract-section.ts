@@ -66,7 +66,7 @@ const WORDS: Record<Language, Words> = {
     lockReason: { trial_ended: "der Testzeitraum ist abgelaufen", subscription_ended: "das Abo ist beendet", unpaid: "die Zahlung ist offen" },
     daysLeft: (days) => (days === 0 ? "heute" : `noch ${days} ${days === 1 ? "Tag" : "Tage"}`),
     order: "Abo bestellen",
-    signIn: { line: "Bitte melden Sie sich an, um den Vertrag zu sehen.", link: "Anmelden" },
+    signIn: { line: "Bitte melde dich an, um den Vertrag zu sehen.", link: "Anmelden" },
   },
   en: {
     title: "Contract",
