@@ -2,7 +2,8 @@ import { createServer, request, type ClientRequest, type IncomingMessage, type S
 import type { AddressInfo } from "node:net";
 import { pipeline } from "node:stream";
 import pg from "pg";
-import { answerCancel, type CancelSetup } from "./cancel";
+import { answerCancel } from "./cancel";
+import { answerDelete, type DeleteSetup } from "./delete";
 import { answerContractSection } from "./contract-fragment";
 import type { ContractAnswer, ContractRequest } from "./contract-visit";
 import { answerSignIn, tokenExchange, type SignInSetup } from "./central-sign-in";
@@ -20,7 +21,7 @@ import { postRegisterAgain } from "./post-register";
 import { headersFromCore, headersToCore } from "./proxy-headers";
 import { BAD_GATEWAY, routeRequest, UNAVAILABLE, type Refusal } from "./request-routing";
 import { systemResolve } from "./resolve";
-import { cancelPathOf, contractPathOf, orderPathOf, STRIPE_EVENTS_PATH, withdrawPathOf, type OrderPath } from "./routing-pages";
+import { cancelPathOf, contractPathOf, deletePathOf, orderPathOf, STRIPE_EVENTS_PATH, withdrawPathOf, type OrderPath } from "./routing-pages";
 import { familySchedules, openQueues } from "./scheduler";
 import { answerStripeEvent, type StripeEventsSetup } from "./stripe-events";
 import { answerWithdraw } from "./withdraw";
@@ -40,7 +41,7 @@ type RouterSetup = {
   signIn: SignInSetup | null;
   /** The order at Stripe; none unless configured, and its pages are then no paths of the Router's. */
   order: OrderSetup | null;
-  cancel: CancelSetup | null;
+  cancel: DeleteSetup | null;
   /** Stripe's webhook; none unless the order is, and its path is then no path of the Router's. */
   stripeEvents: StripeEventsSetup | null;
 };
@@ -141,8 +142,9 @@ async function openStripe({ directory, ...shared }: StripeSurroundings, connectS
   const boss = openQueues(config, { supervise: false, schedule: false, registerInstance: false, max: 2 });
   await boss.start();
   const order: OrderSetup = { config, directory, idp, prices: settings.prices, stripe, portal, now };
-  const events: StripeEventsSetup = { ...shared, settings, idp, stripe, schedules: await familySchedules(boss) };
-  const cancel: CancelSetup = { config, directory, directoryPool: shared.directoryPool, idp, stripe, imprint: settings.imprint, log: shared.log, now };
+  const schedules = await familySchedules(boss);
+  const events: StripeEventsSetup = { ...shared, settings, idp, stripe, schedules };
+  const cancel: DeleteSetup = { config, directory, directoryPool: shared.directoryPool, idp, stripe, imprint: settings.imprint, log: shared.log, now, schedules };
   return { order, cancel, events, close: () => boss.stop({ graceful: false }) };
 }
 
@@ -195,27 +197,29 @@ async function signInRequest(setup: RouterSetup, signIn: SignInSetup, incoming: 
   outgoing.writeHead(status, headers).end(incoming.method === "HEAD" ? undefined : body);
 }
 
-/** What a browser posts to `/cancel` or to `/withdraw`; undefined if that is too long. */
+/** What a browser posts to `/cancel`, `/withdraw` or `/delete`; undefined if that is too long. */
 const formOf = (incoming: IncomingMessage) => async (): Promise<URLSearchParams | undefined> => {
   const body = await beginningOf(incoming, FORM_BYTES);
   return body?.whole ? new URLSearchParams(Buffer.concat(body.chunks).toString()) : undefined;
 };
 
-/** The Contract section's fragment, or a page a Subscription is ended on, in its language: what answers it. */
-type ContractPage = { answer: (request: ContractRequest, setup: CancelSetup) => Promise<ContractAnswer>; language: Language };
+/** The Contract section's fragment, or a page a Subscription is ended or the Family is deleted on, in its language: what answers it. */
+type ContractPage = { answer: (request: ContractRequest, setup: DeleteSetup) => Promise<ContractAnswer>; language: Language };
 
-/** The Contract section's fragment (#267), or the page to cancel on (#229) or to withdraw on (#230), at this path; undefined for every other path. */
+/** The Contract section's fragment (#267), or the page to cancel on (#229), to withdraw on (#230) or to delete the Family on (#231), at this path; undefined for every other path. */
 function contractPageOf(pathname: string): ContractPage | undefined {
   const sectionLanguage = contractPathOf(pathname);
   if (sectionLanguage) return { answer: answerContractSection, language: sectionLanguage };
   const cancelLanguage = cancelPathOf(pathname);
   if (cancelLanguage) return { answer: answerCancel, language: cancelLanguage };
   const withdrawLanguage = withdrawPathOf(pathname);
-  return withdrawLanguage && { answer: answerWithdraw, language: withdrawLanguage };
+  if (withdrawLanguage) return { answer: answerWithdraw, language: withdrawLanguage };
+  const deleteLanguage = deletePathOf(pathname);
+  return deleteLanguage && { answer: answerDelete, language: deleteLanguage };
 }
 
-/** Answers a request for `/contract`, `/cancel` or `/withdraw`. */
-async function contractRequest(setup: CancelSetup, { answer, language }: ContractPage, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
+/** Answers a request for `/contract`, `/cancel`, `/withdraw` or `/delete`. */
+async function contractRequest(setup: DeleteSetup, { answer, language }: ContractPage, incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {
   const { status, headers, body } = await answer({ method: incoming.method ?? "", language, cookie: incoming.headers.cookie, form: formOf(incoming) }, setup);
   // What was posted and not read would stay on the connection.
   if (incoming.method === "POST" && !incoming.complete) outgoing.setHeader("connection", "close");

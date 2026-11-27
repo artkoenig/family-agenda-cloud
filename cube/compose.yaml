@@ -77,6 +77,8 @@ x-core: &core
     IMPRINT_URL: https://family-agenda.cloud/impressum
     PRIVACY_URL: https://family-agenda.cloud/datenschutz
     TERMS_URL: https://family-agenda.cloud/agb
+    # Where the Family's founder deletes it: the Routing module's own page (#231).
+    DELETE_URL: https://app.family-agenda.cloud/delete
     TESSDATA_DIRECTORY: /var/lib/family-agenda/tessdata
     PLUGIN_URLS: ics=http://plugin-ics:8080,imap=http://plugin-imap:8080,webuntis=http://plugin-webuntis:8080
     # Sign-in: one Logto for every Family (ADR-0009 of the core). Each Family is a Logto

@@ -74,6 +74,10 @@ export type StandInLogto = {
   applications: Application[];
   /** Signs `userId` in at Logto, as the person would on its sign-in page; null signs nobody in. */
   signInAs(userId: string | null): void;
+  /** When the person signed in, as every ID token from now on says (`auth_time`); null says it is now. */
+  signedInAt(instant: Date | null): void;
+  /** The `max_age` of every request to `/oidc/auth`, in order; null where it asked for none. */
+  maxAges: (string | null)[];
   /** Answers the token endpoint's authorization code grant with this status, or drops the connection, until set to null. */
   failTokens(status: number | "drop" | null): void;
   close(): Promise<void>;
@@ -123,6 +127,8 @@ export async function startStandInLogto(): Promise<StandInLogto> {
   let failingTokens: number | "drop" | null = null;
   const applications: Application[] = [];
   let signedIn: string | null = null;
+  let signedInAt: Date | null = null;
+  const maxAges: (string | null)[] = [];
   const grants = new Map<string, Grant>();
   let issuer = "";
   const membersLeft = (organizationId: string) => (members.get(organizationId) ?? []).filter((userId) => users.has(userId));
@@ -305,6 +311,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     const challenge = query.get("code_challenge");
     if (client?.type !== "Traditional" || !client.oidcClientMetadata.redirectUris.includes(redirectUri)) return void outgoing.writeHead(400).end("invalid client or redirect_uri");
     if (query.get("response_type") !== "code" || query.get("code_challenge_method") !== "S256" || !challenge) return void outgoing.writeHead(400).end("invalid request");
+    maxAges.push(query.get("max_age"));
     const back = new URL(redirectUri);
     const state = query.get("state");
     if (state !== null) back.searchParams.set("state", state);
@@ -345,7 +352,7 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     }
     const now = Math.floor(Date.now() / 1000);
     const email = grant.email ? { email: emailOf(grant.userId), email_verified: true } : {};
-    const claims = { iss: issuer, aud: clientId, sub: grant.userId, ...email, nonce: grant.nonce, iat: now, exp: now + 3600, auth_time: now, organizations: grant.organizations };
+    const claims = { iss: issuer, aud: clientId, sub: grant.userId, ...email, nonce: grant.nonce, iat: now, exp: now + 3600, auth_time: signedInAt === null ? now : Math.floor(signedInAt.getTime() / 1000), organizations: grant.organizations };
     const idToken = [{ alg: "ES384", typ: "JWT" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".c3RhbmQtaW4";
     outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: "opaque", token_type: "Bearer", expires_in: 3600, id_token: idToken, scope: "openid" }));
   }
@@ -412,6 +419,10 @@ export async function startStandInLogto(): Promise<StandInLogto> {
     },
     issuer,
     applications,
+    signedInAt(instant) {
+      signedInAt = instant;
+    },
+    maxAges,
     signInAs(userId) {
       signedIn = userId;
     },

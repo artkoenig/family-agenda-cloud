@@ -49,7 +49,7 @@ export type TestRouting = {
    * brought up to date, and the Scheduler's queues. For the changes that no command makes, such as
    * locking a Family. What it logs goes into the same log.
    */
-  provisioned<T>(work: (provisioning: ScheduledProvisioning) => Promise<T>): Promise<T>;
+  provisioned<T>(work: (provisioning: ScheduledProvisioning) => Promise<T>, env?: Record<string, string | undefined>): Promise<T>;
   /** The names of the Family's schedules, as pg-boss keeps them in the Directory's database. */
   schedules(familyId: string): Promise<string[]>;
   /** Everything the Routing module logged so far, over all runs, Routers and Schedulers. */
@@ -233,8 +233,8 @@ export async function setUpRouting(): Promise<TestRouting> {
         await result;
       });
     },
-    async provisioned(work) {
-      const config = readConfig(withOverrides({}));
+    async provisioned(work, overrides = {}) {
+      const config = readConfig(withOverrides(overrides));
       const client = new pg.Client(directoryConnection(config));
       await client.connect();
       const boss = openQueues(config, { supervise: false, schedule: false, registerInstance: false, max: 1 });

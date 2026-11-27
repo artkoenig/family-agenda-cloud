@@ -4,8 +4,8 @@ import { clearCookie, cookiesOf, setCookie } from "./cookies";
 import { signInClaims, type SignInClaims } from "./id-token";
 import { landingOf, type FindByOrganization, type Landing } from "./landing";
 import type { PostRegisterAgain } from "./post-register";
-import { CONTRACT_SECTION_PATH, wayBackOf } from "./routing-pages";
-import { clearSessionCookie, sessionCookie } from "./routing-session";
+import { CONTRACT_SECTION_PATH, deletePathOf, wayBackOf } from "./routing-pages";
+import { clearSessionCookie, FRESH_SIGN_IN_SECONDS, sessionCookie } from "./routing-session";
 import { signInCallbackUrl, signOutRedirectUrl } from "./sign-in-client";
 import { openCookie, sealCookie } from "./sign-in-cookie";
 import { INVITATION_PATH, languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, type SignInPage } from "./sign-in-pages";
@@ -16,7 +16,7 @@ import { INVITATION_PATH, languageOf, SIGN_OUT_PATH, signInPage, WAITING_PATH, t
  * their Family, or to a page that says why not (spec/centralSignIn.qnt). The core signs the person
  * in again itself: the Router only finds the Family. Nothing is taken from Logto's customData.
  *
- * - `GET /sign-in` sends the browser to Logto, `GET /sign-in/again` does so with `prompt=none`,
+ * - `GET /sign-in` sends the browser to Logto (for a sign-in of the last 10 minutes on the way to `/delete`, #231), `GET /sign-in/again` does so with `prompt=none`,
  *   `GET /sign-in/register` on Logto's sign-up screen (`first_screen=register`).
  * - `GET /sign-in/invitation` (`routing invite`) does so with the invitation link's one-time token.
  * - `GET /sign-in/out` (Abmelden, #173) ends Logto's session and sends the person to the landing page.
@@ -98,7 +98,7 @@ type Route = (context: Context, query: URLSearchParams) => SignInAnswer | Promis
 const REGISTER_PATH = "/sign-in/register";
 
 const ROUTES: Record<string, Route> = {
-  "/sign-in": (context, query) => toLogto(context, false, {}, wayBackOf(query.get("back"))),
+  "/sign-in": (context, query) => signIn(context, wayBackOf(query.get("back"))),
   "/sign-in/again": (context) => toLogto(context, true),
   [REGISTER_PATH]: (context) => toLogto(context, false, { first_screen: "register" }),
   [INVITATION_PATH]: (context, query) => toLogto(context, false, invitationOf(query)),
@@ -132,6 +132,16 @@ const random = (): string => randomBytes(32).toString("base64url");
  * was, as the ID token's `auth_time`.
  */
 const MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+
+/**
+ * A sign-in the person makes, back to the page `back`, if any. On the way to the page the Family is
+ * deleted on (#231), Logto is asked for a sign-in no older than that page takes, which it says in
+ * the ID token's `auth_time` (OIDC Core 3.1.2.1): the page itself checks it.
+ */
+function signIn(context: Context, back: string | undefined): SignInAnswer {
+  const fresh = back !== undefined && deletePathOf(back) !== undefined;
+  return toLogto(context, false, fresh ? { max_age: String(FRESH_SIGN_IN_SECONDS) } : {}, back);
+}
 
 /**
  * Sends the browser to Logto's authorization endpoint, `prompt=none` if `silent`, with the `extra`

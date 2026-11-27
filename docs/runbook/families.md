@@ -198,6 +198,11 @@ routing delete --family-id <id> --confirm <id>
 The Family 190ca3a1-78b7-45d7-b735-e8cd59b04509 is deleted
 ```
 
+A Family's founder deletes it themselves on `/delete` (`/en/delete`), which runs the same steps, cancels a running
+Subscription to its earliest end first and mails every Admin. If that fails part-way, the Router logs
+``Deleting the Family on /delete failed part-way; `routing delete` finishes it``: run the command above. It sends no
+second mail.
+
 Only this line means the Family is deleted. If the command ends without it
 (`Deleting the Family did not finish; run delete again to finish it`), run it again until it prints the line. The
 usual reason is the blob bucket not being mounted (`The blob root … is not there`): see `docker compose ps blob-mount`

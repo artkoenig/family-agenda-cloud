@@ -81,7 +81,7 @@ module scenarios {
   /** A delivery again for a deleted Family is refused; resume is refused too. */
   run deletedIsFinalTest =
     init.then(runToEnd(0))
-      .then(runStep(6)).then(runStep(6)).then(runStep(6)).then(runStep(6))
+      .then(runStep(6)).then(runStep(6)).then(runStep(6)).then(runStep(6)).then(runStep(6))
       .then(runStep(1)).then(runStep(5))
       .expect(w.status == "deleted" and runs.get(1).pc == "done" and runs.get(5).pc == "done" and not(w.schedules) and safety)
 
@@ -91,7 +91,7 @@ module scenarios {
       .then(runStep(6)).then(runStep(6)).then(runStep(6)).then(crash(6))
       .expect(w.status == "deleted" and w.schedules and deletionFinishes)
       .then(runStep(7)).then(runStep(7)).then(runStep(7)).then(runStep(7))
-      .then(runStep(7)).then(runStep(7)).then(runStep(7)).then(runStep(7))
+      .then(runStep(7)).then(runStep(7)).then(runStep(7)).then(runStep(7)).then(runStep(7))
       .expect(w.deletedAt and not(w.schedules) and not(w.db) and not(w.org) and safety)
 
   /** A job of a Family marked deleted whose delete failed before unscheduling removes the schedules. */
@@ -150,7 +150,7 @@ module scenarios {
   /** Locking and unlocking a deleted Family is refused. */
   run deletedNotLockedTest =
     init.then(runToEnd(0))
-      .then(runStep(6)).then(runStep(6)).then(runStep(6)).then(runStep(6))
+      .then(runStep(6)).then(runStep(6)).then(runStep(6)).then(runStep(6)).then(runStep(6))
       .then(runStep(8)).then(runStep(10))
       .expect(not(isLocked(w)) and runs.get(8).pc == "done" and runs.get(10).pc == "done" and not(w.schedules) and safety)
 
