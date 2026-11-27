@@ -179,6 +179,28 @@ Admins can still download an export in the Admin area. On 9 April 2026 we delete
     });
   });
 
+  it("says that the Trial goes on, and nothing of a lock or a deletion, for a Withdrawal in the Trial", () => {
+    const values = { recipient: erika, contract: monthly, receivedAt, period: { case: "within", refundCents: 0, trialEndsOn: new Date("2026-03-15T09:00:00Z") } } as const;
+    expect(parts(withdrawalMail("de", values), "de").text).toBe(`Hallo Erika Muster,
+
+Dein Widerruf ist am 10.03.2026 um 18:42 Uhr bei uns eingegangen.
+
+Inhalt: Widerruf des Vertrags Family Agenda Cloud, monatlich, bestellt am 05.03.2026.
+
+Das Abonnement endet damit sofort. Bereits gezahlte Beträge, insgesamt 0,00 €, erstatten wir innerhalb von 14 Tagen auf dein Zahlungsmittel.
+
+Dein Testzeitraum läuft bis zum 15.03.2026 weiter: Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen. Möchtest du danach weitermachen, kannst du im Admin-Bereich neu bestellen.`);
+    expect(parts(withdrawalMail("en", values), "en").text).toBe(`Hello Erika Muster,
+
+We received your withdrawal on 10 March 2026 at 18:42 (Berlin time).
+
+Content: withdrawal from the contract Family Agenda Cloud, monthly, ordered on 5 March 2026.
+
+The subscription therefore ends at once. We will refund all amounts paid, €0.00 in total, to your payment method within 14 days.
+
+Your trial continues until 15 March 2026: until then everyone can use Family Agenda Cloud as usual. If you want to continue after that, you can subscribe again in the Admin area.`);
+  });
+
   it("treats a Withdrawal after the period as a Cancellation at the earliest date", () => {
     const values = {
       recipient: erika,

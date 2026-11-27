@@ -5,7 +5,8 @@
  *
  * - Within the withdrawal period (`withdrawal-period.ts`) the Subscription ends at once at Stripe,
  *   without proration or a last invoice, and everything paid for it is refunded. The Family is
- *   Locked once Stripe tells of the end (`stripe-events.ts`).
+ *   Locked once Stripe tells of the end (`stripe-events.ts`), unless its Trial still runs: then it
+ *   stays in its Trial, and the mail says so.
  * - After the period the declaration is an ordinary Cancellation to the earliest date, settled as
  *   on `/cancel`. A Cancellation pending to that date or an earlier one stays as it is.
  * - Either way the page shows the receipt, and the holder gets the mail in their language, only
@@ -43,6 +44,7 @@ import { noAccessPage } from "./order-pages";
 import { outbox } from "./outbox";
 import type { StripeSubscription } from "./stripe";
 import { hasEnded, recordOf, WITHDRAWAL_RECEIVED_AT } from "./stripe-subscription";
+import { isInTrial } from "./trial";
 import { isWithinWithdrawalPeriod, withdrawalPeriodEnd } from "./withdrawal-period";
 
 /** The mail's type in the outbox. */
@@ -145,7 +147,8 @@ async function withdrawn(visit: Visit, client: pg.PoolClient, withdrawal: Withdr
   if (!noted) await setup.stripe.addMetadata(subscription.id, { [WITHDRAWAL_RECEIVED_AT]: receivedAt.toISOString() });
   const taken = ended ? subscription : await setup.stripe.cancelSubscription(subscription.id);
   const refundCents = await setup.stripe.refundSubscription(subscription.id);
-  await recorded(visit, client, taken, withdrawal, { case: "within", refundCents });
+  const { trialEndsAt } = visit.entry;
+  await recorded(visit, client, taken, withdrawal, { case: "within", refundCents, ...(trialEndsAt && isInTrial(visit.entry, visit.now) && { trialEndsOn: trialEndsAt }) });
   setup.log.info("Took a Withdrawal within its period", { familyId: record.familyId, subscription: subscription.id, refundCents });
   return receipt(visit, withdrawal);
 }
