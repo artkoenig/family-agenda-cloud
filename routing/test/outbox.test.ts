@@ -112,6 +112,7 @@ describe("A mail put in the outbox", () => {
         text: mail.text,
         html: null,
         charset: "utf-8",
+        attachments: [],
       },
     ]);
     expect(await routing.directory("SELECT attempts, sent_at, last_error, claimed_until FROM mail_outbox")).toEqual([
@@ -162,6 +163,16 @@ describe("A mail put in the outbox", () => {
     expect(smtp.received).toMatchObject([{ text: mail.text, html: "<p>Grüße</p>" }]);
     expectNoMailIn(logged, [mail]);
     expect(logged).not.toContain("Grüße");
+  });
+
+  it("is sent with its attachments, kept until then", async () => {
+    const pdf = Buffer.from("%PDF-1.3 stand-in\n\u0000\u00ff", "latin1");
+    const mail = { ...mailTo("anna.mueller@example.org"), attachments: [{ filename: "AGB.pdf", contentType: "application/pdf", content: pdf }] };
+    await outbox(await connect()).enqueue(mail, { type: "confirmation", familyId: FAMILY });
+
+    expect(await deliverDue(await sender())).toEqual({ sent: 1, failed: 0 });
+
+    expect(smtp.received).toMatchObject([{ text: mail.text, attachments: [{ filename: "AGB.pdf", contentType: "application/pdf", content: pdf }] }]);
   });
 
   it("can be about no Family, and refuses a type that is no type", async () => {

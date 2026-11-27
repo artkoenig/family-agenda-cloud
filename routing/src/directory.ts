@@ -195,6 +195,8 @@ const MIGRATIONS = [
    CREATE INDEX IF NOT EXISTS mail_outbox_sent ON mail_outbox (sent_at) WHERE sent_at IS NOT NULL`,
   // A mail's HTML, next to its plain text in body; null for a mail of plain text alone.
   "ALTER TABLE mail_outbox ADD COLUMN IF NOT EXISTS body_html text",
+  // The files a mail carries, as `storedAttachments` writes them; null for none.
+  "ALTER TABLE mail_outbox ADD COLUMN IF NOT EXISTS attachments jsonb",
 ];
 
 /** An arbitrary, fixed key of the advisory lock that keeps two migrations of the Directory apart. */

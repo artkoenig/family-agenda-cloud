@@ -239,7 +239,7 @@ async function confirmationOf(at: Case, session: CompletedSession) {
     return undefined;
   }
   const contract = { billing, familyName: await familyNameOf(at), orderedOn: orderedAt ?? handling.now() };
-  return confirmationMail(mailLanguageOf(session.locale), { holder, contract, firstPaymentAt: firstPaymentOf(subscription, session) }, confirmationLegalTexts(), handling.settings.imprint);
+  return await confirmationMail(mailLanguageOf(session.locale), { holder, contract, firstPaymentAt: firstPaymentOf(subscription, session) }, confirmationLegalTexts(), handling.settings.imprint);
 }
 
 /** The holder as Logto keeps them; writes the name Checkout asked for to Logto if it had none, cut to what Logto takes. */

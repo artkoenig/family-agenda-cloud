@@ -36,6 +36,8 @@ export type ReceivedMail = {
   html: string | null;
   /** The charset its text is sent in. */
   charset: string;
+  /** The files it carries. */
+  attachments: { filename: string; contentType: string; content: Buffer }[];
 };
 
 export const USER = "support@family-agenda.test";
@@ -99,6 +101,7 @@ export async function startStandInSmtp(): Promise<StandInSmtp> {
           text: mail.text ?? "",
           html: mail.html || null,
           charset: (mail.headers.get("content-type") as { params?: { charset?: string } } | undefined)?.params?.charset ?? "",
+          attachments: mail.attachments.map(({ filename, contentType, content }) => ({ filename: filename ?? "", contentType, content })),
         });
         callback();
       })().catch((error: unknown) => {
