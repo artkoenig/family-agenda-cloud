@@ -80,6 +80,7 @@ type Words = {
   support: string;
   print: string;
   toFamily: string;
+  abort: string;
   delete: {
     title: string;
     intro: string;
@@ -136,6 +137,7 @@ const WORDS: Record<Language, Words> = {
     support: "Fragen? Schreib uns:",
     print: "Drucken / als PDF speichern",
     toFamily: "Zur Familie",
+    abort: "Abbrechen",
     delete: {
       title: "Familie löschen",
       intro: "Wenn du deine Familie löschst, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.",
@@ -194,6 +196,7 @@ const WORDS: Record<Language, Words> = {
     support: "Questions? Write to us:",
     print: "Print / save as PDF",
     toFamily: "Back to the family",
+    abort: "Go back",
     delete: {
       title: "Delete family",
       intro: "If you delete your family, it is deleted immediately for all members. This cannot be undone.",
@@ -222,8 +225,8 @@ function contractRows({ billing, orderedOn }: Contract, language: Language): Row
   ];
 }
 
-/** `/cancel`: the § 312k fields, the end date to choose and „jetzt kündigen“; nothing else. */
-export function cancelPage(language: Language, { holder, contract, endDates, csrf }: CancelPageValues): string {
+/** `/cancel`: the § 312k fields, the end date to choose, „jetzt kündigen“ and the way back to the Family; nothing else. */
+export function cancelPage(language: Language, familyId: string, { holder, contract, endDates, csrf }: CancelPageValues): string {
   const { cancel } = WORDS[language];
   const options = [...endDates]
     .sort((a, b) => a.getTime() - b.getTime())
@@ -234,7 +237,7 @@ export function cancelPage(language: Language, { holder, contract, endDates, csr
     ...texts([cancel.kind, [cancel.name, holder.name], [cancel.email, holder.email], ...contractRows(contract, language)]),
     [`<label for="${END_DATE_FIELD}">${escape(cancel.endDate)}</label>`, endDate],
   ]);
-  return page(language, cancel.title, form(csrf, `${rows}\n${submit(cancel.button)}`));
+  return page(language, cancel.title, form(csrf, `${rows}\n${submitOrAbort(language, familyId, cancel.button)}`));
 }
 
 /** `/cancel` while a Cancellation is pending: when the contract ends, the button that takes the Cancellation back, and the way back. */
@@ -268,11 +271,11 @@ export function cancelReceiptPage(language: Language, familyId: string, { holder
   return receiptPage(language, familyId, cancel.receipt.title, rows, cancel.receipt.mail(holder.email));
 }
 
-/** `/withdraw`: the holder, the contract and „Widerruf bestätigen“. */
+/** `/withdraw`: the holder, the contract, „Widerruf bestätigen“ and the way back to the Family. */
 export function withdrawPage(language: Language, familyId: string, { holder, contract, csrf }: WithdrawPageValues): string {
   const { withdraw } = WORDS[language];
   const rows = fields(texts([[withdraw.name, holder.name], [withdraw.email, holder.email], ...contractRows(contract, language)]));
-  return page(language, withdraw.title, `${form(csrf, `${rows}\n${submit(withdraw.button)}`)}\n${toFamily(language, familyId, "link")}`);
+  return page(language, withdraw.title, form(csrf, `${rows}\n${submitOrAbort(language, familyId, withdraw.button)}`));
 }
 
 /** `/withdraw` for an Admin who is not the contract's holder: who is, and no form. */
@@ -370,13 +373,18 @@ export function support(language: Language): string {
   return `<p>${escape(WORDS[language].support)} ${SUPPORT_LINK}</p>`;
 }
 
-/** The way back to the Family's Agenda: a secondary button, or a plain link beside a form's button. */
-export function toFamily(language: Language, familyId: string, look: "button" | "link" = "button"): string {
-  return look === "button" ? `<p class="action">${familyButton(language, familyId)}</p>` : `<p class="back"><a href="/${escape(familyId)}/">${escape(WORDS[language].toFamily)}</a></p>`;
+/** The way back to the Family's Agenda, as a secondary button. */
+export function toFamily(language: Language, familyId: string): string {
+  return `<p class="action">${familyButton(language, familyId)}</p>`;
 }
 
-function familyButton(language: Language, familyId: string): string {
-  return `<a class="fam-button fam-button--secondary" href="/${escape(familyId)}/">${escape(WORDS[language].toFamily)}</a>`;
+function familyButton(language: Language, familyId: string, label = WORDS[language].toFamily): string {
+  return `<a class="fam-button fam-button--secondary" href="/${escape(familyId)}/">${escape(label)}</a>`;
+}
+
+/** A form's button beside „Abbrechen“, which leaves the form back to the Family's Agenda. */
+function submitOrAbort(language: Language, familyId: string, label: string): string {
+  return `<p class="action actions"><button class="fam-button fam-button--primary" type="submit">${escape(label)}</button> ${familyButton(language, familyId, WORDS[language].abort)}</p>`;
 }
 
 /** A form that posts to the page's own address, with the session's token. */
@@ -437,7 +445,6 @@ p,li{margin:0 0 8px;color:var(--ink-muted)}
 @media (max-width:480px){.fields div{grid-template-columns:1fr}}
 .action{margin-top:20px}
 .actions{display:flex;flex-wrap:wrap;gap:12px}
-.back{margin-top:16px}
 .understood{margin-top:20px}
 @media print{.no-print{display:none}.card{border:0;box-shadow:none}}
 ${LEGAL_FOOTER_STYLE}

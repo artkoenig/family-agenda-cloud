@@ -97,7 +97,7 @@ async function shown(visit: Visit): Promise<CancelAnswer> {
 
 function formOf(visit: Visit, { contract, endDates }: Live): string {
   const [first, ...later] = endDates;
-  return cancelPage(visit.language, { holder: personOf(visit), contract, endDates: [first.end, ...later.map(({ end }) => end)], csrf: visit.csrf });
+  return cancelPage(visit.language, visit.entry.familyId, { holder: personOf(visit), contract, endDates: [first.end, ...later.map(({ end }) => end)], csrf: visit.csrf });
 }
 
 /** The Subscription at Stripe; undefined if it has ended there, or is none the Tariff knows the billing of. */
