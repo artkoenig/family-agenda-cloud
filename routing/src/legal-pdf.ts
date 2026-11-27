@@ -1,6 +1,6 @@
 /**
  * A legal text of site/legal/ as a PDF, for a mail to attach (the confirmation, #215): A4, in
- * Helvetica, its headings, paragraphs, lists and quotes laid out, bold and italics kept, links
+ * Helvetica, its headings, paragraphs and lists laid out, bold and italics kept, links
  * clickable. Its placeholders are filled as `legalText` fills them. No I/O.
  */
 import { Marked, type Token, type Tokens } from "marked";
@@ -68,36 +68,32 @@ function write(doc: PDFKit.PDFDocument, runs: readonly Run[], x: number, width: 
   doc.fillColor(INK);
 }
 
+/** How each kind of block token is laid out, at `x` and `width` wide; others are left out. */
+const BLOCKS: Partial<Record<string, (doc: PDFKit.PDFDocument, token: Token, x: number, width: number) => void>> = {
+  heading: (doc, token, x, width) => {
+    const { depth, tokens } = token as Tokens.Heading;
+    const title = depth === 1;
+    doc.moveDown(title ? 0 : 0.5);
+    write(doc, runsOf(tokens, { bold: true, italic: false }), x, width, SIZES[depth] ?? BODY);
+    doc.moveDown(title ? 0.5 : 0.25);
+  },
+  paragraph: (doc, token, x, width) => {
+    write(doc, runsOf((token as Tokens.Paragraph).tokens), x, width, BODY);
+    doc.moveDown(0.45);
+  },
+  text: (doc, token, x, width) => {
+    write(doc, runsOf([token]), x, width, BODY);
+  },
+  list: (doc, token, x) => {
+    list(doc, token as Tokens.List, x);
+    doc.moveDown(0.6);
+  },
+};
+
 /** Lays out block tokens from `x` on. */
 function layout(doc: PDFKit.PDFDocument, tokens: readonly Token[], x: number) {
   const width = doc.page.width - MARGIN - x;
-  for (const token of tokens) {
-    switch (token.type) {
-      case "heading": {
-        const { depth, tokens: inner } = token as Tokens.Heading;
-        doc.moveDown(depth === 1 ? 0 : 0.5);
-        write(doc, runsOf(inner, { bold: true, italic: false }), x, width, SIZES[depth] ?? BODY);
-        doc.moveDown(depth === 1 ? 0.5 : 0.25);
-        break;
-      }
-      case "paragraph":
-        write(doc, runsOf((token as Tokens.Paragraph).tokens), x, width, BODY);
-        doc.moveDown(0.45);
-        break;
-      case "text":
-        write(doc, runsOf([token]), x, width, BODY);
-        break;
-      case "blockquote":
-        layout(doc, (token as Tokens.Blockquote).tokens, x + INDENT);
-        break;
-      case "list":
-        list(doc, token as Tokens.List, x);
-        doc.moveDown(0.6);
-        break;
-      default:
-        break;
-    }
-  }
+  for (const token of tokens) BLOCKS[token.type]?.(doc, token, x, width);
 }
 
 function list(doc: PDFKit.PDFDocument, { items, ordered, start }: Tokens.List, x: number) {
