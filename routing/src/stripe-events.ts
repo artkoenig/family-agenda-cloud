@@ -233,7 +233,7 @@ async function confirm(at: Case, session: CompletedSession): Promise<void> {
 async function confirmationOf(at: Case, session: CompletedSession) {
   const { handling, orderer, subscription } = at;
   const { billing, orderedAt } = recordOf(subscription, orderer);
-  const holder = personOf(await namedHolder(at, session), session.customer_details);
+  const holder = personOf(await holderKeepingName(at, session), session.customer_details);
   if (!holder || billing === null) {
     handling.log.error("A contract confirmation could not be written", { familyId: orderer.familyId, subscription: subscription.id });
     return undefined;
@@ -242,8 +242,8 @@ async function confirmationOf(at: Case, session: CompletedSession) {
   return confirmationMail(mailLanguageOf(session.locale), { holder, contract, firstPaymentAt: firstPaymentOf(subscription, session) }, confirmationLegalTexts(), handling.settings.imprint);
 }
 
-/** The holder as Logto keeps them, with the name Checkout asked for kept there if Logto had none. */
-async function namedHolder({ handling, orderer }: Case, { customer_details }: CompletedSession): Promise<LogtoPerson | undefined> {
+/** The holder as Logto keeps them; writes the name Checkout asked for to Logto if it had none, cut to what Logto takes. */
+async function holderKeepingName({ handling, orderer }: Case, { customer_details }: CompletedSession): Promise<LogtoPerson | undefined> {
   const found = await person(handling.idp, orderer.holder);
   const name = customer_details?.individual_name?.trim().slice(0, NAME_LIMIT);
   if (!found || found.name !== null || !name) return found;

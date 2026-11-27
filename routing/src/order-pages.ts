@@ -88,4 +88,3 @@ export function noSubscriptionPage(language: Language, familyId: string): string
 }
 
 const link = (href: string, label: string): string => `<p class="action"><a class="fam-button fam-button--secondary" href="${escape(href)}">${escape(label)}</a></p>`;
-

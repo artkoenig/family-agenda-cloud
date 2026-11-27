@@ -138,7 +138,7 @@ async function checkout(visit: Visit, family: OrderingFamily, founder: LogtoPers
       familyId: entry.familyId,
       family,
       holder: { userId: session.userId, email: founder.email, name: founder.name },
-      price: prices.monthly,
+      monthlyPrice: prices.monthly,
       language: mailLanguageOf(founder.locale),
       pageLanguage: visit.language,
       publicUrl: config.publicUrl,

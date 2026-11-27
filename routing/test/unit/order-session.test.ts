@@ -7,7 +7,7 @@ const order: Order = {
   familyId: "f-1",
   family: { case: "trial", trialEndsAt: new Date("2026-12-08T10:00:00.400Z") },
   holder: { userId: "u-1", email: "anna@example.org", name: "Anna Muster" },
-  price: "price_m",
+  monthlyPrice: "price_m",
   language: "de",
   pageLanguage: "de",
   publicUrl: "https://app.example",

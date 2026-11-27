@@ -14,7 +14,7 @@ export type Order = {
   /** As Logto keeps them: Checkout asks for the name if Logto has none. */
   holder: { userId: string; email: string | null; name: string | null };
   /** Stripe's monthly Price: Checkout offers the yearly one as its upsell, configured at the Price in Stripe's Dashboard. */
-  price: string;
+  monthlyPrice: string;
   /** The language of Checkout: the holder's at Logto. */
   language: Language;
   /** The language of the page the order is made on, and comes back to. */
@@ -39,14 +39,14 @@ const anchoredAt = (anchor: Date) => ({ billing_cycle_anchor: secondsOf(anchor),
 
 /** What the order is, as Stripe creates its Session. */
 export function checkoutSessionParams(order: Order): Stripe.Checkout.SessionCreateParams {
-  const { familyId, family, holder, price, language, pageLanguage, publicUrl, now } = order;
+  const { familyId, family, holder, monthlyPrice, language, pageLanguage, publicUrl, now } = order;
   const { billingCycleAnchor, dueAt } = firstPayment(family, now);
   const metadata = { familyId, holder: holder.userId };
   return {
     mode: "subscription",
     ui_mode: "hosted_page",
     integration_identifier: INTEGRATION,
-    line_items: [{ price, quantity: 1 }],
+    line_items: [{ price: monthlyPrice, quantity: 1 }],
     client_reference_id: familyId,
     metadata,
     subscription_data: { metadata, ...(billingCycleAnchor === null ? {} : anchoredAt(billingCycleAnchor)) },
