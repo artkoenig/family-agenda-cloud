@@ -21,7 +21,6 @@ import { cancelFailedPage, cancelHolderPage, cancelledPage, cancelPage, cancelRe
 import {
   admitted,
   cancellableOf,
-  familyNameOf,
   html,
   instantOf,
   isAdmin,
@@ -106,7 +105,7 @@ async function liveOf({ setup, entry, record, now }: Visit): Promise<Live | unde
   const subscription = await setup.stripe.subscription(record.subscriptionId);
   const { billing, orderedAt } = recordOf(subscription, record);
   if (hasEnded(subscription) || billing === null) return undefined;
-  const contract = { billing, familyName: await familyNameOf(setup, entry), orderedOn: orderedAt ?? record.orderedAt ?? now };
+  const contract = { billing, orderedOn: orderedAt ?? record.orderedAt ?? now };
   return { subscription, contract, endDates: endDatesOf(cancellableOf(subscription, billing, entry, now), now) };
 }
 

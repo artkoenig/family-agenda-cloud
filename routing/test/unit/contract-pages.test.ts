@@ -21,7 +21,7 @@ import type { Contract } from "../../src/contract-wording";
 import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "../../src/legal-footer";
 
 const erika = { name: "Erika Muster", email: "erika@example.org" };
-const monthly: Contract = { billing: "monthly", familyName: "Muster", orderedOn: new Date("2026-03-05T09:05:00Z") };
+const monthly: Contract = { billing: "monthly", orderedOn: new Date("2026-03-05T09:05:00Z") };
 const ends = [new Date("2026-05-05T08:05:00Z"), new Date("2026-04-05T08:05:00Z"), new Date("2026-06-05T08:05:00Z")] as const;
 
 const csrf = "tok-en_1";
@@ -69,7 +69,6 @@ describe("the /cancel page", () => {
       "Name Erika Muster",
       "E-Mail für die Bestätigung erika@example.org",
       "Vertrag Family Agenda Cloud, monatlich",
-      "Familie Muster",
       "Bestellt am 05.03.2026",
       "Kündigen zum [05.04.2026][05.05.2026][05.06.2026]",
       "jetzt kündigen",
@@ -91,7 +90,6 @@ describe("the /cancel page", () => {
       "Name Erika Muster",
       "Email for the confirmation erika@example.org",
       "Contract Family Agenda Cloud, monthly",
-      "Family Muster",
       "Ordered on 5 March 2026",
       "Cancel with effect from [5 April 2026][5 May 2026][5 June 2026]",
       "Cancel now",
@@ -101,7 +99,7 @@ describe("the /cancel page", () => {
   it("holds nothing beyond its fields, the button and the legal footer: no link, offer or explanation", () => {
     for (const language of ["de", "en"] as const) {
       const html = cancelPage(language, values);
-      expect(tagsOf(html)).toEqual(["h1", "form", "input", "dl", ...Array<string[]>(6).fill(["div", "dt", "dd"]).flat(), "div", "dt", "label", "dd", "select", "option", "option", "option", "p", "button"]);
+      expect(tagsOf(html)).toEqual(["h1", "form", "input", "dl", ...Array<string[]>(5).fill(["div", "dt", "dd"]).flat(), "div", "dt", "label", "dd", "select", "option", "option", "option", "p", "button"]);
       expect(between(html, "<body", "</body>").match(/<a /g)).toHaveLength(3);
       expect(html.match(/<button/g)).toHaveLength(1);
       expect(html).not.toContain("<script");
@@ -132,7 +130,6 @@ describe("the /cancel receipt", () => {
       "Eingegangen am 10.03.2026, 18:42 Uhr",
       "Art der Kündigung ordentliche Kündigung",
       "Vertrag Family Agenda Cloud, monatlich",
-      "Familie Muster",
       "Bestellt am 05.03.2026",
       "Erklärt von Erika Muster",
       "Vertragsende 05.04.2026",
@@ -144,7 +141,6 @@ describe("the /cancel receipt", () => {
       "Received on 10 March 2026, 18:42 (Berlin time)",
       "Type of cancellation ordinary cancellation",
       "Contract Family Agenda Cloud, monthly",
-      "Family Muster",
       "Ordered on 5 March 2026",
       "Declared by Erika Muster",
       "Contract ends on 5 April 2026",
@@ -171,7 +167,6 @@ describe("the /withdraw page", () => {
       "Name Erika Muster",
       "E-Mail für die Eingangsbestätigung erika@example.org",
       "Vertrag Family Agenda Cloud, jährlich",
-      "Familie Muster",
       "Bestellt am 05.03.2026",
       "Widerruf bestätigen",
       "Zur Familie",
@@ -181,7 +176,6 @@ describe("the /withdraw page", () => {
       "Name Erika Muster",
       "Email for the acknowledgement erika@example.org",
       "Contract Family Agenda Cloud, yearly",
-      "Family Muster",
       "Ordered on 5 March 2026",
       "Confirm withdrawal",
       "Back to the family",
@@ -202,7 +196,6 @@ describe("the /withdraw receipt", () => {
       "Eingegangen am 10.03.2026, 18:42 Uhr",
       "Erklärung Widerruf des Vertrags",
       "Vertrag Family Agenda Cloud, monatlich",
-      "Familie Muster",
       "Bestellt am 05.03.2026",
       "Erklärt von Erika Muster",
       "Eine Eingangsbestätigung geht an erika@example.org.",
@@ -213,7 +206,6 @@ describe("the /withdraw receipt", () => {
       "Received on 10 March 2026, 18:42 (Berlin time)",
       "Declaration Withdrawal from the contract",
       "Contract Family Agenda Cloud, monthly",
-      "Family Muster",
       "Ordered on 5 March 2026",
       "Declared by Erika Muster",
       "An acknowledgement is on its way to erika@example.org.",
@@ -241,12 +233,12 @@ describe("the receipts", () => {
 });
 
 describe("the /delete page", () => {
-  const values = { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null, csrf };
+  const values = { exportHref: "/f-1/admin/export", subscription: null, csrf };
 
   const deleteLines = {
     de: [
       "Familie löschen",
-      "Wenn du die Familie Muster löschst, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.",
+      "Wenn du deine Familie löschst, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.",
       "Was wann gelöscht wird:",
       "sofort: alle Agenden, Einträge, Quellen und ihre Zugangsdaten, gespeicherte Dateien und die Konten aller Admins",
       "nach spätestens 14 Tagen: die letzten Kopien in unseren Sicherungen",
@@ -256,7 +248,7 @@ describe("the /delete page", () => {
     ],
     en: [
       "Delete family",
-      "If you delete the family Muster, it is deleted immediately for all members. This cannot be undone.",
+      "If you delete your family, it is deleted immediately for all members. This cannot be undone.",
       "What is deleted when:",
       "immediately: all agendas, entries, sources and their credentials, stored files and the accounts of all Admins",
       "after 14 days at the latest: the last copies in our backups",
@@ -332,7 +324,7 @@ describe("the legal footer", () => {
     "/withdraw no holder": (language: "de" | "en") => noWithdrawHolderPage(language, "f-1"),
     "/withdraw failed": (language: "de" | "en") => withdrawFailedPage(language),
     "/withdraw receipt": (language: "de" | "en") => withdrawReceiptPage(language, "f-1", { holder: erika, contract: monthly, receivedAt: new Date() }),
-    "/delete": (language: "de" | "en") => deletePage(language, { familyName: "Muster", exportHref: "/f-1/admin/export", subscription: null, csrf }),
+    "/delete": (language: "de" | "en") => deletePage(language, { exportHref: "/f-1/admin/export", subscription: null, csrf }),
   };
   const footers = { de: legalFooterHtml("de"), en: legalFooterHtml("en") };
 
@@ -359,14 +351,14 @@ describe("escaping", () => {
 
   it("escapes every value on every page", () => {
     const holder = { name: evil, email: evil };
-    const contract = { ...monthly, familyName: evil };
+    const contract = monthly;
     const pages = [
       cancelPage("de", { holder, contract, endDates: ends, csrf: evil }),
       cancelHolderPage("en", "f-1", evil),
       cancelReceiptPage("en", "f-1", { holder, contract, receivedAt: new Date(), endsOn: new Date() }),
       withdrawPage("en", "f-1", { holder, contract, csrf: evil }),
       withdrawReceiptPage("de", "f-1", { holder, contract, receivedAt: new Date() }),
-      deletePage("de", { familyName: evil, exportHref: evil, subscription: { withdrawalPeriodEndsOn: new Date() }, csrf: evil }),
+      deletePage("de", { exportHref: evil, subscription: { withdrawalPeriodEndsOn: new Date() }, csrf: evil }),
     ];
     expect(pages[5]).toContain(`href="&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;"`);
     for (const html of pages) {

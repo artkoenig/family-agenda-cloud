@@ -21,7 +21,6 @@ import { noWithdrawHolderPage, nothingToWithdrawPage, withdrawFailedPage, withdr
 import {
   admitted,
   cancellableOf,
-  familyNameOf,
   html,
   instantOf,
   isAdmin,
@@ -111,11 +110,11 @@ async function shown(visit: Visit): Promise<ContractAnswer> {
 }
 
 /** The Subscription at Stripe, ended or not; undefined if it is none the Tariff knows the billing of. */
-async function liveOf({ setup, entry, record, now }: Visit): Promise<Live | undefined> {
+async function liveOf({ setup, record, now }: Visit): Promise<Live | undefined> {
   const subscription = await setup.stripe.subscription(record.subscriptionId);
   const { billing, orderedAt } = recordOf(subscription, record);
   if (billing === null) return undefined;
-  return { subscription, contract: { billing, familyName: await familyNameOf(setup, entry), orderedOn: orderedAt ?? record.orderedAt ?? now } };
+  return { subscription, contract: { billing, orderedOn: orderedAt ?? record.orderedAt ?? now } };
 }
 
 /** What the posted form declares, under the Family's lock: a Withdrawal that came in when the Subscription first noted one, else now. */

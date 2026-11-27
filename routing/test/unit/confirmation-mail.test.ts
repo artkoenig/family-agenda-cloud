@@ -8,7 +8,7 @@ const imprint: LegalImprint = { name: "Erika Betreiberin", postalAddress: "Postf
 /** Ordered at 23:30 Berlin time on 5 March, the last day of the withdrawal period the 19th. */
 const values = (billing: Billing): ConfirmationMailValues => ({
   holder: { name: "Erika Muster", email: "erika@example.org" },
-  contract: { billing, familyName: "Muster", orderedOn: new Date("2026-03-05T22:30:00Z") },
+  contract: { billing, orderedOn: new Date("2026-03-05T22:30:00Z") },
   firstPaymentAt: new Date("2026-03-07T22:30:00Z"),
 });
 
@@ -158,7 +158,7 @@ Withdrawal period: until and including 19 March 2026
   });
 
   it("names no Family in either text: its id tells the holder nothing", async () => {
-    const mail = await confirmationMail("de", { ...values("monthly"), contract: { ...values("monthly").contract, familyName: "fam-7x2k" } }, legal, imprint);
+    const mail = await confirmationMail("de", { ...values("monthly"), contract: { ...values("monthly").contract } }, legal, imprint);
 
     expect(mail.text).not.toContain("fam-7x2k");
     expect(mail.html).not.toContain("fam-7x2k");

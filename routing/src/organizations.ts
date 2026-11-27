@@ -11,8 +11,6 @@ export type Admin = { userId: string; email: string | null };
 const ADMIN_ROLE = "admin";
 
 export type Organizations = {
-  /** The Organization's name, the Family's; null when it is gone. */
-  name(organizationId: string): Promise<string | null>;
   /**
    * The founder the Organization's custom data names, as the core that created it wrote it; null
    * when it names none, or the Organization is gone.
@@ -36,9 +34,6 @@ const ROUNDS = 3;
 
 export function organizations(idp: IdpManagement): Organizations {
   return {
-    async name(organizationId) {
-      return (await read(idp, organizationId))?.name ?? null;
-    },
     async founder(organizationId) {
       const founder = (await read(idp, organizationId))?.customData?.founderUserId;
       return typeof founder === "string" && founder !== "" ? founder : null;
@@ -67,11 +62,11 @@ export function organizations(idp: IdpManagement): Organizations {
 }
 
 /** The Organization; undefined when it is gone. */
-async function read(idp: IdpManagement, organizationId: string): Promise<{ name: string; customData?: { founderUserId?: unknown } | null } | undefined> {
+async function read(idp: IdpManagement, organizationId: string): Promise<{ customData?: { founderUserId?: unknown } | null } | undefined> {
   const response = await managementFetch(idp, `/api/organizations/${encodeURIComponent(organizationId)}`, { method: "GET" });
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`Logto's Management API answered reading the Organization with ${response.status}`);
-  return (await response.json()) as { name: string; customData?: { founderUserId?: unknown } | null };
+  return (await response.json()) as { customData?: { founderUserId?: unknown } | null };
 }
 
 /** A member of an Organization, as Logto lists it. */

@@ -80,15 +80,15 @@ describe("dates, times and amounts", () => {
 });
 
 describe("contractOf", () => {
-  const contract = { billing: "monthly", familyName: "Muster", orderedOn: new Date("2026-03-05T09:05:00Z") } as const;
+  const contract = { billing: "monthly", orderedOn: new Date("2026-03-05T09:05:00Z") } as const;
 
   it("names the contract, with its order date when asked", () => {
-    expect(contractOf(contract, "de")).toBe("Family Agenda Cloud, monatlich, Familie Muster");
-    expect(contractOf({ ...contract, billing: "yearly" }, "en")).toBe("Family Agenda Cloud, yearly, family Muster");
-    expect(orderedContractOf(contract, "de")).toBe("Family Agenda Cloud, monatlich, Familie Muster, bestellt am 05.03.2026");
-    expect(orderedContractOf({ ...contract, billing: "yearly" }, "en")).toBe("Family Agenda Cloud, yearly, family Muster, ordered on 5 March 2026");
-    expect(contractOf({ ...contract, billing: "yearly" }, "de")).toBe("Family Agenda Cloud, jährlich, Familie Muster");
-    expect(contractOf(contract, "en")).toBe("Family Agenda Cloud, monthly, family Muster");
+    expect(contractOf(contract, "de")).toBe("Family Agenda Cloud, monatlich");
+    expect(contractOf({ ...contract, billing: "yearly" }, "en")).toBe("Family Agenda Cloud, yearly");
+    expect(orderedContractOf(contract, "de")).toBe("Family Agenda Cloud, monatlich, bestellt am 05.03.2026");
+    expect(orderedContractOf({ ...contract, billing: "yearly" }, "en")).toBe("Family Agenda Cloud, yearly, ordered on 5 March 2026");
+    expect(contractOf({ ...contract, billing: "yearly" }, "de")).toBe("Family Agenda Cloud, jährlich");
+    expect(contractOf(contract, "en")).toBe("Family Agenda Cloud, monthly");
   });
 });
 

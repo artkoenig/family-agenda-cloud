@@ -21,7 +21,6 @@ import { lockFamily, unlockFamily } from "./family-status";
 import { confirmationLegalTexts } from "./legal-site";
 import { reasonOf, type Log } from "./log";
 import { NAME_LIMIT, person, setName, type IdpManagement, type LogtoPerson } from "./logto-management";
-import { organizations } from "./organizations";
 import { outbox } from "./outbox";
 import type { Resolve } from "./pool";
 import { provisioning, withFamilyLock, type ScheduledProvisioning } from "./provisioning";
@@ -208,7 +207,7 @@ async function lockMail(at: Case) {
     handling.log.error("The holder of an unpaid Subscription has no email address", { familyId: entry.familyId });
     return undefined;
   }
-  return unpaidMail(mailLanguageOf(found?.locale), { holder, familyName: await familyNameOf(at), lockedAt: entry.lockedAt ?? handling.now() }, handling.settings.imprint);
+  return unpaidMail(mailLanguageOf(found?.locale), { holder, lockedAt: entry.lockedAt ?? handling.now() }, handling.settings.imprint);
 }
 
 /** Sends the contract confirmation, unless it was sent or another Subscription runs, and has Stripe write its invoices in German. */
@@ -238,7 +237,7 @@ async function confirmationOf(at: Case, session: CompletedSession) {
     handling.log.error("A contract confirmation could not be written", { familyId: orderer.familyId, subscription: subscription.id });
     return undefined;
   }
-  const contract = { billing, familyName: await familyNameOf(at), orderedOn: orderedAt ?? handling.now() };
+  const contract = { billing, orderedOn: orderedAt ?? handling.now() };
   return await confirmationMail(mailLanguageOf(session.locale), { holder, contract, firstPaymentAt: firstPaymentOf(subscription, session) }, confirmationLegalTexts(), handling.settings.imprint);
 }
 
@@ -262,8 +261,3 @@ type Nameable = { name: string | null; email: string | null };
 
 const firstOf = (texts: (string | null)[]): string | undefined => texts.find((text) => text !== null) ?? undefined;
 
-/** The Family's name: its Organization's, or its id if that is gone. */
-async function familyNameOf({ handling, entry }: Case): Promise<string> {
-  const name = entry.organizationId === null ? null : await organizations(handling.idp).name(entry.organizationId);
-  return name ?? entry.familyId;
-}
