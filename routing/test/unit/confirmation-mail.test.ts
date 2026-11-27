@@ -96,7 +96,7 @@ Widerrufsfrist: bis einschließlich 19.03.2026
 `);
   });
 
-  it("confirms a monthly Subscription in English, embedding the German texts", () => {
+  it("confirms a monthly Subscription in English, embedding the German texts and naming the buttons in English", () => {
     expect(confirmationMail("en", values("monthly"), legal, imprint)).toEqual({
       from: "Family Agenda <support@family-agenda.cloud>",
       replyTo: "support@family-agenda.cloud",
@@ -115,8 +115,8 @@ First payment on: 7 March 2026
 Term and cancellation: one month, renewing for one month at a time, cancellable any time with effect from the end of the month.
 Withdrawal period: until and including 19 March 2026
 
-Cancel: https://app.family-agenda.cloud/en/cancel (button "Verträge hier kündigen")
-Withdraw: https://app.family-agenda.cloud/en/withdraw (button "Vertrag widerrufen")
+Cancel: https://app.family-agenda.cloud/en/cancel (button "Cancel contracts here")
+Withdraw: https://app.family-agenda.cloud/en/withdraw (button "Withdraw from contract")
 Payment method and invoices: in the Admin area under "Subscription"
 
 Below are our terms, the withdrawal policy and the model withdrawal form. The contract language is German, so these are the binding German texts; English translations are at https://family-agenda.cloud/en/terms and https://family-agenda.cloud/en/withdrawal. Please keep this email.

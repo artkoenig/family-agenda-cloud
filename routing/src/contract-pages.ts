@@ -1,16 +1,16 @@
 /**
  * The contract pages the Routing module serves (#214): `/cancel` and `/withdraw` with the receipt
  * each shows once its declaration came in, and `/delete`; the English ones under `/en`
- * (`CONTRACT_PATHS`). Their buttons' labels stay German on the English pages, which say in English
- * beside them what they mean. In the landing page's design system, like the sign-in pages.
+ * (`CONTRACT_PATHS`), each in its language: the English buttons read what § 312k and § 356a BGB
+ * have in German. In the landing page's design system, like the sign-in pages.
  *
  * The `/cancel` page holds nothing but the fields § 312k BGB asks for, the end date to choose and
- * the button (BGH I ZR 200/25), and like every page here the legal footer. Receipts acknowledge
- * receipt only. Every value is escaped. The forms post to the page's own address, each with the
+ * the button (BGH I ZR 200/25), and like every page here the legal footer. Every other page leads
+ * back to the Family. Receipts acknowledge receipt only. Every value is escaped. The forms post to the page's own address, each with the
  * session's token in a hidden field (#229). No page has an inline handler: the print button and
  * `/delete`'s checkbox work by `SCRIPT_PATH`, which only their pages load. No I/O.
  */
-import { CONTRACT_PATHS, cancelledLine, dateOf, holderLine, orderedContractOf, contractOf, timeOf, type Contract, type Language, type Person } from "./contract-wording";
+import { BILLING, CONTRACT_LINKS, CONTRACT_PATHS, cancelledLine, dateOf, holderLine, timeOf, type Contract, type Language, type Person } from "./contract-wording";
 import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "./legal-footer";
 import { DESIGN_PATH, SUPPORT_LINK } from "./sign-in-pages";
 
@@ -50,36 +50,36 @@ export const SCRIPT_PATH = `${DESIGN_PATH}/contract.js`;
 /** The name of `/delete`'s checkbox, `on` once ticked. */
 export const UNDERSTOOD_FIELD = "understood";
 
-/** A German button label and, on English pages, what it means. */
-export type Button = { label: string; note: string | null };
+/** A row of a page's fields: its label and its value, both text. */
+type Row = readonly [string, string];
 
 type Words = {
   cancel: {
     title: string;
-    kind: [string, string];
+    kind: Row;
     name: string;
     email: string;
-    contract: string;
     endDate: string;
-    button: Button;
-    receipt: { title: string; content: (contract: string, name: string, end: string) => string; ends: (end: string) => string; mail: (email: string) => string };
+    button: string;
+    receipt: { title: string; ends: string; mail: (email: string) => string };
     nothing: string;
     failed: { title: string; line: string };
   };
-  support: string;
   withdraw: {
     title: string;
     name: string;
     email: string;
-    contract: string;
-    button: Button;
-    receipt: { title: string; content: (orderedContract: string, name: string) => string; mail: (email: string) => string };
+    button: string;
+    receipt: { title: string; kind: Row; mail: (email: string) => string };
     nothing: string;
     noHolder: string;
     failed: { title: string; line: string };
   };
-  received: (date: string, time: string) => string;
+  contract: { contract: string; family: string; orderedOn: string };
+  receipt: { receivedAt: string; by: string };
+  support: string;
   print: string;
+  toFamily: string;
   delete: {
     title: string;
     intro: (familyName: string) => string;
@@ -98,16 +98,14 @@ const WORDS: Record<Language, Words> = {
   de: {
     cancel: {
       title: "Kündigung",
-      kind: ["Art der Kündigung:", "ordentliche Kündigung"],
-      name: "Name:",
-      email: "E-Mail für die Bestätigung:",
-      contract: "Vertrag:",
-      endDate: "Kündigen zum:",
-      button: { label: "jetzt kündigen", note: null },
+      kind: ["Art der Kündigung", "ordentliche Kündigung"],
+      name: "Name",
+      email: "E-Mail für die Bestätigung",
+      endDate: "Kündigen zum",
+      button: "jetzt kündigen",
       receipt: {
         title: "Ihre Kündigung ist bei uns eingegangen.",
-        content: (contract, name, end) => `Inhalt: Ordentliche Kündigung des Vertrags ${contract}, durch ${name}, zum ${end}.`,
-        ends: (end) => `Der Vertrag endet am ${end}.`,
+        ends: "Vertragsende",
         mail: (email) => `Eine Bestätigung geht an ${email}.`,
       },
       nothing: "Für diese Familie läuft kein Abonnement, das gekündigt werden kann.",
@@ -116,16 +114,14 @@ const WORDS: Record<Language, Words> = {
         line: "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Es wurde nichts geändert. Bitte versuchen Sie es in einigen Minuten erneut.",
       },
     },
-    support: "Fragen? Schreiben Sie uns:",
     withdraw: {
       title: "Vertrag widerrufen",
-      name: "Name:",
-      email: "E-Mail für die Eingangsbestätigung:",
-      contract: "Vertrag:",
-      button: { label: "Widerruf bestätigen", note: null },
+      name: "Name",
+      email: "E-Mail für die Eingangsbestätigung",
+      button: "Widerruf bestätigen",
       receipt: {
         title: "Ihr Widerruf ist bei uns eingegangen.",
-        content: (orderedContract, name) => `Inhalt: Widerruf des Vertrags ${orderedContract}, durch ${name}.`,
+        kind: ["Erklärung", "Widerruf des Vertrags"],
         mail: (email) => `Eine Eingangsbestätigung geht an ${email}.`,
       },
       nothing: "Für diese Familie gibt es kein Abonnement, das widerrufen werden kann.",
@@ -135,8 +131,11 @@ const WORDS: Record<Language, Words> = {
         line: "Ihre Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuchen Sie es in einigen Minuten erneut.",
       },
     },
-    received: (date, time) => `Eingegangen am ${date} um ${time}.`,
+    contract: { contract: "Vertrag", family: "Familie", orderedOn: "Bestellt am" },
+    receipt: { receivedAt: "Eingegangen am", by: "Erklärt von" },
+    support: "Fragen? Schreiben Sie uns:",
     print: "Drucken / als PDF speichern",
+    toFamily: "Zur Familie",
     delete: {
       title: "Familie löschen",
       intro: (familyName) => `Wenn Sie die Familie ${familyName} löschen, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.`,
@@ -157,16 +156,14 @@ const WORDS: Record<Language, Words> = {
   en: {
     cancel: {
       title: "Cancellation",
-      kind: ["Type of cancellation:", "ordinary cancellation"],
-      name: "Name:",
-      email: "Email for the confirmation:",
-      contract: "Contract:",
-      endDate: "Cancel with effect from:",
-      button: { label: "jetzt kündigen", note: '(German for "cancel now")' },
+      kind: ["Type of cancellation", "ordinary cancellation"],
+      name: "Name",
+      email: "Email for the confirmation",
+      endDate: "Cancel with effect from",
+      button: "Cancel now",
       receipt: {
         title: "We have received your cancellation.",
-        content: (contract, name, end) => `Content: ordinary cancellation of the contract ${contract}, by ${name}, with effect from ${end}.`,
-        ends: (end) => `The contract ends on ${end}.`,
+        ends: "Contract ends on",
         mail: (email) => `A confirmation is on its way to ${email}.`,
       },
       nothing: "This family has no running subscription that could be cancelled.",
@@ -175,16 +172,14 @@ const WORDS: Record<Language, Words> = {
         line: "We could not take your declaration just now. Nothing was changed. Please try again in a few minutes.",
       },
     },
-    support: "Questions? Write to us:",
     withdraw: {
-      title: "Withdraw from the contract",
-      name: "Name:",
-      email: "Email for the acknowledgement:",
-      contract: "Contract:",
-      button: { label: "Widerruf bestätigen", note: '(German for "confirm withdrawal")' },
+      title: "Withdraw from contract",
+      name: "Name",
+      email: "Email for the acknowledgement",
+      button: "Confirm withdrawal",
       receipt: {
         title: "We have received your withdrawal.",
-        content: (orderedContract, name) => `Content: withdrawal from the contract ${orderedContract}, by ${name}.`,
+        kind: ["Declaration", "Withdrawal from the contract"],
         mail: (email) => `An acknowledgement is on its way to ${email}.`,
       },
       nothing: "This family has no subscription that could be withdrawn from.",
@@ -194,8 +189,11 @@ const WORDS: Record<Language, Words> = {
         line: "We could not take your declaration just now. Please try again in a few minutes.",
       },
     },
-    received: (date, time) => `Received on ${date} at ${time}.`,
+    contract: { contract: "Contract", family: "Family", orderedOn: "Ordered on" },
+    receipt: { receivedAt: "Received on", by: "Declared by" },
+    support: "Questions? Write to us:",
     print: "Print / save as PDF",
+    toFamily: "Back to the family",
     delete: {
       title: "Delete family",
       intro: (familyName) => `If you delete the family ${familyName}, it is deleted immediately for all members. This cannot be undone.`,
@@ -215,6 +213,16 @@ const WORDS: Record<Language, Words> = {
   },
 };
 
+/** The rows that name the contract: the Tariff with its billing, the Family, and the day it was ordered. */
+function contractRows({ billing, familyName, orderedOn }: Contract, language: Language): Row[] {
+  const words = WORDS[language].contract;
+  return [
+    [words.contract, `Family Agenda, ${BILLING[language][billing]}`],
+    [words.family, familyName],
+    [words.orderedOn, dateOf(orderedOn, language)],
+  ];
+}
+
 /** `/cancel`: the § 312k fields, the end date to choose and „jetzt kündigen“; nothing else. */
 export function cancelPage(language: Language, { holder, contract, endDates, csrf }: CancelPageValues): string {
   const { cancel } = WORDS[language];
@@ -224,89 +232,86 @@ export function cancelPage(language: Language, { holder, contract, endDates, csr
     .join("");
   const endDate = `<select id="${END_DATE_FIELD}" name="${END_DATE_FIELD}">${options}</select>`;
   const rows = fields([
-    [escape(cancel.kind[0]), escape(cancel.kind[1])],
-    [escape(cancel.name), escape(holder.name)],
-    [escape(cancel.email), escape(holder.email)],
-    [escape(cancel.contract), escape(orderedContractOf(contract, language))],
+    ...texts([cancel.kind, [cancel.name, holder.name], [cancel.email, holder.email], ...contractRows(contract, language)]),
     [`<label for="${END_DATE_FIELD}">${escape(cancel.endDate)}</label>`, endDate],
   ]);
   return page(language, cancel.title, form(csrf, `${rows}\n${submit(cancel.button)}`));
 }
 
-/** `/cancel` while a Cancellation is pending: when the contract ends, and the button that takes the Cancellation back. */
-export function cancelledPage(language: Language, { endsOn, csrf }: CancelledPageValues): string {
-  const { status, undo, undoNote } = cancelledLine(endsOn, language);
-  return page(language, WORDS[language].cancel.title, `${paragraphs([status])}\n${form(csrf, submit({ label: undo, note: undoNote }, UNDO_FIELD))}`);
+/** `/cancel` while a Cancellation is pending: when the contract ends, the button that takes the Cancellation back, and the way back. */
+export function cancelledPage(language: Language, familyId: string, { endsOn, csrf }: CancelledPageValues): string {
+  const { status, undo } = cancelledLine(endsOn, language);
+  return page(language, WORDS[language].cancel.title, `${paragraphs([status])}\n${form(csrf, submit(undo, UNDO_FIELD))}\n${toFamily(language, familyId)}`);
 }
 
 /** `/cancel` for an Admin who is not the contract's holder: who is, and no form. */
-export function cancelHolderPage(language: Language, holderName: string): string {
-  return page(language, WORDS[language].cancel.title, paragraphs([holderLine(holderName, language)]));
+export function cancelHolderPage(language: Language, familyId: string, holderName: string): string {
+  return page(language, WORDS[language].cancel.title, `${paragraphs([holderLine(holderName, language)])}\n${toFamily(language, familyId)}`);
 }
 
 /** `/cancel` of a Family no Subscription runs for. */
-export function nothingToCancelPage(language: Language): string {
+export function nothingToCancelPage(language: Language, familyId: string): string {
   const { title, nothing } = WORDS[language].cancel;
-  return page(language, title, paragraphs([nothing]));
+  return page(language, title, `${paragraphs([nothing])}\n${toFamily(language, familyId)}`);
 }
 
 /** What `/cancel` shows if the declaration could not be taken: nothing changed, and the support is another way. */
-export function cancelFailedPage(language: Language): string {
-  const words = WORDS[language];
-  const { title, line } = words.cancel.failed;
-  return page(language, title, `${paragraphs([line])}\n<p>${escape(words.support)} ${SUPPORT_LINK}</p>`);
+export function cancelFailedPage(language: Language, familyId?: string): string {
+  const { title, line } = WORDS[language].cancel.failed;
+  return page(language, title, `${paragraphs([line])}\n${support(language)}${familyId === undefined ? "" : `\n${toFamily(language, familyId)}`}`);
 }
 
 /** What `/cancel` shows once the Cancellation came in. */
-export function cancelReceiptPage(language: Language, { holder, contract, receivedAt, endsOn }: CancelReceiptValues): string {
+export function cancelReceiptPage(language: Language, familyId: string, { holder, contract, receivedAt, endsOn }: CancelReceiptValues): string {
   const words = WORDS[language];
-  const { receipt } = words.cancel;
-  const end = dateOf(endsOn, language);
-  const lines = [received(language, receivedAt), receipt.content(contractOf(contract, language), holder.name, end), receipt.ends(end), receipt.mail(holder.email)];
-  return page(language, receipt.title, `${paragraphs(lines)}\n${printButton(words.print)}`, "", true);
+  const { cancel } = words;
+  const rows: Row[] = [received(language, receivedAt), cancel.kind, ...contractRows(contract, language), [words.receipt.by, holder.name], [cancel.receipt.ends, dateOf(endsOn, language)]];
+  return receiptPage(language, familyId, cancel.receipt.title, rows, cancel.receipt.mail(holder.email));
 }
 
 /** `/withdraw`: the holder, the contract and „Widerruf bestätigen“. */
-export function withdrawPage(language: Language, { holder, contract, csrf }: WithdrawPageValues): string {
+export function withdrawPage(language: Language, familyId: string, { holder, contract, csrf }: WithdrawPageValues): string {
   const { withdraw } = WORDS[language];
-  const rows = fields([
-    [escape(withdraw.name), escape(holder.name)],
-    [escape(withdraw.email), escape(holder.email)],
-    [escape(withdraw.contract), escape(orderedContractOf(contract, language))],
-  ]);
-  return page(language, withdraw.title, form(csrf, `${rows}\n${submit(withdraw.button)}`));
+  const rows = fields(texts([[withdraw.name, holder.name], [withdraw.email, holder.email], ...contractRows(contract, language)]));
+  return page(language, withdraw.title, `${form(csrf, `${rows}\n${submit(withdraw.button)}`)}\n${toFamily(language, familyId, "link")}`);
 }
 
 /** `/withdraw` for an Admin who is not the contract's holder: who is, and no form. */
-export function withdrawHolderPage(language: Language, holderName: string): string {
-  return page(language, WORDS[language].withdraw.title, paragraphs([holderLine(holderName, language)]));
+export function withdrawHolderPage(language: Language, familyId: string, holderName: string): string {
+  return page(language, WORDS[language].withdraw.title, `${paragraphs([holderLine(holderName, language)])}\n${toFamily(language, familyId)}`);
 }
 
 /** `/withdraw` of a Family that has no Subscription to withdraw from. */
-export function nothingToWithdrawPage(language: Language): string {
+export function nothingToWithdrawPage(language: Language, familyId: string): string {
   const { title, nothing } = WORDS[language].withdraw;
-  return page(language, title, paragraphs([nothing]));
+  return page(language, title, `${paragraphs([nothing])}\n${toFamily(language, familyId)}`);
 }
 
 /** `/withdraw` of a Family no founder is recorded for: nobody gets the form, and the support says how it goes on. */
-export function noWithdrawHolderPage(language: Language): string {
-  const words = WORDS[language];
-  return page(language, words.withdraw.title, `${paragraphs([words.withdraw.noHolder])}\n<p>${escape(words.support)} ${SUPPORT_LINK}</p>`);
+export function noWithdrawHolderPage(language: Language, familyId: string): string {
+  const { withdraw } = WORDS[language];
+  return page(language, withdraw.title, `${paragraphs([withdraw.noHolder])}\n${support(language)}\n${toFamily(language, familyId)}`);
 }
 
 /** What `/withdraw` shows if the declaration could not be taken: to try again, and the support is another way. */
-export function withdrawFailedPage(language: Language): string {
-  const words = WORDS[language];
-  const { title, line } = words.withdraw.failed;
-  return page(language, title, `${paragraphs([line])}\n<p>${escape(words.support)} ${SUPPORT_LINK}</p>`);
+export function withdrawFailedPage(language: Language, familyId?: string): string {
+  const { title, line } = WORDS[language].withdraw.failed;
+  return page(language, title, `${paragraphs([line])}\n${support(language)}${familyId === undefined ? "" : `\n${toFamily(language, familyId)}`}`);
 }
 
 /** What `/withdraw` shows once the Withdrawal came in. */
-export function withdrawReceiptPage(language: Language, { holder, contract, receivedAt }: WithdrawReceiptValues): string {
+export function withdrawReceiptPage(language: Language, familyId: string, { holder, contract, receivedAt }: WithdrawReceiptValues): string {
   const words = WORDS[language];
   const { receipt } = words.withdraw;
-  const lines = [received(language, receivedAt), receipt.content(orderedContractOf(contract, language), holder.name), receipt.mail(holder.email)];
-  return page(language, receipt.title, `${paragraphs(lines)}\n${printButton(words.print)}`, "", true);
+  const rows: Row[] = [received(language, receivedAt), receipt.kind, ...contractRows(contract, language), [words.receipt.by, holder.name]];
+  return receiptPage(language, familyId, receipt.title, rows, receipt.mail(holder.email));
+}
+
+/** A receipt: what came in when as rows, where its confirmation goes, and the buttons to print it and to go back. */
+function receiptPage(language: Language, familyId: string, title: string, rows: readonly Row[], mail: string): string {
+  const words = WORDS[language];
+  const actions = `<p class="action actions no-print">${printButton(words.print)} ${familyButton(language, familyId)}</p>`;
+  return page(language, title, `${fields(texts(rows))}\n${paragraphs([mail])}\n${actions}`, "", true);
 }
 
 /** `/delete`: what goes when, the Export first, and „Familie endgültig löschen“, active only once the checkbox is ticked. */
@@ -333,12 +338,17 @@ function subscriptionNote(language: Language, subscription: DeletePageValues["su
   const words = WORDS[language].delete;
   const periodEnd = subscription.withdrawalPeriodEndsOn;
   if (periodEnd === null) return `<p>${escape(words.subscription)}</p>`;
-  const link = `<a href="${CONTRACT_PATHS.withdraw[language]}">Vertrag widerrufen</a>`;
+  const link = `<a href="${CONTRACT_PATHS.withdraw[language]}">${escape(CONTRACT_LINKS[language].withdraw)}</a>`;
   return `<p>${escape(words.subscription)} ${escape(words.withdrawInstead(dateOf(periodEnd, language)))} ${link}.</p>`;
 }
 
-function received(language: Language, receivedAt: Date): string {
-  return WORDS[language].received(dateOf(receivedAt, language), timeOf(receivedAt, language));
+function received(language: Language, receivedAt: Date): Row {
+  return [WORDS[language].receipt.receivedAt, `${dateOf(receivedAt, language)}, ${timeOf(receivedAt, language)}`];
+}
+
+/** Rows of text as HTML. */
+function texts(rows: readonly Row[]): (readonly [string, string])[] {
+  return rows.map(([label, value]) => [escape(label), escape(value)] as const);
 }
 
 /** Label and value per row, both HTML. */
@@ -351,10 +361,23 @@ export function paragraphs(lines: readonly string[]): string {
 }
 
 /** The button that posts its form; `name` if the form's answer depends on it. */
-export function submit({ label, note }: Button, name?: string): string {
-  const meaning = note === null ? "" : ` <span class="note">${escape(note)}</span>`;
+export function submit(label: string, name?: string): string {
   const named = name === undefined ? "" : ` name="${name}" value="1"`;
-  return `<p class="action"><button class="fam-button fam-button--primary" type="submit"${named}>${escape(label)}</button>${meaning}</p>`;
+  return `<p class="action"><button class="fam-button fam-button--primary" type="submit"${named}>${escape(label)}</button></p>`;
+}
+
+/** Where to write with questions. */
+export function support(language: Language): string {
+  return `<p>${escape(WORDS[language].support)} ${SUPPORT_LINK}</p>`;
+}
+
+/** The way back to the Family's Agenda: a secondary button, or a plain link beside a form's button. */
+export function toFamily(language: Language, familyId: string, look: "button" | "link" = "button"): string {
+  return look === "button" ? `<p class="action">${familyButton(language, familyId)}</p>` : `<p class="back"><a href="/${escape(familyId)}/">${escape(WORDS[language].toFamily)}</a></p>`;
+}
+
+function familyButton(language: Language, familyId: string): string {
+  return `<a class="fam-button fam-button--secondary" href="/${escape(familyId)}/">${escape(WORDS[language].toFamily)}</a>`;
 }
 
 /** A form that posts to the page's own address, with the session's token. */
@@ -363,7 +386,7 @@ export function form(csrf: string, content: string): string {
 }
 
 function printButton(label: string): string {
-  return `<p class="action no-print"><button class="fam-button fam-button--secondary" type="button" data-print>${escape(label)}</button></p>`;
+  return `<button class="fam-button fam-button--secondary" type="button" data-print>${escape(label)}</button>`;
 }
 
 /**
@@ -406,13 +429,16 @@ body{display:grid;place-items:center;gap:16px;padding:24px 16px}
 .card{max-width:560px;width:100%;padding:28px;background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-raised)}
 h1{margin:0 0 16px;font-size:26px;line-height:32px}
 p,li{margin:0 0 8px;color:var(--ink-muted)}
-.fields{margin:0}
-.fields div{margin:0 0 8px}
-.fields dt,.fields dd{display:inline;margin:0}
+.fields{display:grid;margin:0 0 16px;border-top:1px solid var(--line)}
+.fields div{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:4px 16px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.fields dt,.fields dd{margin:0}
 .fields dt{color:var(--ink-muted)}
-.fields dd{color:var(--ink);font-weight:600}
+.fields dd{color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.fields select{box-sizing:border-box;width:100%;min-height:var(--control-height);padding:8px 12px;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--surface-raised);color:inherit;font:inherit}
+@media (max-width:480px){.fields div{grid-template-columns:1fr}}
 .action{margin-top:20px}
-.note{margin-left:8px;color:var(--ink-muted)}
+.actions{display:flex;flex-wrap:wrap;gap:12px}
+.back{margin-top:16px}
 .understood{margin-top:20px}
 @media print{.no-print{display:none}.card{border:0;box-shadow:none}}
 ${LEGAL_FOOTER_STYLE}

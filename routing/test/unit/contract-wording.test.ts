@@ -93,10 +93,10 @@ describe("contractOf", () => {
 });
 
 describe("Admin area and Locked page", () => {
-  it("links the contract pages, keeping the German labels but for deleting", () => {
+  it("links the contract pages, labelled in each language", () => {
     expect(CONTRACT_LINKS).toEqual({
       de: { cancel: "Verträge hier kündigen", withdraw: "Vertrag widerrufen", delete: "Familie löschen" },
-      en: { cancel: "Verträge hier kündigen", withdraw: "Vertrag widerrufen", delete: "Delete family" },
+      en: { cancel: "Cancel contracts here", withdraw: "Withdraw from contract", delete: "Delete family" },
     });
     expect(CONTRACT_PATHS).toEqual({
       cancel: { de: "/cancel", en: "/en/cancel" },
@@ -112,9 +112,9 @@ describe("Admin area and Locked page", () => {
     expect(deleterLine("Erika Muster", "en")).toBe("Only Erika Muster can delete the family");
   });
 
-  it("shows a Cancellation with the German way to take it back", () => {
+  it("shows a Cancellation with the way to take it back", () => {
     const endsOn = new Date("2026-04-05T09:05:00Z");
-    expect(cancelledLine(endsOn, "de")).toEqual({ status: "Gekündigt zum 05.04.2026", undo: "Kündigung zurücknehmen", undoNote: null });
-    expect(cancelledLine(endsOn, "en")).toEqual({ status: "Cancelled with effect from 5 April 2026", undo: "Kündigung zurücknehmen", undoNote: "(undo cancellation)" });
+    expect(cancelledLine(endsOn, "de")).toEqual({ status: "Gekündigt zum 05.04.2026", undo: "Kündigung zurücknehmen" });
+    expect(cancelledLine(endsOn, "en")).toEqual({ status: "Cancelled with effect from 5 April 2026", undo: "Undo cancellation" });
   });
 });

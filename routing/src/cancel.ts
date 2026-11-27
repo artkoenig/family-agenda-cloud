@@ -75,10 +75,10 @@ async function answerVisit(setup: CancelSetup, language: Language, session: Rout
   const entry = await setup.directory.findByOrganization(session.organizationId);
   if (!entry || !runs(entry) || !(await isAdmin(setup, session))) return html(403, noAccessPage(language));
   const record = await setup.directory.subscriptionOf(entry.familyId);
-  if (!record) return html(200, nothingToCancelPage(language));
+  if (!record) return html(200, nothingToCancelPage(language, entry.familyId));
   const holder = await person(setup.idp, record.holder);
   if (!holder) throw new Error(`The holder ${record.holder} of a Subscription is gone from Logto`);
-  if (record.holder !== session.userId) return html(other, cancelHolderPage(language, nameOf(holder, record.holder)));
+  if (record.holder !== session.userId) return html(other, cancelHolderPage(language, entry.familyId, nameOf(holder, record.holder)));
   return answer({ setup, language, entry, record, holder, csrf: session.csrf, now });
 }
 
@@ -87,12 +87,12 @@ const personOf = ({ record, holder }: Visit): Person => ({ name: nameOf(holder, 
 
 /** `/cancel`: the form, or the pending Cancellation with the button that takes it back. */
 async function shown(visit: Visit): Promise<CancelAnswer> {
-  const { language, csrf } = visit;
+  const { language, csrf, entry } = visit;
   const live = await liveOf(visit).catch((error: unknown) => failed(visit, error));
-  if (!live) return html(200, nothingToCancelPage(language));
+  if (!live) return html(200, nothingToCancelPage(language, entry.familyId));
   if ("headers" in live) return live;
   const endsOn = instantOf(live.subscription.cancel_at);
-  if (endsOn) return html(200, cancelledPage(language, { endsOn, csrf }));
+  if (endsOn) return html(200, cancelledPage(language, entry.familyId, { endsOn, csrf }));
   return html(200, formOf(visit, live));
 }
 
@@ -114,7 +114,7 @@ async function liveOf({ setup, entry, record, now }: Visit): Promise<Live | unde
 function declared(visit: Visit, form: URLSearchParams): Promise<CancelAnswer> {
   return underFamilyLock(visit.setup.directoryPool, visit.entry.familyId, async (client) => {
     const live = await liveOf(visit).catch((error: unknown) => failed(visit, error));
-    if (!live) return html(409, nothingToCancelPage(visit.language));
+    if (!live) return html(409, nothingToCancelPage(visit.language, visit.entry.familyId));
     if ("headers" in live) return live;
     return form.has(UNDO_FIELD) ? undone(visit, client, live) : cancelled(visit, client, live, form.get(END_DATE_FIELD));
   });
@@ -137,7 +137,7 @@ async function cancelled(visit: Visit, client: pg.PoolClient, live: Live, posted
     if (mail) await outbox(client).enqueue(mail, { type: "cancellation", familyId: record.familyId });
   });
   setup.log.info("Took a Cancellation", { familyId: record.familyId, subscription: subscription.id, endsOn: end.toISOString() });
-  return html(200, cancelReceiptPage(language, { holder: personOf(visit), contract, receivedAt: now, endsOn: end }));
+  return html(200, cancelReceiptPage(language, record.familyId, { holder: personOf(visit), contract, receivedAt: now, endsOn: end }));
 }
 
 /** The confirmation to the holder, in their language; none, and a line in the log, if Logto has no address of theirs. */
@@ -151,10 +151,10 @@ function confirmationOf(visit: Visit, contract: Contract, { end, settlement }: E
 
 /** A form posted again shows the receipt it had before; any other end date, the Cancellation that is pending. */
 function alreadyCancelled(visit: Visit, { subscription, contract }: Live, endsOn: Date, posted: string | null): CancelAnswer {
-  const { language, now } = visit;
+  const { language, now, record } = visit;
   if (endsOn.toISOString() !== posted) return redirect(303, CONTRACT_PATHS.cancel[language]);
   const receivedAt = notedAt(subscription, CANCELLATION_RECEIVED_AT) ?? now;
-  return html(200, cancelReceiptPage(language, { holder: personOf(visit), contract, receivedAt, endsOn }));
+  return html(200, cancelReceiptPage(language, record.familyId, { holder: personOf(visit), contract, receivedAt, endsOn }));
 }
 
 /** Takes the pending Cancellation back, and with it what its end would have paid back. */
@@ -173,5 +173,5 @@ async function undone(visit: Visit, client: pg.PoolClient, { subscription }: Liv
 /** Stripe did not answer or refused: nothing is recorded, and the page says so. */
 function failed({ setup, language, record }: Visit, error: unknown): CancelAnswer {
   setup.log.error("Stripe did not take a request of /cancel", { familyId: record.familyId, subscription: record.subscriptionId, reason: reasonOf(error) });
-  return html(502, cancelFailedPage(language));
+  return html(502, cancelFailedPage(language, record.familyId));
 }

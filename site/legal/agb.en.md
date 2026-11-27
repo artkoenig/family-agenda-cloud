@@ -66,7 +66,7 @@ Version: 25 November 2026
 
 (3) If you order during the Trial, you can cancel with effect from the end of the Trial. Nothing is charged then.
 
-(4) You cancel with the button "Verträge hier kündigen" (cancel contracts here) on family-agenda.cloud or in the Admin area, or by email to support@family-agenda.cloud. We confirm every cancellation by email.
+(4) You cancel with the button "Cancel contracts here" on family-agenda.cloud or in the Admin area, or by email to support@family-agenda.cloud. We confirm every cancellation by email.
 
 (5) When the subscription ends, your family is locked (section 12).
 

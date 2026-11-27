@@ -73,11 +73,11 @@ async function visitOf(setup: ContractSetup, language: Language, { session, now,
   const refused = (status: number, page: string): ContractAnswer => html(statusOf(form, status), page);
   const entry = await familyOf(setup, session);
   if (!entry) return html(403, noAccessPage(language));
-  if (!(await founderOf(setup, entry.familyId))) return refused(403, noWithdrawHolderPage(language));
+  if (!(await founderOf(setup, entry.familyId))) return refused(403, noWithdrawHolderPage(language, entry.familyId));
   const record = await setup.directory.lastSubscriptionOf(entry.familyId);
-  if (!record) return refused(409, nothingToWithdrawPage(language));
+  if (!record) return refused(409, nothingToWithdrawPage(language, entry.familyId));
   const holder = await holderOf(setup, record);
-  if (record.holder !== session.userId) return refused(403, withdrawHolderPage(language, nameOf(holder, record.holder)));
+  if (record.holder !== session.userId) return refused(403, withdrawHolderPage(language, entry.familyId, nameOf(holder, record.holder)));
   return { setup, language, entry, record, holder, csrf: session.csrf, now };
 }
 
@@ -102,12 +102,12 @@ const personOf = ({ record, holder }: Visit): Person => ({ name: nameOf(holder, 
 
 /** `/withdraw`: the form, while the Subscription runs. */
 async function shown(visit: Visit): Promise<ContractAnswer> {
-  const { language, csrf } = visit;
+  const { language, csrf, entry } = visit;
   const live = await liveOf(visit).catch((error: unknown) => failed(visit, error));
-  if (!live) return html(200, nothingToWithdrawPage(language));
+  if (!live) return html(200, nothingToWithdrawPage(language, entry.familyId));
   if ("headers" in live) return live;
-  if (hasEnded(live.subscription)) return html(200, nothingToWithdrawPage(language));
-  return html(200, withdrawPage(language, { holder: personOf(visit), contract: live.contract, csrf }));
+  if (hasEnded(live.subscription)) return html(200, nothingToWithdrawPage(language, entry.familyId));
+  return html(200, withdrawPage(language, entry.familyId, { holder: personOf(visit), contract: live.contract, csrf }));
 }
 
 /** The Subscription at Stripe, ended or not; undefined if it is none the Tariff knows the billing of. */
@@ -122,13 +122,13 @@ async function liveOf({ setup, entry, record, now }: Visit): Promise<Live | unde
 function declared(visit: Visit): Promise<ContractAnswer> {
   return underFamilyLock(visit.setup.directoryPool, visit.entry.familyId, async (client) => {
     const live = await liveOf(visit).catch((error: unknown) => failed(visit, error));
-    if (!live) return html(409, nothingToWithdrawPage(visit.language));
+    if (!live) return html(409, nothingToWithdrawPage(visit.language, visit.entry.familyId));
     if ("headers" in live) return live;
     const noted = notedAt(live.subscription, WITHDRAWAL_RECEIVED_AT);
     const withdrawal = { ...live, receivedAt: noted ?? visit.now };
     const within = isWithinWithdrawalPeriod(live.contract.orderedOn, withdrawal.receivedAt);
     const taken = await (within ? withdrawn(visit, client, withdrawal, noted !== null) : cancelled(visit, client, withdrawal, noted !== null)).catch((error: unknown) => failed(visit, error));
-    return taken ?? html(409, nothingToWithdrawPage(visit.language));
+    return taken ?? html(409, nothingToWithdrawPage(visit.language, visit.entry.familyId));
   });
 }
 
@@ -197,10 +197,10 @@ async function recorded(visit: Visit, client: pg.PoolClient, taken: StripeSubscr
 }
 
 const receipt = (visit: Visit, { contract, receivedAt }: Withdrawal): ContractAnswer =>
-  html(200, withdrawReceiptPage(visit.language, { holder: personOf(visit), contract, receivedAt }));
+  html(200, withdrawReceiptPage(visit.language, visit.entry.familyId, { holder: personOf(visit), contract, receivedAt }));
 
 /** Stripe did not answer or refused: the page says to try again. */
 function failed({ setup, language, record }: Visit, error: unknown): ContractAnswer {
   setup.log.error("Stripe did not take a request of /withdraw", { familyId: record.familyId, subscription: record.subscriptionId, reason: reasonOf(error) });
-  return html(502, withdrawFailedPage(language));
+  return html(502, withdrawFailedPage(language, record.familyId));
 }
