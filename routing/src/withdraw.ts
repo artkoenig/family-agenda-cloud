@@ -147,10 +147,15 @@ async function withdrawn(visit: Visit, client: pg.PoolClient, withdrawal: Withdr
   if (!noted) await setup.stripe.addMetadata(subscription.id, { [WITHDRAWAL_RECEIVED_AT]: receivedAt.toISOString() });
   const taken = ended ? subscription : await setup.stripe.cancelSubscription(subscription.id);
   const refundCents = await setup.stripe.refundSubscription(subscription.id);
-  const { trialEndsAt } = visit.entry;
-  await recorded(visit, client, taken, withdrawal, { case: "within", refundCents, ...(trialEndsAt && isInTrial(visit.entry, visit.now) && { trialEndsOn: trialEndsAt }) });
+  await recorded(visit, client, taken, withdrawal, refunded(visit, refundCents));
   setup.log.info("Took a Withdrawal within its period", { familyId: record.familyId, subscription: subscription.id, refundCents });
   return receipt(visit, withdrawal);
+}
+
+/** What the mail says of a Withdrawal within the period: the refund, and until when the Trial runs that the Family stays in. */
+function refunded({ entry, now }: Visit, refundCents: number): WithdrawalMailValues["period"] {
+  const { trialEndsAt } = entry;
+  return { case: "within", refundCents, ...(trialEndsAt && isInTrial(entry, now) && { trialEndsOn: trialEndsAt }) };
 }
 
 /** Whether the mail of a Withdrawal from this Subscription is in the outbox: one since it was ordered. */
