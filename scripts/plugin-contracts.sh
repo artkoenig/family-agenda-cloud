@@ -10,6 +10,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$(mktemp)"
 STARTED=()
 
+# shellcheck disable=SC2329 # invoked by the trap below
 cleanup() {
 	rm -f "$ENV_FILE"
 	if ((${#STARTED[@]} > 0)); then docker rm -f "${STARTED[@]}" >/dev/null 2>&1 || true; fi
