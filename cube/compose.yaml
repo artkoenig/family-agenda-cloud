@@ -21,7 +21,7 @@ name: family-agenda
 # The core image of the pool, pinned here as every other image is. A new core version is this line
 # changed and deployed: its cores prepare each Family when they first open it, and the Routing
 # module tries another core while one of the release before still refuses a Family (docs/runbook).
-x-core-image: &core-image ghcr.io/artkoenig/family-agenda:0.12.0@sha256:cc1a4f093a560716dacbd58a9efde83c602efc5f93a98bdf1b5dae7df1951ad4
+x-core-image: &core-image ghcr.io/artkoenig/family-agenda:0.13.2@sha256:d09e526b8126f88a7a86158114246878786e0a44c972b8fe4054834914ca7350
 x-postgres-image: &postgres-image postgres:17@sha256:ff87138949ad9a46f32ff23bd6852b52ce024a13dffe9b4087be98292cdd3b4f
 
 # Every service logs to the Cube's journal (journald, 14 days: cube/health/journald.conf), where
