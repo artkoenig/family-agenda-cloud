@@ -136,7 +136,7 @@ module familyLifecycle {
   /** A run's steps under the lock, where status and schedules change. */
   pure def inSection(kind: str, pc: str): bool =
     if (isCreate(kind)) Set("ensureDb", "add", "open", "schedules", "activate", "schedulesOnly").contains(pc)
-    else if (kind == "delete") Set("mark", "unschedule").contains(pc)
+    else if (kind == "delete") Set("mark", "unschedule", "tell").contains(pc)
     else if (kind == "suspend") pc == "unschedule"
     else if (kind == "resume") pc == "schedule"
     else if (kind == "lock") pc == "unschedule"
@@ -273,7 +273,10 @@ module familyLifecycle {
       all { cur.pc == "start",
             stepTo(r, { ...cur, pc: if (w.status == "none" or w.deletedAt) "done" else "lock" }, w, false) },
       all { cur.pc == "lock", locked(r, { ...cur, pc: "mark" }, w) },
-      all { cur.pc == "mark", stepTo(r, { ...cur, pc: "unschedule" }, markDeleted(w), false) },
+      all { cur.pc == "mark", stepTo(r, { ...cur, pc: "tell" }, markDeleted(w), false) },
+      // delete-family.ts: the mails of an Admin's or the automatic deletion (#231), put in the outbox
+      // once, right after the mark, while Logto still knows the Admins; an Operator's run puts in none.
+      all { cur.pc == "tell", stepTo(r, { ...cur, pc: "unschedule" }, w, false) },
       all { cur.pc == "unschedule", stepTo(r, { ...cur, pc: "drop" }, { ...w, schedules: false }, true) },
       all { cur.pc == "drop", stepTo(r, { ...cur, pc: "blobs" }, dropDb(w), false) },
       all { cur.pc == "blobs", stepTo(r, { ...cur, pc: "org" }, { ...w, blobs: false }, false) },

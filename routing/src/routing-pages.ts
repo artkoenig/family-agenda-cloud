@@ -50,13 +50,18 @@ export function withdrawPathOf(pathname: string): Language | undefined {
   return LANGUAGES.find((language) => CONTRACT_PATHS.withdraw[language] === pathname);
 }
 
+/** The language of the page the Family is deleted on (#231), if this is its path. */
+export function deletePathOf(pathname: string): Language | undefined {
+  return LANGUAGES.find((language) => CONTRACT_PATHS.delete[language] === pathname);
+}
+
 /**
  * The page to come back to after a sign-in, as the browser asks for it: only the exact path of a
  * Routing module's page, or `CONTRACT_SECTION_PATH` for the Contract section of the person's own
  * Family, so that a link to central sign-in sends nobody anywhere else.
  */
 export function wayBackOf(asked: string | null): string | undefined {
-  return asked !== null && (asked === CONTRACT_SECTION_PATH || orderPathOf(asked) || cancelPathOf(asked) || withdrawPathOf(asked)) ? asked : undefined;
+  return asked !== null && (asked === CONTRACT_SECTION_PATH || orderPathOf(asked) || cancelPathOf(asked) || withdrawPathOf(asked) || deletePathOf(asked)) ? asked : undefined;
 }
 
 /** Where a page sends a browser that is not signed in; the callback sends it back to the page. */

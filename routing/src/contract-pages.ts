@@ -10,7 +10,7 @@
  * session's token in a hidden field (#229). No page has an inline handler: the print button and
  * `/delete`'s checkbox work by `SCRIPT_PATH`, which only their pages load. No I/O.
  */
-import { BILLING, CONTRACT_LINKS, CONTRACT_PATHS, cancelledLine, dateOf, holderLine, timeOf, type Contract, type Language, type Person } from "./contract-wording";
+import { BILLING, CONTRACT_LINKS, CONTRACT_PATHS, cancelledLine, dateOf, deleterLine, holderLine, timeOf, type Contract, type Language, type Person } from "./contract-wording";
 import { LEGAL_FOOTER_STYLE, legalFooterHtml } from "./legal-footer";
 import { DESIGN_PATH, SUPPORT_LINK } from "./sign-in-pages";
 
@@ -92,6 +92,8 @@ type Words = {
     withdrawInstead: (periodEnd: string) => string;
     understood: string;
     button: string;
+    noDeleter: string;
+    failed: { title: string; line: string };
   };
 };
 
@@ -153,6 +155,11 @@ const WORDS: Record<Language, Words> = {
       withdrawInstead: (periodEnd) => `Du kannst stattdessen bis zum ${periodEnd} den Vertrag widerrufen und erhältst dann alles Gezahlte zurück:`,
       understood: "Ich verstehe, dass alle Daten der Familie endgültig gelöscht werden.",
       button: "Familie endgültig löschen",
+      noDeleter: "Für diese Familie ist nicht hinterlegt, wer sie löschen kann.",
+      failed: {
+        title: "Das hat gerade nicht geklappt",
+        line: "Die Familie konnte gerade nicht gelöscht werden. Es wurde nichts gelöscht. Bitte versuch es in einigen Minuten erneut.",
+      },
     },
   },
   en: {
@@ -212,6 +219,11 @@ const WORDS: Record<Language, Words> = {
       withdrawInstead: (periodEnd) => `Instead, you can withdraw from the contract until ${periodEnd} and get everything you paid back:`,
       understood: "I understand that all of the family's data will be permanently deleted.",
       button: "Delete family permanently",
+      noDeleter: "There is no record of who can delete this family.",
+      failed: {
+        title: "That did not work just now",
+        line: "We could not delete the family just now. Nothing was deleted. Please try again in a few minutes.",
+      },
     },
   },
 };
@@ -332,6 +344,23 @@ export function deletePage(language: Language, { exportHref, subscription, csrf 
     ),
   ];
   return page(language, words.title, body.filter((part) => part !== null).join("\n"), "", true);
+}
+
+/** `/delete` for an Admin who is not the Family's founder: who is, and no form. */
+export function deleterPage(language: Language, familyId: string, deleterName: string): string {
+  return page(language, WORDS[language].delete.title, `${paragraphs([deleterLine(deleterName, language)])}\n${toFamily(language, familyId)}`);
+}
+
+/** `/delete` of a Family no founder is recorded for: nobody gets the form, and the support says how it goes on. */
+export function noDeleterPage(language: Language, familyId: string): string {
+  const words = WORDS[language].delete;
+  return page(language, words.title, `${paragraphs([words.noDeleter])}\n${support(language)}\n${toFamily(language, familyId)}`);
+}
+
+/** What `/delete` shows if nothing could be deleted: to try again, and the support is another way. */
+export function deleteFailedPage(language: Language, familyId?: string): string {
+  const { title, line } = WORDS[language].delete.failed;
+  return page(language, title, `${paragraphs([line])}\n${support(language)}${familyId === undefined ? "" : `\n${toFamily(language, familyId)}`}`);
 }
 
 /** What deleting does to a running Subscription, and while it can still be withdrawn, the way to. */

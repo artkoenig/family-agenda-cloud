@@ -190,7 +190,9 @@ async function familyFollows(at: Case): Promise<void> {
   const { work, log, now } = handling;
   const { familyId } = entry;
   if (!isLockable(entry)) {
-    if (isRunning(subscription.status)) log.error("A Subscription runs of a Family that is deleted or not prepared", { familyId, subscription: subscription.id });
+    // A deleted Family's Subscription runs on to the end its deletion set (#231).
+    const ending = entry.status === "deleted" && subscription.cancel_at !== null;
+    if (isRunning(subscription.status) && !ending) log.error("A Subscription runs of a Family that is deleted or not prepared", { familyId, subscription: subscription.id });
     return;
   }
   if (subscription.status === "active") await unlockFamily(work, familyId);

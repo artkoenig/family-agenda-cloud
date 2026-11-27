@@ -1,6 +1,7 @@
 /**
- * What the pages a Subscription is ended on share (#229, #230): `/cancel` and `/withdraw` answer
- * the same people the same way until it comes to what the Contract holder declares.
+ * What the pages a Subscription is ended on share (#229, #230), and the one the Family is deleted
+ * on (#231): `/cancel`, `/withdraw` and `/delete` answer the same people the same way until it
+ * comes to what the Contract holder, or the founder, declares.
  *
  * - Without a session the browser goes to central sign-in and comes back.
  * - A form counts only with the session's token.
@@ -13,7 +14,7 @@ import { monthsAfter, type Cancellable, type EndDate } from "./cancel-dates";
 import type { Config } from "./config";
 import type { Imprint } from "./contract-mails";
 import { CSRF_FIELD } from "./contract-pages";
-import { CONTRACT_PATHS, type Billing, type Language } from "./contract-wording";
+import { CONTRACT_PATHS, type Billing, type Language, type Settlement } from "./contract-wording";
 import { cookiesOf } from "./cookies";
 import type { Directory, DirectoryEntry } from "./directory";
 import type { Log } from "./log";
@@ -55,7 +56,7 @@ export const html = (status: number, body: string): ContractAnswer => ({ status,
 export const redirect = (status: 302 | 303, location: string): ContractAnswer => ({ status, headers: { ...NO_STORE, location }, body: "" });
 
 /** Lets a request for `page` in, or answers it: no such method, no session, a form too long or not the session's own, which `refused` tells. */
-export async function admitted(request: ContractRequest, setup: ContractSetup, page: "cancel" | "withdraw", refused: (language: Language) => string): Promise<Admitted | ContractAnswer> {
+export async function admitted(request: ContractRequest, setup: ContractSetup, page: keyof typeof CONTRACT_PATHS, refused: (language: Language) => string): Promise<Admitted | ContractAnswer> {
   const { language } = request;
   if (!METHODS.includes(request.method)) return { status: 405, headers: { ...NO_STORE, allow: METHODS.join(", ") }, body: "" };
   const posted = request.method === "POST";
@@ -67,6 +68,15 @@ export async function admitted(request: ContractRequest, setup: ContractSetup, p
   if (!form) return { status: 413, headers: { ...NO_STORE, "content-type": "text/plain; charset=utf-8" }, body: "Too long\n" };
   if (!isOwnForm(session, form.get(CSRF_FIELD))) return html(403, refused(language));
   return { session, now, form };
+}
+
+/** A page without the form is shown to who asks for it, and refuses what is posted. */
+export const statusOf = (form: Admitted["form"], refusal: number): number => (form === null ? 200 : refusal);
+
+/** The running Family of the session, if the session is an Admin's of it. */
+export async function familyOf(setup: ContractSetup, session: RoutingSession): Promise<DirectoryEntry | undefined> {
+  const entry = await setup.directory.findByOrganization(session.organizationId);
+  return entry && runs(entry) && (await isAdmin(setup, session)) ? entry : undefined;
 }
 
 /** Whether the Family runs, Locked or not: not one being prepared, suspended or deleted. */
@@ -94,6 +104,12 @@ export const notedOf = ({ settlement }: EndDate, now: Date): Record<string, stri
   [CANCELLATION_RECEIVED_AT]: now.toISOString(),
   [CANCELLATION_REFUND_CENTS]: settlement.case === "yearly-after-year-one" ? String(settlement.refundCents) : "",
 });
+
+/** What the end of a pending Cancellation pays back, as the Subscription notes it. */
+export function settlementOf({ metadata }: StripeSubscription): Settlement {
+  const refundCents = Number(metadata[CANCELLATION_REFUND_CENTS] ?? "");
+  return Number.isInteger(refundCents) && refundCents > 0 ? { case: "yearly-after-year-one", refundCents } : { case: "plain" };
+}
 
 /** The instant the Subscription's metadata notes under `key`; null if it notes none. */
 export function notedAt({ metadata }: StripeSubscription, key: string): Date | null {

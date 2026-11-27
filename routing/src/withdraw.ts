@@ -22,13 +22,13 @@ import { noWithdrawHolderPage, nothingToWithdrawPage, withdrawFailedPage, withdr
 import {
   admitted,
   cancellableOf,
+  familyOf,
   html,
   instantOf,
-  isAdmin,
   nameOf,
   notedAt,
   notedOf,
-  runs,
+  statusOf,
   underFamilyLock,
   type Admitted,
   type ContractAnswer,
@@ -80,15 +80,6 @@ async function visitOf(setup: ContractSetup, language: Language, { session, now,
   const holder = await holderOf(setup, record);
   if (record.holder !== session.userId) return refused(403, withdrawHolderPage(language, entry.familyId, nameOf(holder, record.holder)));
   return { setup, language, entry, record, holder, csrf: session.csrf, now };
-}
-
-/** A page without the form is shown to who asks for it, and refuses what is posted. */
-const statusOf = (form: Admitted["form"], refusal: number): number => (form === null ? 200 : refusal);
-
-/** The running Family of the session, if the session is an Admin's of it. */
-async function familyOf(setup: ContractSetup, session: Admitted["session"]): Promise<DirectoryEntry | undefined> {
-  const entry = await setup.directory.findByOrganization(session.organizationId);
-  return entry && runs(entry) && (await isAdmin(setup, session)) ? entry : undefined;
 }
 
 /** The Subscription's holder at Logto. */

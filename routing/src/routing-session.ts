@@ -36,6 +36,14 @@ export function sessionOf(operatorKey: Buffer, cookies: ReadonlyMap<string, stri
   return typeof session?.csrf === "string" ? (session as RoutingSession) : undefined;
 }
 
+/** How old a sign-in at Logto may be for the Family to be deleted with it (#231), in seconds. */
+export const FRESH_SIGN_IN_SECONDS = 10 * 60;
+
+/** Whether the person signed in at Logto no longer ago than that; not if Logto did not say when. */
+export function isFreshSignIn({ authTime }: RoutingSession, now: Date): boolean {
+  return authTime !== null && now.getTime() / 1000 - authTime <= FRESH_SIGN_IN_SECONDS;
+}
+
 /** Whether a form posted the session's token. */
 export function isOwnForm({ csrf }: RoutingSession, posted: string | null): boolean {
   const [own, given] = [Buffer.from(csrf), Buffer.from(posted ?? "")];
