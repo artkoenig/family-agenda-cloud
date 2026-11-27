@@ -105,7 +105,7 @@ The free 14 days a Family has from its registration; it ends without cost and ne
 _Avoid_: Test phase, free plan
 
 **Locked**:
-A Family whose Trial ended without an order, or whose Subscription ended, was withdrawn or went unpaid: kept but not served, its Admins can only order, download a backup or delete it, and it is deleted 30 days after it was locked. Unlike a suspended Family, which the Operator stops by hand, an order unlocks it.
+A Family whose Trial ended without a running Subscription, or whose Subscription ended or was withdrawn after its Trial, or went unpaid: kept but not served, its Admins can only order, download a backup or delete it, and it is deleted 30 days after it was locked. Unlike a suspended Family, which the Operator stops by hand, an order unlocks it.
 _Avoid_: Expired, suspended (the Operator's), inactive
 
 **Contract section**:
@@ -117,5 +117,5 @@ The Subscription's holder ending it at the end of a billing period they choose; 
 _Avoid_: Termination, unsubscribe
 
 **Withdrawal**:
-The Subscription's holder undoing it under the statutory right of withdrawal; it ends at once, the Family is Locked and everything paid is refunded.
+The Subscription's holder undoing it under the statutory right of withdrawal; it ends at once and everything paid is refunded. The Family is Locked, unless its Trial still runs: then it stays in its Trial.
 _Avoid_: Revocation, refund (that is the money), cancellation

@@ -252,12 +252,29 @@ describe("/withdraw", () => {
     expect(page.body).toContain("kein Abonnement");
   });
 
-  it("within the period in the Trial refunds nothing, and the mail says 0,00 €", async () => {
+  it("within the period in the Trial refunds nothing, the mail says 0,00 € and that the Trial goes on, and the Family stays in its Trial", async () => {
+    await routing.directory("UPDATE family SET trial_starts_at = $2 WHERE family_id = $1", [familyId, new Date("2026-11-16T10:00:00Z")]);
     await subscribed({ ...FRESH, billing_cycle_anchor: seconds("2026-11-30T10:00:00Z") });
+    routing.logto.setLocale("u-1", "de-DE");
     const own = await signedIn();
     expect((await own.submit()).status).toBe(200);
     expect(stripe.cancelled).toEqual(["sub_1"]);
-    expect((await mails())[0]!.body).toContain("insgesamt 0,00 €");
+    const [mail] = await mails();
+    expect(mail!.body).toContain("insgesamt 0,00 €");
+    expect(mail!.body).toContain("Dein Testzeitraum läuft bis zum 30.11.2026 weiter");
+    expect(mail!.body).not.toContain("gesperrt");
+    await told("customer.subscription.deleted");
+    expect(await family()).toMatchObject({ lock_reason: null });
+    expect(routing.log()).toContain("the Family stays in its Trial");
+  });
+
+  it("within the period after the Trial ended locks the Family, and the mail says so", async () => {
+    await routing.directory("UPDATE family SET trial_starts_at = $2 WHERE family_id = $1", [familyId, new Date("2026-11-01T10:00:00Z")]);
+    await subscribed(FRESH);
+    routing.logto.setLocale("u-1", "de-DE");
+    const own = await signedIn();
+    expect((await own.submit()).status).toBe(200);
+    expect((await mails())[0]!.body).toContain("deine Familie ist gesperrt");
     await told("customer.subscription.deleted");
     expect(await family()).toMatchObject({ lock_reason: "subscription_ended" });
   });

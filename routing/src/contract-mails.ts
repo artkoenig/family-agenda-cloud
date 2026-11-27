@@ -34,13 +34,14 @@ export type CancellationMailValues = { recipient: Person; contract: Contract; re
 /**
  * A Withdrawal received at `receivedAt`: within the 14 days it ends the Subscription at once and
  * everything paid, `refundCents`, is refunded; after them, which ended on `endedOn`, it counts as
- * a Cancellation at the earliest date, `endsOn`.
+ * a Cancellation at the earliest date, `endsOn`. Within them the Family is Locked, unless its Trial
+ * still runs, until `trialEndsOn`: then it stays in its Trial.
  */
 export type WithdrawalMailValues = {
   recipient: Person;
   contract: Contract;
   receivedAt: Date;
-  period: { case: "within"; refundCents: number } | { case: "after"; endedOn: Date; endsOn: Date; settlement: Settlement };
+  period: { case: "within"; refundCents: number; trialEndsOn?: Date } | { case: "after"; endedOn: Date; endsOn: Date; settlement: Settlement };
 };
 
 /**
@@ -79,6 +80,7 @@ type Words = {
     receivedLate: (when: When) => string;
     content: (orderedContract: string) => string;
     withdrawn: (refund: string, deletedOn: string) => Paragraph[];
+    withdrawnInTrial: (refund: string, trialEnd: string) => Paragraph[];
     late: (periodEnd: string, end: string) => string;
   };
   untilTheEnd: (ends: string, end: string, deletedOn: string) => { untilThen: string; locked: string; undo: string };
@@ -117,6 +119,12 @@ const WORDS: Record<Language, Words> = {
         ],
         [
           `Admins können im Admin-Bereich weiterhin einen Export herunterladen. Am ${deletedOn} löschen wir die Familie mit allen Daten. Möchtest du weitermachen, kannst du bis dahin im Admin-Bereich neu bestellen.`,
+        ],
+      ],
+      withdrawnInTrial: (refund, trialEnd) => [
+        [`Das Abonnement endet damit sofort. Bereits gezahlte Beträge, insgesamt ${refund}, erstatten wir innerhalb von 14 Tagen auf dein Zahlungsmittel.`],
+        [
+          `Dein Testzeitraum läuft bis zum ${trialEnd} weiter: Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen. Möchtest du danach weitermachen, kannst du im Admin-Bereich neu bestellen.`,
         ],
       ],
       late: (periodEnd, end) =>
@@ -167,6 +175,12 @@ const WORDS: Record<Language, Words> = {
         [`The subscription therefore ends at once, and your family is locked. We will refund all amounts paid, ${refund} in total, to your payment method within 14 days.`],
         [
           `Admins can still download an export in the Admin area. On ${deletedOn} we delete the family with all its data. If you want to continue, you can subscribe again in the Admin area until then.`,
+        ],
+      ],
+      withdrawnInTrial: (refund, trialEnd) => [
+        [`The subscription therefore ends at once. We will refund all amounts paid, ${refund} in total, to your payment method within 14 days.`],
+        [
+          `Your trial continues until ${trialEnd}: until then everyone can use Family Agenda Cloud as usual. If you want to continue after that, you can subscribe again in the Admin area.`,
         ],
       ],
       late: (periodEnd, end) =>
@@ -226,10 +240,17 @@ export function withdrawalMail(language: Language, values: WithdrawalMailValues,
   const when = whenOf(values.receivedAt, language);
   const effect =
     period.case === "within"
-      ? withdrawal.withdrawn(amountOf(period.refundCents, language), dateAfter(values.receivedAt, 30, language))
+      ? withdrawnOf(language, period, values.receivedAt)
       : untilTheEnd(language, withdrawal.late(dateOf(period.endedOn, language), dateOf(period.endsOn, language)), period.endsOn, period.settlement);
   const received = period.case === "within" ? withdrawal.received(when) : withdrawal.receivedLate(when);
   return mail(language, values.recipient, withdrawal.subject, [[received], [withdrawal.content(orderedContractOf(values.contract, language))], ...effect], imprint);
+}
+
+/** What a Withdrawal within the period does: the Family is Locked, or stays in the Trial that still runs. */
+function withdrawnOf(language: Language, { refundCents, trialEndsOn }: { refundCents: number; trialEndsOn?: Date }, receivedAt: Date): Paragraph[] {
+  const { withdrawal } = WORDS[language];
+  const refund = amountOf(refundCents, language);
+  return trialEndsOn ? withdrawal.withdrawnInTrial(refund, dateOf(trialEndsOn, language)) : withdrawal.withdrawn(refund, dateAfter(receivedAt, 30, language));
 }
 
 /** The Cancellation mail from "Bis dahin können alle …" on, after `ends`, the sentence that says when the contract ends. */

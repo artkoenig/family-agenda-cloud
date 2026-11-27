@@ -4,7 +4,8 @@
  * order all end in its current state: the Directory keeps it, and the Family's lock follows it.
  *
  * - `active` unlocks the Family, `unpaid` locks it and mails the Contract holder once, and
- *   `canceled` locks it; any other status leaves it as it is.
+ *   `canceled` locks it, unless its Trial still runs: then it stays in its Trial, as before the
+ *   order. Any other status leaves it as it is.
  * - A completed Checkout sends the contract confirmation of § 312f BGB, once per Subscription.
  * - Of two running Subscriptions of a Family, the newer one is cancelled and refunded.
  *
@@ -25,6 +26,7 @@ import { outbox } from "./outbox";
 import type { Resolve } from "./pool";
 import { provisioning, withFamilyLock, type ScheduledProvisioning } from "./provisioning";
 import type { FamilySchedules } from "./scheduler";
+import { isInTrial } from "./trial";
 import { signedEvent, type StripePort, type StripeSubscription } from "./stripe";
 import { DUPLICATE, firstPaymentOf, hasEnded, isDuplicate, newerOf, noticeOf, ordererOf, recordOf, unusedCentsOf, type CompletedSession, type Notice, type Orderer } from "./stripe-subscription";
 import { unpaidMail } from "./unpaid-mail";
@@ -193,7 +195,18 @@ async function familyFollows(at: Case): Promise<void> {
   }
   if (subscription.status === "active") await unlockFamily(work, familyId);
   if (subscription.status === "unpaid") await lockFamily(work, familyId, "unpaid", now());
-  if (subscription.status === "canceled" && !(await anotherRuns(at))) await lockFamily(work, familyId, "subscription_ended", endOf(at));
+  if (subscription.status === "canceled" && !(await anotherRuns(at))) await ended(at);
+}
+
+/** The Subscription ended: locks the Family, unless its Trial still runs, which it then stays in. */
+async function ended(at: Case): Promise<void> {
+  const { handling, entry, subscription } = at;
+  const { work, log, now } = handling;
+  if (isInTrial(entry, now())) {
+    log.info("A Subscription ended of a Family in its Trial; the Family stays in its Trial", { familyId: entry.familyId, subscription: subscription.id });
+    return;
+  }
+  await lockFamily(work, entry.familyId, "subscription_ended", endOf(at));
 }
 
 const endOf = ({ handling, orderer, subscription }: Case): Date => recordOf(subscription, orderer).endedAt ?? handling.now();

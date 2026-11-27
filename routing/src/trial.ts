@@ -13,3 +13,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export function trialEndsAt(start: Date): Date {
   return new Date(start.getTime() + TRIAL_DAYS * DAY_MS);
 }
+
+/** Whether a Family whose Trial ends at `trialEndsAt`, if it has one, is in it at `now`. */
+export function isInTrial({ trialEndsAt }: { trialEndsAt: Date | null }, now: Date): boolean {
+  return trialEndsAt !== null && now < trialEndsAt;
+}

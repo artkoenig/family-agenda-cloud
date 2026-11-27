@@ -135,6 +135,20 @@ describe("Stripe's webhook", () => {
     expect(await familyRow()).toMatchObject({ lock_reason: "subscription_ended", locked_at: new Date(1_790_000_000_000) });
   });
 
+  it("leaves a Family in its Trial whose Subscription ended, with its schedules, and locks one whose Trial is over", async () => {
+    const schedules = await routing.schedules(familyId);
+    await routing.directory("UPDATE family SET trial_starts_at = $2 WHERE family_id = $1", [familyId, new Date("2026-11-16T10:00:00Z")]);
+    at("sub_1", { status: "canceled", ended_at: 1_790_000_000 });
+    expect(await post(deleted("sub_1"))).toBe(200);
+    expect(await rowsOf()).toMatchObject([{ status: "canceled" }]);
+    expect(await familyRow()).toMatchObject({ status: "active", lock_reason: null, locked_at: null });
+    expect(await routing.schedules(familyId)).toEqual(schedules);
+
+    await routing.directory("UPDATE family SET trial_starts_at = $2 WHERE family_id = $1", [familyId, new Date("2026-11-06T10:00:00Z")]);
+    expect(await post(updated("sub_1"))).toBe(200);
+    expect(await familyRow()).toMatchObject({ lock_reason: "subscription_ended" });
+  });
+
   it("leaves the Family as it is while payments are retried, and while an order is incomplete", async () => {
     at("sub_1", { status: "past_due" });
     expect(await post(invoice("payment_failed", "sub_1"))).toBe(200);
