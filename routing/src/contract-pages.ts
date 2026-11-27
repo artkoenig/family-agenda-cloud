@@ -432,7 +432,7 @@ export function escape(text: string): string {
 
 /** The card around a page, the fields as rows, and no buttons on paper; everything else comes from the design system. */
 const STYLE = `
-body{display:grid;place-items:center;gap:16px;padding:24px 16px}
+body{box-sizing:border-box;display:grid;place-items:center;gap:16px;padding:24px 16px}
 .card{max-width:560px;width:100%;padding:28px;background:var(--surface-raised);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-raised)}
 h1{margin:0 0 16px;font-size:26px;line-height:32px}
 p,li{margin:0 0 8px;color:var(--ink-muted)}
@@ -446,6 +446,6 @@ p,li{margin:0 0 8px;color:var(--ink-muted)}
 .action{margin-top:20px}
 .actions{display:flex;flex-wrap:wrap;gap:12px}
 .understood{margin-top:20px}
-@media print{.no-print{display:none}.card{border:0;box-shadow:none}}
+@media print{body{min-height:0}.no-print{display:none}.card{border:0;box-shadow:none}}
 ${LEGAL_FOOTER_STYLE}
 `;

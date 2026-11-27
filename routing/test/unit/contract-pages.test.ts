@@ -153,7 +153,8 @@ describe("the /cancel receipt", () => {
     expect(cancelReceiptPage("de", "f-1", values)).toContain(`</style>\n${script}\n</head>`);
     expect(cancelReceiptPage("en", "f-1", values)).toContain("<title>We have received your cancellation. · Family Agenda Cloud</title>");
     // On paper, without the button and the footer.
-    expect(cancelReceiptPage("de", "f-1", values)).toContain("@media print{.no-print{display:none}");
+    expect(cancelReceiptPage("de", "f-1", values)).toContain("@media print{body{min-height:0}.no-print{display:none}");
+    expect(cancelReceiptPage("de", "f-1", values)).toContain("body{box-sizing:border-box;");
     expect(cancelReceiptPage("de", "f-1", values)).toContain("@media print{.legal{display:none}}");
   });
 });
