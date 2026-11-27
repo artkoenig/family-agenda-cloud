@@ -8,23 +8,23 @@ import { APP_URL } from "./legal-pages";
 import { ORDER_PATHS } from "./routing-pages";
 
 /** A Family locked at `lockedAt` as its Subscription, which `holder` holds, is not paid. */
-export type UnpaidMailValues = { holder: Person; familyName: string; lockedAt: Date };
+export type UnpaidMailValues = { holder: Person; lockedAt: Date };
 
-type Facts = { familyName: string; locked: string; deleted: string; link: string };
+type Facts = { locked: string; deleted: string; link: string };
 
 const WORDS: Record<Language, { subject: string; paragraphs: (facts: Facts) => Paragraph[] }> = {
   de: {
     subject: "Deine Familie ist gesperrt: Zahlung ausgeblieben – Family Agenda Cloud",
-    paragraphs: ({ familyName, locked, deleted, link }) => [
-      [`die Zahlung für dein Abonnement ist trotz mehrerer Versuche ausgeblieben. Deine Familie ${familyName} ist deshalb seit dem ${locked} gesperrt.`],
+    paragraphs: ({ locked, deleted, link }) => [
+      [`die Zahlung für dein Abonnement ist trotz mehrerer Versuche ausgeblieben. Deine Familie ist deshalb seit dem ${locked} gesperrt.`],
       [`Sobald die offene Rechnung bezahlt ist, ist sie sofort wieder freigeschaltet: ${link}`],
       [`Ohne Zahlung löschen wir die Familie am ${deleted} mit allen Daten. Einen Export können Admins bis dahin im Admin-Bereich herunterladen.`],
     ],
   },
   en: {
     subject: "Your family is locked: payment missing – Family Agenda Cloud",
-    paragraphs: ({ familyName, locked, deleted, link }) => [
-      [`The payment for your subscription has not arrived despite several attempts. Your family ${familyName} has therefore been locked since ${locked}.`],
+    paragraphs: ({ locked, deleted, link }) => [
+      [`The payment for your subscription has not arrived despite several attempts. Your family has therefore been locked since ${locked}.`],
       [`As soon as the open invoice is paid, it is unlocked at once: ${link}`],
       [`Without payment we delete the family with all its data on ${deleted}. Admins can download an export in the Admin area until then.`],
     ],
@@ -32,8 +32,8 @@ const WORDS: Record<Language, { subject: string; paragraphs: (facts: Facts) => P
 };
 
 /** The mail to the holder of a Subscription that became `unpaid`. */
-export function unpaidMail(language: Language, { holder, familyName, lockedAt }: UnpaidMailValues, imprint: Imprint): ContractMail {
+export function unpaidMail(language: Language, { holder, lockedAt }: UnpaidMailValues, imprint: Imprint): ContractMail {
   const { subject, paragraphs } = WORDS[language];
-  const facts = { familyName, locked: dateOf(lockedAt, language), deleted: dateAfter(lockedAt, DELETED_AFTER_DAYS, language), link: `${APP_URL}${ORDER_PATHS.subscription[language]}` };
+  const facts = { locked: dateOf(lockedAt, language), deleted: dateAfter(lockedAt, DELETED_AFTER_DAYS, language), link: `${APP_URL}${ORDER_PATHS.subscription[language]}` };
   return contractMail(language, holder, subject, paragraphs(facts), imprint);
 }

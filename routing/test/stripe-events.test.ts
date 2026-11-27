@@ -154,7 +154,7 @@ describe("Stripe's webhook", () => {
     const sent = await mails();
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ type: "unpaid", mail_to: expect.stringContaining("u-1@example.com") as unknown, subject: "Deine Familie ist gesperrt: Zahlung ausgeblieben – Family Agenda Cloud" });
-    expect(sent[0]!["body"]).toContain("Deine Familie Family org_1 ist deshalb seit dem 20.11.2026 gesperrt.");
+    expect(sent[0]!["body"]).toContain("Deine Familie ist deshalb seit dem 20.11.2026 gesperrt.");
     at("sub_1");
     expect(await post(invoice("paid", "sub_1"))).toBe(200);
     expect(await familyRow()).toMatchObject({ status: "active", lock_reason: null });

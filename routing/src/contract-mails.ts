@@ -50,14 +50,13 @@ export type WithdrawalMailValues = {
  */
 export type FamilyDeletedMailValues = {
   recipient: Person;
-  familyName: string;
   deletedAt: Date;
   by: "recipient" | "automatic";
   subscription: { endsOn: Date; settlement: Settlement } | null;
 };
 
 /** A deleted Family, for every other Admin: deleted by the Admin named `by.admin`, or automatically. */
-export type FamilyDeletedNoticeValues = { recipient: Person; familyName: string; deletedAt: Date; by: { admin: string } | "automatic" };
+export type FamilyDeletedNoticeValues = { recipient: Person; deletedAt: Date; by: { admin: string } | "automatic" };
 
 /** Lines of a paragraph; a null line is one this case leaves out. */
 export type Paragraph = readonly (string | null)[];
@@ -87,14 +86,14 @@ type Words = {
   yearlyRefund: (refund: string) => string;
   deleted: {
     subject: string;
-    byRecipient: (familyName: string, when: When) => string;
+    byRecipient: (when: When) => string;
     backups: (goneOn: string) => string;
     subscription: (end: string) => string;
     yearlyRefund: (refund: string) => string;
     thanks: string;
   };
-  notice: { subject: (familyName: string) => string; byAdmin: (admin: string, familyName: string, date: string) => string; gone: string };
-  automatic: (familyName: string, date: string) => string;
+  notice: { subject: string; byAdmin: (admin: string, date: string) => string; gone: string };
+  automatic: (date: string) => string;
   footer: readonly string[];
 };
 
@@ -132,18 +131,18 @@ const WORDS: Record<Language, Words> = {
     yearlyRefund: (refund) => `Den nicht genutzten Teil deines Jahresbeitrags, ${refund}, erstatten wir mit dem Vertragsende auf dein Zahlungsmittel.`,
     deleted: {
       subject: "Deine Familie wurde gelöscht – Family Agenda Cloud",
-      byRecipient: (familyName, { date, time }) => `Du hast die Familie ${familyName} am ${date} um ${time} gelöscht.`,
+      byRecipient: ({ date, time }) => `Du hast deine Familie am ${date} um ${time} gelöscht.`,
       backups: (goneOn) => `Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am ${goneOn} entfernt.`,
       subscription: (end) => `Dein Abonnement ist zum ${end} gekündigt.`,
       yearlyRefund: (refund) => `Den nicht genutzten Teil, ${refund}, erstatten wir auf dein Zahlungsmittel.`,
       thanks: "Danke, dass du Family Agenda Cloud genutzt hast.",
     },
     notice: {
-      subject: (familyName) => `Die Familie ${familyName} wurde gelöscht – Family Agenda Cloud`,
-      byAdmin: (admin, familyName, date) => `${admin} hat die Familie ${familyName} am ${date} gelöscht.`,
+      subject: "Deine Familie wurde gelöscht – Family Agenda Cloud",
+      byAdmin: (admin, date) => `${admin} hat deine Familie am ${date} gelöscht.`,
       gone: "Dein Zugang und alle Daten der Familie sind damit gelöscht.",
     },
-    automatic: (familyName, date) => `Wie angekündigt haben wir die Familie ${familyName} am ${date}, 30 Tage nach der Sperre, gelöscht.`,
+    automatic: (date) => `Wie angekündigt haben wir deine Familie am ${date}, 30 Tage nach der Sperre, gelöscht.`,
     footer: [
       "-- ",
       "Family Agenda Cloud · {{NAME}} · {{POSTFLEX_ADDRESS}}",
@@ -182,18 +181,18 @@ const WORDS: Record<Language, Words> = {
     yearlyRefund: (refund) => `We will refund the unused part of your yearly fee, ${refund}, to your payment method when the contract ends.`,
     deleted: {
       subject: "Your family has been deleted – Family Agenda Cloud",
-      byRecipient: (familyName, { date, time }) => `You deleted the family ${familyName} on ${date} at ${time}.`,
+      byRecipient: ({ date, time }) => `You deleted your family on ${date} at ${time}.`,
       backups: (goneOn) => `All of the family's data has been deleted; the last copies in our backups will be removed by ${goneOn}.`,
       subscription: (end) => `Your subscription is cancelled with effect from ${end}.`,
       yearlyRefund: (refund) => `We will refund the unused part, ${refund}, to your payment method.`,
       thanks: "Thank you for using Family Agenda Cloud.",
     },
     notice: {
-      subject: (familyName) => `The family ${familyName} has been deleted – Family Agenda Cloud`,
-      byAdmin: (admin, familyName, date) => `${admin} deleted the family ${familyName} on ${date}.`,
+      subject: "Your family has been deleted – Family Agenda Cloud",
+      byAdmin: (admin, date) => `${admin} deleted your family on ${date}.`,
       gone: "Your access and all of the family's data have been deleted with it.",
     },
-    automatic: (familyName, date) => `As announced, we deleted the family ${familyName} on ${date}, 30 days after it was locked.`,
+    automatic: (date) => `As announced, we deleted your family on ${date}, 30 days after it was locked.`,
     footer: [
       "-- ",
       "Family Agenda Cloud · {{NAME}} · {{POSTFLEX_ADDRESS}}",
@@ -250,9 +249,8 @@ function settled(language: Language, settlement: Settlement): string | null {
 /** The mail to the Admin who deleted the Family, or after an automatic deletion. */
 export function familyDeletedMail(language: Language, values: FamilyDeletedMailValues, imprint?: Imprint): ContractMail {
   const words = WORDS[language];
-  const { familyName, deletedAt } = values;
-  const deleted =
-    values.by === "automatic" ? words.automatic(familyName, dateOf(deletedAt, language)) : words.deleted.byRecipient(familyName, whenOf(deletedAt, language));
+  const { deletedAt } = values;
+  const deleted = values.by === "automatic" ? words.automatic(dateOf(deletedAt, language)) : words.deleted.byRecipient(whenOf(deletedAt, language));
   const backups = words.deleted.backups(dateAfter(deletedAt, 14, language));
   const paragraphs = [[`${deleted} ${backups}`, subscriptionCancelled(language, values.subscription)], [words.deleted.thanks]];
   return mail(language, values.recipient, words.deleted.subject, paragraphs, imprint);
@@ -271,10 +269,10 @@ function subscriptionCancelled(language: Language, subscription: FamilyDeletedMa
 /** The mail to every other Admin of the deleted Family. */
 export function familyDeletedNoticeMail(language: Language, values: FamilyDeletedNoticeValues, imprint?: Imprint): ContractMail {
   const words = WORDS[language];
-  const { familyName, by } = values;
+  const { by } = values;
   const date = dateOf(values.deletedAt, language);
-  const deleted = by === "automatic" ? words.automatic(familyName, date) : words.notice.byAdmin(by.admin, familyName, date);
-  return mail(language, values.recipient, words.notice.subject(familyName), [[`${deleted} ${words.notice.gone}`]], imprint);
+  const deleted = by === "automatic" ? words.automatic(date) : words.notice.byAdmin(by.admin, date);
+  return mail(language, values.recipient, words.notice.subject, [[`${deleted} ${words.notice.gone}`]], imprint);
 }
 
 /** A mail to `recipient` from its paragraphs, between the greeting and the standard footer, as the other contract mails are (confirmation-mail.ts). */

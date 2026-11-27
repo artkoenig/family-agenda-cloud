@@ -12,7 +12,7 @@ import type { Contract, Language } from "../../src/contract-wording";
 
 const erika = { name: "Erika Muster", email: "erika@example.org" };
 const max = { name: "Max Muster", email: "max@example.org" };
-const monthly: Contract = { billing: "monthly", familyName: "Muster", orderedOn: new Date("2026-03-05T09:05:00Z") };
+const monthly: Contract = { billing: "monthly", orderedOn: new Date("2026-03-05T09:05:00Z") };
 const yearlyInYearOne: Contract = { ...monthly, billing: "yearly" };
 const yearlyAfterYearOne: Contract = { ...monthly, billing: "yearly", orderedOn: new Date("2025-03-05T09:05:00Z") };
 
@@ -57,7 +57,7 @@ describe("cancellationMail", () => {
 
 Deine Kündigung ist am 10.03.2026 um 18:42 Uhr bei uns eingegangen.
 
-Inhalt: Ordentliche Kündigung des Vertrags Family Agenda Cloud, monatlich, Familie Muster, zum 05.04.2026.
+Inhalt: Ordentliche Kündigung des Vertrags Family Agenda Cloud, monatlich, zum 05.04.2026.
 
 Der Vertrag endet am 05.04.2026. Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen.
 
@@ -77,7 +77,7 @@ Du kannst die Kündigung bis zum 05.04.2026 im Admin-Bereich zurücknehmen.`,
 
 We received your cancellation on 10 March 2026 at 18:42 (Berlin time).
 
-Content: ordinary cancellation of the contract Family Agenda Cloud, monthly, family Muster, with effect from 5 April 2026.
+Content: ordinary cancellation of the contract Family Agenda Cloud, monthly, with effect from 5 April 2026.
 
 The contract ends on 5 April 2026. Until then everyone can use Family Agenda Cloud as usual.
 
@@ -90,10 +90,10 @@ You can undo the cancellation in the Admin area until 5 April 2026.`,
   it("says nothing of money for a yearly Subscription in year one", () => {
     const values = { ...monthlyCancellation, contract: yearlyInYearOne, endsOn: new Date("2027-03-05T09:05:00Z") };
     expect(parts(cancellationMail("de", values), "de").text).toContain(
-      "Inhalt: Ordentliche Kündigung des Vertrags Family Agenda Cloud, jährlich, Familie Muster, zum 05.03.2027.\n\nDer Vertrag endet am 05.03.2027. Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen.\n\nAb dem 05.03.2027",
+      "Inhalt: Ordentliche Kündigung des Vertrags Family Agenda Cloud, jährlich, zum 05.03.2027.\n\nDer Vertrag endet am 05.03.2027. Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen.\n\nAb dem 05.03.2027",
     );
     expect(parts(cancellationMail("en", values), "en").text).toContain(
-      "family Muster, with effect from 5 March 2027.\n\nThe contract ends on 5 March 2027. Until then everyone can use Family Agenda Cloud as usual.\n\nFrom 5 March 2027 your family is locked.",
+      "yearly, with effect from 5 March 2027.\n\nThe contract ends on 5 March 2027. Until then everyone can use Family Agenda Cloud as usual.\n\nFrom 5 March 2027 your family is locked.",
     );
     for (const language of ["de", "en"] as const) {
       expect(cancellationMail(language, values).text).not.toMatch(/€|erstatten|refund|berechnet|charged/);
@@ -112,7 +112,7 @@ You can undo the cancellation in the Admin area until 5 April 2026.`,
 
 Deine Kündigung ist am 10.06.2026 um 10:00 Uhr bei uns eingegangen.
 
-Inhalt: Ordentliche Kündigung des Vertrags Family Agenda Cloud, jährlich, Familie Muster, zum 05.07.2026.
+Inhalt: Ordentliche Kündigung des Vertrags Family Agenda Cloud, jährlich, zum 05.07.2026.
 
 Der Vertrag endet am 05.07.2026. Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen.
 Den nicht genutzten Teil deines Jahresbeitrags, 66,67 €, erstatten wir mit dem Vertragsende auf dein Zahlungsmittel.
@@ -156,7 +156,7 @@ describe("withdrawalMail", () => {
 
 Dein Widerruf ist am 10.03.2026 um 18:42 Uhr bei uns eingegangen.
 
-Inhalt: Widerruf des Vertrags Family Agenda Cloud, monatlich, Familie Muster, bestellt am 05.03.2026.
+Inhalt: Widerruf des Vertrags Family Agenda Cloud, monatlich, bestellt am 05.03.2026.
 
 Das Abonnement endet damit sofort, und deine Familie ist gesperrt. Bereits gezahlte Beträge, insgesamt 12,99 €, erstatten wir innerhalb von 14 Tagen auf dein Zahlungsmittel.
 
@@ -171,7 +171,7 @@ Admins können im Admin-Bereich weiterhin einen Export herunterladen. Am 09.04.2
 
 We received your withdrawal on 10 March 2026 at 18:42 (Berlin time).
 
-Content: withdrawal from the contract Family Agenda Cloud, monthly, family Muster, ordered on 5 March 2026.
+Content: withdrawal from the contract Family Agenda Cloud, monthly, ordered on 5 March 2026.
 
 The subscription therefore ends at once, and your family is locked. We will refund all amounts paid, €12.99 in total, to your payment method within 14 days.
 
@@ -195,7 +195,7 @@ Admins can still download an export in the Admin area. On 9 April 2026 we delete
 
 Deine Erklärung ist am 25.03.2026 um 08:15 Uhr bei uns eingegangen.
 
-Inhalt: Widerruf des Vertrags Family Agenda Cloud, monatlich, Familie Muster, bestellt am 05.03.2026.
+Inhalt: Widerruf des Vertrags Family Agenda Cloud, monatlich, bestellt am 05.03.2026.
 
 Die Widerrufsfrist von 14 Tagen ist am 19.03.2026 abgelaufen. Wir behandeln deine Erklärung deshalb als ordentliche Kündigung zum frühestmöglichen Zeitpunkt: Der Vertrag endet am 05.04.2026. Bis dahin können alle Family Agenda Cloud wie gewohnt nutzen.
 
@@ -212,7 +212,7 @@ Du kannst die Kündigung bis zum 05.04.2026 im Admin-Bereich zurücknehmen.`,
 
 We received your statement on 25 March 2026 at 08:15 (Berlin time).
 
-Content: withdrawal from the contract Family Agenda Cloud, monthly, family Muster, ordered on 5 March 2026.
+Content: withdrawal from the contract Family Agenda Cloud, monthly, ordered on 5 March 2026.
 
 The 14-day withdrawal period ended on 19 March 2026. We therefore treat your statement as an ordinary cancellation at the earliest possible date: the contract ends on 5 April 2026. Until then everyone can use Family Agenda Cloud as usual.
 
@@ -245,7 +245,7 @@ describe("familyDeletedMail", () => {
   const deletedAt = new Date("2026-06-10T08:00:00Z");
 
   it("tells the deleting Admin without a Subscription when the last copies are gone", () => {
-    const values = { recipient: erika, familyName: "Muster", deletedAt, by: "recipient", subscription: null } as const;
+    const values = { recipient: erika, deletedAt, by: "recipient", subscription: null } as const;
     expect(parts(familyDeletedMail("de", values), "de")).toEqual({
       from: MAIL_FROM,
       replyTo: MAIL_REPLY_TO,
@@ -253,7 +253,7 @@ describe("familyDeletedMail", () => {
       subject: "Deine Familie wurde gelöscht – Family Agenda Cloud",
       text: `Hallo Erika Muster,
 
-Du hast die Familie Muster am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
+Du hast deine Familie am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
 
 Danke, dass du Family Agenda Cloud genutzt hast.`,
     });
@@ -264,7 +264,7 @@ Danke, dass du Family Agenda Cloud genutzt hast.`,
       subject: "Your family has been deleted – Family Agenda Cloud",
       text: `Hello Erika Muster,
 
-You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
+You deleted your family on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
 
 Thank you for using Family Agenda Cloud.`,
     });
@@ -272,16 +272,16 @@ Thank you for using Family Agenda Cloud.`,
 
   it("says the deletion cancelled a running Subscription, refunding a yearly one after year one", () => {
     const endsOn = new Date("2026-07-05T08:05:00Z");
-    const yearly = { recipient: erika, familyName: "Muster", deletedAt, by: "recipient", subscription: { endsOn, settlement: { case: "yearly-after-year-one", refundCents: 6667 } } } as const;
+    const yearly = { recipient: erika, deletedAt, by: "recipient", subscription: { endsOn, settlement: { case: "yearly-after-year-one", refundCents: 6667 } } } as const;
     expect(parts(familyDeletedMail("de", yearly), "de").text).toBe(`Hallo Erika Muster,
 
-Du hast die Familie Muster am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
+Du hast deine Familie am 10.06.2026 um 10:00 Uhr gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
 Dein Abonnement ist zum 05.07.2026 gekündigt. Den nicht genutzten Teil, 66,67 €, erstatten wir auf dein Zahlungsmittel.
 
 Danke, dass du Family Agenda Cloud genutzt hast.`);
     expect(parts(familyDeletedMail("en", yearly), "en").text).toBe(`Hello Erika Muster,
 
-You deleted the family Muster on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
+You deleted your family on 10 June 2026 at 10:00 (Berlin time). All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
 Your subscription is cancelled with effect from 5 July 2026. We will refund the unused part, €66.67, to your payment method.
 
 Thank you for using Family Agenda Cloud.`);
@@ -294,12 +294,12 @@ Thank you for using Family Agenda Cloud.`);
   });
 
   it("announces the automatic deletion 30 days after Locked", () => {
-    const values = { recipient: erika, familyName: "Muster", deletedAt, by: "automatic", subscription: null } as const;
+    const values = { recipient: erika, deletedAt, by: "automatic", subscription: null } as const;
     expect(parts(familyDeletedMail("de", values), "de")).toMatchObject({
       subject: "Deine Familie wurde gelöscht – Family Agenda Cloud",
       text: `Hallo Erika Muster,
 
-Wie angekündigt haben wir die Familie Muster am 10.06.2026, 30 Tage nach der Sperre, gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
+Wie angekündigt haben wir deine Familie am 10.06.2026, 30 Tage nach der Sperre, gelöscht. Alle Daten der Familie sind gelöscht; die letzten Kopien in unseren Sicherungen werden spätestens am 24.06.2026 entfernt.
 
 Danke, dass du Family Agenda Cloud genutzt hast.`,
     });
@@ -307,7 +307,7 @@ Danke, dass du Family Agenda Cloud genutzt hast.`,
       subject: "Your family has been deleted – Family Agenda Cloud",
       text: `Hello Erika Muster,
 
-As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
+As announced, we deleted your family on 10 June 2026, 30 days after it was locked. All of the family's data has been deleted; the last copies in our backups will be removed by 24 June 2026.
 
 Thank you for using Family Agenda Cloud.`,
     });
@@ -318,35 +318,35 @@ describe("familyDeletedNoticeMail", () => {
   const deletedAt = new Date("2026-06-10T08:00:00Z");
 
   it("tells every other Admin who deleted the Family", () => {
-    const values = { recipient: max, familyName: "Muster", deletedAt, by: { admin: "Erika Muster" } } as const;
+    const values = { recipient: max, deletedAt, by: { admin: "Erika Muster" } } as const;
     expect(parts(familyDeletedNoticeMail("de", values), "de")).toEqual({
       from: MAIL_FROM,
       replyTo: MAIL_REPLY_TO,
       to: "max@example.org",
-      subject: "Die Familie Muster wurde gelöscht – Family Agenda Cloud",
+      subject: "Deine Familie wurde gelöscht – Family Agenda Cloud",
       text: `Hallo Max Muster,
 
-Erika Muster hat die Familie Muster am 10.06.2026 gelöscht. Dein Zugang und alle Daten der Familie sind damit gelöscht.`,
+Erika Muster hat deine Familie am 10.06.2026 gelöscht. Dein Zugang und alle Daten der Familie sind damit gelöscht.`,
     });
     expect(parts(familyDeletedNoticeMail("en", values), "en")).toEqual({
       from: MAIL_FROM,
       replyTo: MAIL_REPLY_TO,
       to: "max@example.org",
-      subject: "The family Muster has been deleted – Family Agenda Cloud",
+      subject: "Your family has been deleted – Family Agenda Cloud",
       text: `Hello Max Muster,
 
-Erika Muster deleted the family Muster on 10 June 2026. Your access and all of the family's data have been deleted with it.`,
+Erika Muster deleted your family on 10 June 2026. Your access and all of the family's data have been deleted with it.`,
     });
   });
 
   it("tells every other Admin of the automatic deletion", () => {
-    const values = { recipient: max, familyName: "Muster", deletedAt, by: "automatic" } as const;
+    const values = { recipient: max, deletedAt, by: "automatic" } as const;
     expect(parts(familyDeletedNoticeMail("de", values), "de").text).toBe(`Hallo Max Muster,
 
-Wie angekündigt haben wir die Familie Muster am 10.06.2026, 30 Tage nach der Sperre, gelöscht. Dein Zugang und alle Daten der Familie sind damit gelöscht.`);
+Wie angekündigt haben wir deine Familie am 10.06.2026, 30 Tage nach der Sperre, gelöscht. Dein Zugang und alle Daten der Familie sind damit gelöscht.`);
     expect(parts(familyDeletedNoticeMail("en", values), "en").text).toBe(`Hello Max Muster,
 
-As announced, we deleted the family Muster on 10 June 2026, 30 days after it was locked. Your access and all of the family's data have been deleted with it.`);
+As announced, we deleted your family on 10 June 2026, 30 days after it was locked. Your access and all of the family's data have been deleted with it.`);
   });
 });
 
@@ -354,13 +354,13 @@ describe("every mail", () => {
   const mails = (language: Language) => [
     cancellationMail(language, { recipient: erika, contract: monthly, receivedAt: new Date(), endsOn: new Date(), settlement: { case: "plain" } }),
     withdrawalMail(language, { recipient: erika, contract: monthly, receivedAt: new Date(), period: { case: "within", refundCents: 100 } }),
-    familyDeletedMail(language, { recipient: erika, familyName: "Muster", deletedAt: new Date(), by: "recipient", subscription: null }),
-    familyDeletedNoticeMail(language, { recipient: max, familyName: "Muster", deletedAt: new Date(), by: "automatic" }),
+    familyDeletedMail(language, { recipient: erika, deletedAt: new Date(), by: "recipient", subscription: null }),
+    familyDeletedNoticeMail(language, { recipient: max, deletedAt: new Date(), by: "automatic" }),
   ];
 
   it("fills the footer's placeholders with the Operator's imprint when given, even with $ in it", () => {
     const imprint = { name: "Art $& Koenig", postalAddress: "Postfach 1, 10115 Berlin" };
-    const de = familyDeletedNoticeMail("de", { recipient: max, familyName: "Muster", deletedAt: new Date(), by: "automatic" }, imprint);
+    const de = familyDeletedNoticeMail("de", { recipient: max, deletedAt: new Date(), by: "automatic" }, imprint);
     expect(de.text).toContain("\n\n-- \nFamily Agenda Cloud · Art $& Koenig · Postfach 1, 10115 Berlin\nFragen? Antworte");
     const en = cancellationMail(
       "en",
@@ -369,7 +369,7 @@ describe("every mail", () => {
     );
     expect(en.text).toContain("\n\n-- \nFamily Agenda Cloud · Art $& Koenig · Postfach 1, 10115 Berlin\nQuestions? Just reply");
     expect(withdrawalMail("de", { recipient: erika, contract: monthly, receivedAt: new Date(), period: { case: "within", refundCents: 1 } }, imprint).text).not.toContain("{{");
-    expect(familyDeletedMail("en", { recipient: erika, familyName: "M", deletedAt: new Date(), by: "recipient", subscription: null }, imprint).text).not.toContain("{{");
+    expect(familyDeletedMail("en", { recipient: erika, deletedAt: new Date(), by: "recipient", subscription: null }, imprint).text).not.toContain("{{");
   });
 
   it("acknowledges receipt only, never that a declaration was confirmed or is valid", () => {

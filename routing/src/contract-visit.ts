@@ -79,12 +79,6 @@ export async function isAdmin({ idp }: ContractSetup, { organizationId, userId }
 /** The person's name, else their address, else their id at Logto. */
 export const nameOf = ({ name, email }: LogtoPerson, userId: string): string => name ?? email ?? userId;
 
-/** The Family's name at Logto, else its id. */
-export async function familyNameOf({ idp }: ContractSetup, { organizationId, familyId }: DirectoryEntry): Promise<string> {
-  if (organizationId === null) return familyId;
-  return (await organizations(idp).name(organizationId)) ?? familyId;
-}
-
 /**
  * When the Subscription is, or was, first paid: at its anchor. Stripe charges at once for a Checkout
  * paid after its anchor and moves that a period on; such a Subscription was first paid a period before it.

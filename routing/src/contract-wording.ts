@@ -19,7 +19,7 @@ export const PRICE_CENTS: Record<Billing, number> = { monthly: 499, yearly: 4990
 export const YEARLY_PER_MONTH_CENTS = Math.round(PRICE_CENTS.yearly / 12);
 
 /** The Subscription as the pages and mails name it. */
-export type Contract = { billing: Billing; familyName: string; orderedOn: Date };
+export type Contract = { billing: Billing; orderedOn: Date };
 
 /** A person the pages and mails address: the Subscription's holder, or an Admin. */
 export type Person = { name: string; email: string };
@@ -132,12 +132,12 @@ export const BILLING: Record<Language, Record<Billing, string>> = {
   en: { monthly: "monthly", yearly: "yearly" },
 };
 
-/** The contract, e.g. `Family Agenda Cloud, monatlich, Familie Muster`. */
-export function contractOf({ billing, familyName }: Contract, language: Language): string {
-  return `Family Agenda Cloud, ${BILLING[language][billing]}, ${language === "de" ? "Familie" : "family"} ${familyName}`;
+/** The contract, e.g. `Family Agenda Cloud, monatlich`. */
+export function contractOf({ billing }: Contract, language: Language): string {
+  return `Family Agenda Cloud, ${BILLING[language][billing]}`;
 }
 
-/** The contract with its order date, e.g. `Family Agenda Cloud, monatlich, Familie Muster, bestellt am 05.03.2026`. */
+/** The contract with its order date, e.g. `Family Agenda Cloud, monatlich, bestellt am 05.03.2026`. */
 export function orderedContractOf(contract: Contract, language: Language): string {
   return `${contractOf(contract, language)}, ${language === "de" ? "bestellt am" : "ordered on"} ${dateOf(contract.orderedOn, language)}`;
 }

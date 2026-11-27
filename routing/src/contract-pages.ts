@@ -33,7 +33,7 @@ export type WithdrawReceiptValues = { holder: Person; contract: Contract; receiv
  * `/delete` for the one Admin who may delete the Family; `exportHref` downloads its Export.
  * `subscription` if one is running, with the end of its withdrawal period while that lasts.
  */
-export type DeletePageValues = { familyName: string; exportHref: string; subscription: { withdrawalPeriodEndsOn: Date | null } | null; csrf: string };
+export type DeletePageValues = { exportHref: string; subscription: { withdrawalPeriodEndsOn: Date | null } | null; csrf: string };
 
 /** The name of the end date `/cancel` posts, as an ISO 8601 instant. */
 export const END_DATE_FIELD = "end";
@@ -75,14 +75,14 @@ type Words = {
     noHolder: string;
     failed: { title: string; line: string };
   };
-  contract: { contract: string; family: string; orderedOn: string };
+  contract: { contract: string; orderedOn: string };
   receipt: { receivedAt: string; by: string };
   support: string;
   print: string;
   toFamily: string;
   delete: {
     title: string;
-    intro: (familyName: string) => string;
+    intro: string;
     when: string;
     stages: readonly string[];
     exportFirst: string;
@@ -131,14 +131,14 @@ const WORDS: Record<Language, Words> = {
         line: "Deine Erklärung konnte gerade nicht entgegengenommen werden. Bitte versuch es in einigen Minuten erneut.",
       },
     },
-    contract: { contract: "Vertrag", family: "Familie", orderedOn: "Bestellt am" },
+    contract: { contract: "Vertrag", orderedOn: "Bestellt am" },
     receipt: { receivedAt: "Eingegangen am", by: "Erklärt von" },
     support: "Fragen? Schreib uns:",
     print: "Drucken / als PDF speichern",
     toFamily: "Zur Familie",
     delete: {
       title: "Familie löschen",
-      intro: (familyName) => `Wenn du die Familie ${familyName} löschst, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.`,
+      intro: "Wenn du deine Familie löschst, wird sie sofort für alle Mitglieder gelöscht. Das lässt sich nicht rückgängig machen.",
       when: "Was wann gelöscht wird:",
       stages: [
         "sofort: alle Agenden, Einträge, Quellen und ihre Zugangsdaten, gespeicherte Dateien und die Konten aller Admins",
@@ -189,14 +189,14 @@ const WORDS: Record<Language, Words> = {
         line: "We could not take your declaration just now. Please try again in a few minutes.",
       },
     },
-    contract: { contract: "Contract", family: "Family", orderedOn: "Ordered on" },
+    contract: { contract: "Contract", orderedOn: "Ordered on" },
     receipt: { receivedAt: "Received on", by: "Declared by" },
     support: "Questions? Write to us:",
     print: "Print / save as PDF",
     toFamily: "Back to the family",
     delete: {
       title: "Delete family",
-      intro: (familyName) => `If you delete the family ${familyName}, it is deleted immediately for all members. This cannot be undone.`,
+      intro: "If you delete your family, it is deleted immediately for all members. This cannot be undone.",
       when: "What is deleted when:",
       stages: [
         "immediately: all agendas, entries, sources and their credentials, stored files and the accounts of all Admins",
@@ -213,12 +213,11 @@ const WORDS: Record<Language, Words> = {
   },
 };
 
-/** The rows that name the contract: the Tariff with its billing, the Family, and the day it was ordered. */
-function contractRows({ billing, familyName, orderedOn }: Contract, language: Language): Row[] {
+/** The rows that name the contract: the Tariff with its billing, and the day it was ordered. */
+function contractRows({ billing, orderedOn }: Contract, language: Language): Row[] {
   const words = WORDS[language].contract;
   return [
     [words.contract, `Family Agenda Cloud, ${BILLING[language][billing]}`],
-    [words.family, familyName],
     [words.orderedOn, dateOf(orderedOn, language)],
   ];
 }
@@ -315,11 +314,11 @@ function receiptPage(language: Language, familyId: string, title: string, rows: 
 }
 
 /** `/delete`: what goes when, the Export first, and „Familie endgültig löschen“, active only once the checkbox is ticked. */
-export function deletePage(language: Language, { familyName, exportHref, subscription, csrf }: DeletePageValues): string {
+export function deletePage(language: Language, { exportHref, subscription, csrf }: DeletePageValues): string {
   const words = WORDS[language].delete;
   const stages = words.stages.map((stage) => `<li>${escape(stage)}</li>`).join("\n");
   const body = [
-    `<p>${escape(words.intro(familyName))}</p>`,
+    `<p>${escape(words.intro)}</p>`,
     `<p>${escape(words.when)}</p>\n<ul>\n${stages}\n</ul>`,
     `<p>${escape(words.exportFirst)}</p>\n<p class="action"><a class="fam-button fam-button--secondary" href="${escape(exportHref)}">${escape(words.exportButton)}</a></p>`,
     subscriptionNote(language, subscription),
