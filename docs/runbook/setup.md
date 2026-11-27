@@ -310,7 +310,9 @@ Once per Stripe environment, by the Operator: first in a sandbox
 1. **Settings → Business → Public details**: terms of service `https://family-agenda.cloud/agb`. Checkout asks for
    consent to them, and Stripe refuses every Checkout Session without this address.
 2. **Product catalog → Create product**: `Family Agenda Cloud`, tax code *Software as a service (SaaS)*, with two
-   recurring Prices in EUR, both **including tax**: 4,99 monthly and 49,90 yearly.
+   recurring Prices in EUR, both **including tax**: 4,99 monthly and 49,90 yearly. Then, at the monthly Price,
+   **Upsells → Add upsell**: the yearly Price. Checkout opens with the monthly one and offers the yearly as a
+   switch; the Router sends no other Price, and there is no API for upsells.
 3. **Tax**: turn Stripe Tax on, with the business's address and an active registration for Germany. Without a
    registration Stripe calculates no tax and says nothing.
 4. **Settings → Payments → Payment methods**: cards and SEPA Direct Debit on, all others off. Checkout offers none
@@ -355,8 +357,8 @@ either: emptying these settings and deploying turns the order and
 the Contract section off and lets it start.
 
 Check: `https://app.family-agenda.cloud/order` sends a browser that is not signed in to the sign-in, and the founder
-of a Family in its Trial back to the order page; the button leads to Stripe's Checkout, in the sandbox paid with
-Stripe's test cards.
+of a Family in its Trial straight on to Stripe's Checkout: monthly, with the switch to yearly, our summary above the
+button, and a field for the name if Logto has none. In the sandbox it is paid with Stripe's test cards.
 
 The webhook (`/stripe/events`) answers 500 until an event is handled, and Stripe delivers it again for up to three
 days; **Developers → Webhooks** lists what failed, the Router's log says why. Two log lines need the Operator:

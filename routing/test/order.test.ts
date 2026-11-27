@@ -50,13 +50,14 @@ function browser() {
   return {
     jar,
     request,
-    post: (form: Record<string, string>, path = "/order") => request(path, { method: "POST", body: new URLSearchParams(form) }),
+    post: (path: string) => request(path, { method: "POST", body: new URLSearchParams() }),
     async visit(path: string): Promise<Answer & { path: string }> {
       let at = new URL(path, PUBLIC_URL).href;
       for (let hop = 0; hop < 20; hop++) {
         const answer = await request(at);
         if (!answer.location) return { ...answer, path: at.replace(PUBLIC_URL, "") };
         at = answer.location;
+        if (at === CHECKOUT) return { ...answer, path: at };
         if (/^\/[0-9a-f-]{36}\/$/.test(at.replace(PUBLIC_URL, ""))) return { ...answer, path: at.replace(PUBLIC_URL, "") };
       }
       throw new Error("Too many redirects");
@@ -101,7 +102,7 @@ describe("The session of the Routing module's pages", () => {
   it("is asked for at the sign-in, which comes back to the page", async () => {
     await createFamily();
     routing.logto.signInAs("u-1");
-    expect(await browser().visit("/en/order")).toMatchObject({ status: 200, path: "/en/order" });
+    expect(await browser().visit("/en/order")).toMatchObject({ status: 302, path: CHECKOUT });
   });
 
   it("never takes the browser to a path that is not a page's", async () => {
@@ -119,7 +120,6 @@ describe("The order page", () => {
     routing.logto.addMember("org_1", "u-member", "member");
     const own = await signedIn("u-member");
     for (const path of ["/order", "/order/done"]) expect(await own.request(path)).toMatchObject({ status: 403 });
-    expect(await own.post({ billing: "monthly" })).toMatchObject({ status: 403 });
     expect(stripe.created).toEqual([]);
   });
 
@@ -137,8 +137,6 @@ describe("The order page", () => {
     const own = await signedIn("u-2");
     const { body } = await own.request("/order");
     expect(body).toContain("Bestellen kann nur: Anna Muster");
-    expect(body).not.toContain("<form");
-    expect(await own.post({ billing: "monthly" })).toMatchObject({ status: 200 });
     expect(stripe.created).toEqual([]);
   });
 
@@ -147,18 +145,18 @@ describe("The order page", () => {
     const own = await signedIn();
     const without = await own.request("/order");
     await setFamily(familyId, "registered_by", "u-gone");
-    for (const { body } of [without, await own.request("/order")]) {
-      expect(body).toContain("support@family-agenda.cloud");
-      expect(body).not.toContain("<form");
-    }
-    await own.post({ billing: "monthly", name: "Anna" });
+    for (const { body } of [without, await own.request("/order")]) expect(body).toContain("support@family-agenda.cloud");
     expect(stripe.created).toEqual([]);
   });
 
-  it("shows when the first payment falls due: at the Trial's end, or today if Locked", async () => {
+  it("says on Checkout when the first payment falls due: at the Trial's end, or today if Locked", async () => {
     const familyId = await createFamily();
     const own = await signedIn();
-    const due = async () => /Erste Zahlung am ([^<]+)/.exec((await own.request("/order")).body)?.[1];
+    const due = async () => {
+      await own.request("/order");
+      const submit = stripe.created.at(-1)?.custom_text?.submit;
+      return /Erste Zahlung am ([^,]+),/.exec(submit ? submit.message : "")?.[1];
+    };
     expect(await due()).toBe(dateOf(trialEndsAt(now), "de"));
     await startTrial(familyId, 13);
     expect(await due()).toBe(dateOf(new Date(now.getTime() + DAY), "de"));
@@ -171,8 +169,7 @@ describe("The order page", () => {
     const own = await signedIn();
     for (const trial of [null, new Date(now.getTime() - 20 * DAY)]) {
       await setFamily(familyId, "trial_starts_at", trial);
-      expect((await own.request("/order")).body).not.toContain("<form");
-      await own.post({ billing: "monthly", name: "Anna" });
+      expect((await own.request("/order")).body).toContain("Für diese Familie kann zurzeit kein Tarif bestellt werden.");
     }
     expect(stripe.created).toEqual([]);
   });
@@ -185,57 +182,54 @@ describe("The order page", () => {
     const { body } = await own.request("/order");
     expect(body).toContain("Tarif bereits bestellt");
     expect(body).toContain("Anna Muster");
-    await own.post({ billing: "monthly", name: "Anna" });
     expect(stripe.created).toEqual([]);
   });
 });
 
 describe("The order", () => {
-  it("asks a founder without a name for it, and keeps it at Logto", async () => {
+  it("takes the founder to Checkout, which asks for a name Logto has not", async () => {
     const familyId = await createFamily();
     routing.logto.setLocale("u-1", "en-GB");
     const own = await signedIn();
-    expect((await own.request("/order")).body).toContain('name="name"');
-    for (const name of ["", "   ", "x".repeat(129)]) expect(await own.post({ billing: "yearly", name })).toMatchObject({ status: 400 });
-    expect(stripe.created).toEqual([]);
-
-    expect(await own.post({ billing: "yearly", name: " Anna Muster " })).toMatchObject({ status: 303, location: CHECKOUT });
-    expect(routing.logto.nameOf("u-1")).toBe("Anna Muster");
-    expect((await own.request("/order")).body).not.toContain('name="name"');
+    expect(await own.request("/order")).toMatchObject({ status: 302, location: CHECKOUT });
     expect(stripe.created).toMatchObject([
-      { client_reference_id: familyId, line_items: [{ price: "price_y", quantity: 1 }], metadata: { familyId, holder: "u-1" }, customer_email: "u-1@example.com", locale: "en" },
+      {
+        client_reference_id: familyId,
+        line_items: [{ price: "price_m", quantity: 1 }],
+        metadata: { familyId, holder: "u-1" },
+        customer_email: "u-1@example.com",
+        locale: "en",
+        name_collection: { individual: { enabled: true, optional: false } },
+        cancel_url: `${PUBLIC_URL}/${familyId}/`,
+      },
     ]);
   });
 
-  it("speaks the Admin's language at Logto and leaves a name there alone", async () => {
+  it("speaks the Admin's language at Logto and asks for no name it has", async () => {
     await createFamily();
     routing.logto.setName("u-1", "Anna Muster");
     routing.logto.setLocale("u-1", "de-DE");
     const own = await signedIn();
-    expect(await own.post({ billing: "monthly", name: "Other" }, "/en/order")).toMatchObject({ status: 303, location: CHECKOUT });
-    expect(routing.logto.nameOf("u-1")).toBe("Anna Muster");
+    expect(await own.request("/en/order")).toMatchObject({ status: 302, location: CHECKOUT });
     expect(stripe.created).toMatchObject([{ locale: "de", success_url: `${PUBLIC_URL}/en/order/done` }]);
+    expect(stripe.created[0]).not.toHaveProperty("name_collection");
   });
 
   it("expires the Family's Session before", async () => {
     await createFamily();
-    routing.logto.setName("u-1", "Anna Muster");
     const own = await signedIn();
-    await own.post({ billing: "monthly" });
-    await own.post({ billing: "yearly" });
+    await own.request("/order");
+    await own.request("/order");
     expect(stripe.created).toHaveLength(2);
     expect(stripe.open.size).toBe(1);
   });
 
-  it("refuses an unknown billing, a long body and other methods, and needs a sign-in", async () => {
+  it("takes a GET alone, and needs a sign-in", async () => {
     await createFamily();
-    routing.logto.setName("u-1", "Anna Muster");
     const own = await signedIn();
-    expect(await own.post({ billing: "weekly" })).toMatchObject({ status: 400 });
-    expect(await own.post({ billing: "monthly", name: "x".repeat(9000) })).toMatchObject({ status: 413 });
-    expect(await own.request("/order", { method: "PUT" })).toMatchObject({ status: 405 });
-    expect(await own.post({}, "/order/done")).toMatchObject({ status: 405 });
-    expect(await browser().post({ billing: "monthly" })).toMatchObject({ status: 303, location: `${PUBLIC_URL}/sign-in?back=%2Forder` });
+    for (const method of ["POST", "HEAD", "PUT"]) expect(await own.request("/order", { method })).toMatchObject({ status: 405 });
+    expect(await own.post("/order/done")).toMatchObject({ status: 405 });
+    expect(await browser().request("/order")).toMatchObject({ status: 302, location: `${PUBLIC_URL}/sign-in?back=%2Forder` });
     expect(stripe.created).toEqual([]);
   });
 
@@ -307,6 +301,6 @@ describe("The Subscription's page", () => {
     expect((await own.request("/en/subscription")).body).toContain("This family has no subscription.");
     await subscribe(familyId, "sub_1", null);
     expect((await own.request("/subscription")).body).toContain("kein Abonnement");
-    expect((await own.post({}, "/subscription")).status).toBe(405);
+    expect((await own.post("/subscription")).status).toBe(405);
   });
 });

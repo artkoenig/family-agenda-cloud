@@ -15,6 +15,9 @@ export type Billing = "monthly" | "yearly";
 /** What the Tariff costs per billing period, in cents, VAT included (#187). */
 export const PRICE_CENTS: Record<Billing, number> = { monthly: 499, yearly: 4990 };
 
+/** What a month of the yearly Tariff comes to (Art. 246a EGBGB). */
+export const YEARLY_PER_MONTH_CENTS = Math.round(PRICE_CENTS.yearly / 12);
+
 /** The Subscription as the pages and mails name it. */
 export type Contract = { billing: Billing; familyName: string; orderedOn: Date };
 

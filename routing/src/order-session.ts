@@ -1,19 +1,19 @@
 /**
- * The Checkout Session of an order (#226): its create params, which Sessions of a Family are still
- * open, and whether Stripe's Prices are the Tariff's. No I/O.
+ * The Checkout Session of an order (#226): its create params, and whether Stripe's Prices are the
+ * Tariff's. The Admin chooses the billing on Checkout, not before. No I/O.
  */
 import type Stripe from "stripe";
 import { checkoutTexts, firstPayment, type OrderingFamily } from "./checkout-texts";
 import { PRICE_CENTS, type Billing, type Language } from "./contract-wording";
 import { ORDER_PATHS } from "./routing-pages";
 
-/** An order: whose Family, who becomes the Contract holder, and what they chose, at `now`. */
+/** An order: whose Family, who becomes the Contract holder, at `now`. */
 export type Order = {
   familyId: string;
   family: OrderingFamily;
-  holder: { userId: string; email: string | null };
-  billing: Billing;
-  /** Stripe's Price of the billing. */
+  /** As Logto keeps them: Checkout asks for the name if Logto has none. */
+  holder: { userId: string; email: string | null; name: string | null };
+  /** Stripe's monthly Price: Checkout offers the yearly one as its upsell, configured at the Price in Stripe's Dashboard. */
   price: string;
   /** The language of Checkout: the holder's at Logto. */
   language: Language;
@@ -39,7 +39,7 @@ const anchoredAt = (anchor: Date) => ({ billing_cycle_anchor: secondsOf(anchor),
 
 /** What the order is, as Stripe creates its Session. */
 export function checkoutSessionParams(order: Order): Stripe.Checkout.SessionCreateParams {
-  const { familyId, family, holder, billing, price, language, pageLanguage, publicUrl, now } = order;
+  const { familyId, family, holder, price, language, pageLanguage, publicUrl, now } = order;
   const { billingCycleAnchor, dueAt } = firstPayment(family, now);
   const metadata = { familyId, holder: holder.userId };
   return {
@@ -50,14 +50,15 @@ export function checkoutSessionParams(order: Order): Stripe.Checkout.SessionCrea
     client_reference_id: familyId,
     metadata,
     subscription_data: { metadata, ...(billingCycleAnchor === null ? {} : anchoredAt(billingCycleAnchor)) },
-    ...checkoutTexts(language, billing, dueAt),
+    ...checkoutTexts(language, dueAt),
     allowed_payment_method_types: ["card", "sepa_debit"],
     automatic_tax: { enabled: true },
     billing_address_collection: "required",
     ...(holder.email === null ? {} : { customer_email: holder.email }),
+    ...(holder.name === null ? { name_collection: { individual: { enabled: true, optional: false } } } : {}),
     expires_at: secondsOf(now) + SESSION_LIFETIME_SECONDS,
     success_url: `${publicUrl}${ORDER_PATHS.done[pageLanguage]}`,
-    cancel_url: `${publicUrl}${ORDER_PATHS.order[pageLanguage]}`,
+    cancel_url: `${publicUrl}/${familyId}/`,
   };
 }
 

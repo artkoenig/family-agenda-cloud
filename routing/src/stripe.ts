@@ -151,7 +151,7 @@ export function signedEvent(body: Buffer, signature: string, webhookSecret: stri
   }
 }
 
-/** Throws, saying why, unless Stripe's Prices are the Tariff's: what Checkout charges is what the order page says. */
+/** Throws, saying why, unless Stripe's Prices are the Tariff's: what Checkout charges is what its summary says. */
 export async function checkPrices(stripe: StripePort, prices: StripeSettings["prices"]): Promise<void> {
   await Promise.all(
     (["monthly", "yearly"] satisfies Billing[]).map(async (billing) => {

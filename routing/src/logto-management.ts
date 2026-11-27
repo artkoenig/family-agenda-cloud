@@ -70,6 +70,9 @@ export async function person(idp: IdpManagement, userId: string): Promise<LogtoP
 /** The text, or null for none but white space. */
 const textOf = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
 
+/** The longest name of a user Logto takes. */
+export const NAME_LIMIT = 128;
+
 /** Sets the person's name at Logto. */
 export async function setName(idp: IdpManagement, userId: string, name: string): Promise<void> {
   await managementCall(idp, "PATCH", `/api/users/${encodeURIComponent(userId)}`, { name }, "setting the user's name");
