@@ -20,7 +20,8 @@ on:
 jobs:
   cube:
     # The Cube's deployment: the Routing module's image builds, the compose project resolves with
-    # every key of cube/.env.example set (to placeholders), and the scripts pass ShellCheck.
+    # every key of cube/.env.example set (to placeholders), the pinned core loads the pinned
+    # plugins, and the scripts pass ShellCheck.
     # The health check's own tests (routing/test/health-*.test.ts) run in the CI workflow.
     runs-on: ubuntu-latest
     steps:
@@ -33,6 +34,10 @@ jobs:
           # Every service logs to the journal, where the health check reads it (cube/health).
           docker compose -f cube/compose.yaml --env-file "$RUNNER_TEMP/cube.env" config --format json \
             | jq -e '[.services[] | .logging.driver == "journald" and .logging.options.tag == "{{.Name}}"] | all'
-      - run: shellcheck -x -P SCRIPTDIR scripts/bootstrap.sh scripts/deploy.sh scripts/smoke.sh cube/logto-log-retention.sh cube/health/health-check.sh
+      # A core loads no plugin built for a newer plugin contract, and logs nothing of it: Renovate
+      # moves the plugin images, the core image is pinned by hand.
+      - name: Check that the pinned core loads the pinned plugins
+        run: scripts/plugin-contracts.sh
+      - run: shellcheck -x -P SCRIPTDIR scripts/bootstrap.sh scripts/deploy.sh scripts/smoke.sh scripts/plugin-contracts.sh cube/logto-log-retention.sh cube/health/health-check.sh
       - name: Check the health check's systemd units
         run: systemd-analyze verify --man=no cube/health/family-agenda-health.timer cube/health/family-agenda-health.service

@@ -96,6 +96,7 @@ describe("the core, the plugins and the Egress Proxies", () => {
         "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory",
         "Running due Sources and Extraction failed: connect ECONNREFUSED",
         "Polling Sources failed:",
+        'Loading the plugin of Source Type "webuntis" failed: built for plugin contract 3.3, but the core implements 3.2',
         "Could not carry the pending registrations through: x",
         "Could not deliver the pending family.created webhooks: x",
       ])

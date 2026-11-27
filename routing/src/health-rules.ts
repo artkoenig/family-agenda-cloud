@@ -12,8 +12,9 @@ const ERROR_LEVELS = new Set(["error", "fatal", "panic", "dpanic", "critical", "
  * What Node prints when something fails: a thrown error ("Error: …", "TypeError: …",
  * "AggregateError [ECONNREFUSED]: …", "Uncaught …"), an aborted process ("FATAL ERROR: …"),
  * and the core's own reports of a job that failed ("Polling Sources failed: …", "Could not
- * deliver the pending family.created webhooks …"). Not the core's warnings, such as "Source X
- * failed (ics): …" or an Egress Proxy's "Refused <url>: …".
+ * deliver the pending family.created webhooks …") or of a plugin it does not load ("Loading the
+ * plugin of Source Type … failed: …"). Not the core's warnings, such as "Source X failed (ics): …"
+ * or an Egress Proxy's "Refused <url>: …".
  */
 const NODE_ERRORS = [
   /^(?:Uncaught )?\w*Error(?: \[[\w.-]+\])?: /,
