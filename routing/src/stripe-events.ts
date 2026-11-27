@@ -184,15 +184,16 @@ async function saved(at: Case): Promise<void> {
 /** Whether the Family can be locked and unlocked: it is neither deleted nor being prepared. */
 const isLockable = ({ status }: DirectoryEntry): boolean => status !== "deleted" && status !== "being_prepared";
 
+/** Whether the Subscription runs though its Family cannot be locked; not one that runs on to the end its Family's deletion set (#231). */
+const runsAstray = ({ entry, subscription }: Case): boolean => isRunning(subscription.status) && !(entry.status === "deleted" && subscription.cancel_at !== null);
+
 /** Locks or unlocks the Family as the Subscription's status says. */
 async function familyFollows(at: Case): Promise<void> {
   const { handling, entry, subscription } = at;
   const { work, log, now } = handling;
   const { familyId } = entry;
   if (!isLockable(entry)) {
-    // A deleted Family's Subscription runs on to the end its deletion set (#231).
-    const ending = entry.status === "deleted" && subscription.cancel_at !== null;
-    if (isRunning(subscription.status) && !ending) log.error("A Subscription runs of a Family that is deleted or not prepared", { familyId, subscription: subscription.id });
+    if (runsAstray(at)) log.error("A Subscription runs of a Family that is deleted or not prepared", { familyId, subscription: subscription.id });
     return;
   }
   if (subscription.status === "active") await unlockFamily(work, familyId);

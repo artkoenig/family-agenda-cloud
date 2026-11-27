@@ -1,6 +1,6 @@
 import { rm, stat } from "node:fs/promises";
 import type { Config } from "./config";
-import { familyDeletedMail, familyDeletedNoticeMail, type ContractMail, type FamilyDeletedMailValues } from "./contract-mails";
+import { familyDeletedMail, familyDeletedNoticeMail, type ContractMail, type FamilyDeletedMailValues, type FamilyDeletedNoticeValues, type Imprint } from "./contract-mails";
 import { mailLanguageOf, type Person } from "./contract-wording";
 import { inTransaction, type DirectoryEntry } from "./directory";
 import { dropFamilyDatabase, familyDatabaseNames } from "./family-databases";
@@ -116,30 +116,43 @@ type DeletionMail = { type: string; mail: ContractMail };
  * to its founder after an automatic deletion, the mail that says what becomes of the Subscription;
  * to every other Admin the notice.
  */
-async function mailsOf({ config, client, directory, log }: Deletion, entry: DirectoryEntry, told: DeletionTold): Promise<DeletionMail[]> {
+async function mailsOf(deletion: Deletion, entry: DirectoryEntry, told: DeletionTold): Promise<DeletionMail[]> {
+  const { config, client, log } = deletion;
   const { familyId, organizationId } = entry;
   const idp = config.idpManagement;
   if (organizationId === null || idp === null) return [];
-  const box = outbox(client);
-  const ever = new Date(0);
-  if ((await box.holds({ type: FAMILY_DELETED_MAIL, familyId }, ever)) || (await box.holds({ type: FAMILY_DELETED_NOTICE_MAIL, familyId }, ever))) {
+  if (await wereTold(client, familyId)) {
     log.info("The Family's Admins were told of the deletion already", { familyId });
     return [];
   }
   const admins = await recipientsOf(idp, organizationId);
-  const first = told.by === "automatic" ? await founderOf({ config, directory }, familyId) : told.by.admin;
-  const deleter = told.by === "automatic" ? "automatic" : { admin: admins.find(({ userId }) => userId === first)?.person.name ?? first ?? "" };
-  const imprint = config.stripe?.imprint;
-  return admins.flatMap(({ userId, person: recipient, locale }): DeletionMail[] => {
-    if (recipient.email === "") {
-      log.error("An Admin of a deleted Family has no email address", { familyId, userId });
-      return [];
-    }
-    const language = mailLanguageOf(locale);
-    if (userId !== first) return [{ type: FAMILY_DELETED_NOTICE_MAIL, mail: familyDeletedNoticeMail(language, { recipient, deletedAt: told.at, by: deleter }, imprint) }];
-    const by = told.by === "automatic" ? "automatic" : "recipient";
-    return [{ type: FAMILY_DELETED_MAIL, mail: familyDeletedMail(language, { recipient, deletedAt: told.at, by, subscription: told.subscription }, imprint) }];
+  const first = told.by === "automatic" ? await founderOf(deletion, familyId) : told.by.admin;
+  const deleter = deleterOf(told, admins);
+  return admins.flatMap((admin): DeletionMail[] => {
+    if (admin.person.email !== "") return [mailTo(admin, admin.userId === first, told, deleter, config.stripe?.imprint)];
+    log.error("An Admin of a deleted Family has no email address", { familyId, userId: admin.userId });
+    return [];
   });
+}
+
+/** Whether a mail of the Family's deletion was ever put in the outbox. */
+async function wereTold(client: Deletion["client"], familyId: string): Promise<boolean> {
+  const box = outbox(client);
+  const ever = new Date(0);
+  return (await box.holds({ type: FAMILY_DELETED_MAIL, familyId }, ever)) || (await box.holds({ type: FAMILY_DELETED_NOTICE_MAIL, familyId }, ever));
+}
+
+/** Who deleted the Family, as the notice names them: the Admin by their name, else their id. */
+const deleterOf = ({ by }: DeletionTold, admins: Recipient[]): FamilyDeletedNoticeValues["by"] =>
+  by === "automatic" ? by : { admin: admins.find(({ userId }) => userId === by.admin)?.person.name ?? by.admin };
+
+/** The Admin's mail in their language: to the `first` the one that says what becomes of the Subscription, to another the notice. */
+function mailTo({ person: recipient, locale }: Recipient, first: boolean, told: DeletionTold, deleter: FamilyDeletedNoticeValues["by"], imprint: Imprint | undefined): DeletionMail {
+  const language = mailLanguageOf(locale);
+  const deletedAt = told.at;
+  if (!first) return { type: FAMILY_DELETED_NOTICE_MAIL, mail: familyDeletedNoticeMail(language, { recipient, deletedAt, by: deleter }, imprint) };
+  const by = told.by === "automatic" ? "automatic" : "recipient";
+  return { type: FAMILY_DELETED_MAIL, mail: familyDeletedMail(language, { recipient, deletedAt, by, subscription: told.subscription }, imprint) };
 }
 
 /** The Organization's Admins, each as Logto names them: by their name, else their address, else their id. */
