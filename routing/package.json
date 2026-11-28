@@ -38,7 +38,7 @@
     "@types/pdfkit": "0.17.7",
     "@types/pg": "^8.15.6",
     "@types/smtp-server": "^3.5.13",
-    "@vitest/coverage-v8": "5.1.1",
+    "@vitest/coverage-v8": "5.1.2",
     "dependency-cruiser": "^18.7.0",
     "eslint": "^10.13.0",
     "eslint-plugin-sonarjs": "^4.2.2",
